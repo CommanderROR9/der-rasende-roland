@@ -1,0 +1,11 @@
+{
+  "name": "der-rasende-roland",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pixel-Art-Sidescroller: vom zweiten Untergeschoss in den Kleingarten.",
+  "scripts": {
+    "test": "node tests/smoke.test.mjs",
+    "serve": "python3 -m http.server 8123"
+  }
+}

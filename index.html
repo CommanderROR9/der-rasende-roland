@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0810">
+<title>Der Rasende Roland</title>
+<meta name="description" content="Pixel-Art-Sidescroller über 41 Jahre Orchestergraben: vom zweiten Untergeschoss bis in den Kleingarten.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230b0810'/><rect x='6' y='2' width='3' height='9' fill='%235de0cf'/><rect x='4' y='10' width='7' height='3' fill='%23e8c46a'/></svg>">
+<style>
+:root{
+  --ink:#e9e5d8; --muted:#9b93b0; --cyan:#5de0cf; --amber:#e8c46a; --red:#b0392f;
+  --plum:#7a4b8a; --panel:rgba(14,10,22,.94);
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;color:var(--ink);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;touch-action:none;
+  -webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;display:grid;place-items:center}
+#game{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#141021;touch-action:none}
+
+/* HUD */
+.hud{position:absolute;z-index:5;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;
+  gap:10px;padding:calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+  background:linear-gradient(180deg,rgba(5,3,10,.92),rgba(5,3,10,0));font-size:11px;pointer-events:none}
+.brand{font-weight:800;letter-spacing:.14em;color:var(--cyan)}
+.brand small{display:block;margin-top:3px;color:var(--muted);font-size:9px;letter-spacing:.06em;font-weight:400}
+.readout{display:flex;gap:12px;text-align:right;color:var(--muted);font-size:9px;letter-spacing:.06em;flex-wrap:wrap;justify-content:flex-end}
+.readout span{display:block}
+.readout b{display:block;color:var(--ink);font-size:12px;letter-spacing:.02em;font-weight:700}
+.bar{display:block;width:52px;height:6px;margin-top:2px;border:1px solid #463c5c;background:#120d1c}
+.bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .12s linear}
+.bar.hot i{background:#ef8f3a}
+.beat{display:inline-block;width:8px;height:8px;border:1px solid var(--cyan);background:#0e1c1c;vertical-align:middle}
+.beat.on{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+/* Kontexttip */
+.hintbar{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));
+  max-width:min(92vw,560px);text-align:center;font-size:11px;line-height:1.5;color:#f4efdd;
+  background:rgba(9,6,16,.86);border:1px solid rgba(93,224,207,.28);padding:6px 10px;pointer-events:none}
+.hintbar.hidden{display:none}
+
+/* Touch-Steuerung */
+.pad{position:absolute;z-index:7;left:calc(14px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));
+  right:calc(14px + env(safe-area-inset-right));display:none;justify-content:space-between;align-items:flex-end}
+.pad.show{display:flex}
+.stick{position:relative;width:104px;height:104px;border:1px solid rgba(160,236,225,.3);border-radius:50%;background:rgba(9,6,16,.5)}
+.nub{position:absolute;left:32px;top:32px;width:40px;height:40px;border-radius:50%;background:rgba(93,224,207,.3);border:1px solid var(--cyan)}
+.btns{display:flex;gap:12px;align-items:flex-end}
+.btns button{min-width:74px;min-height:56px;border:1px solid var(--cyan);background:rgba(11,57,68,.8);color:var(--ink);
+  font:700 11px ui-monospace,monospace;letter-spacing:.08em;border-radius:4px}
+.btns button.act{border-color:var(--amber);background:rgba(70,45,12,.8);color:var(--amber)}
+.btns button:active{transform:translateY(1px)}
+
+/* Panels */
+.panel{position:absolute;z-index:10;inset:0;display:grid;place-items:center;padding:14px;
+  background:rgba(5,3,10,.74);backdrop-filter:blur(3px);overflow:auto}
+.panel.hidden{display:none}
+.card{width:min(100%,470px);padding:20px;border:1px solid rgba(93,224,207,.3);background:var(--panel);box-shadow:0 18px 60px #000a}
+.eyebrow{color:var(--amber);font-size:10px;letter-spacing:.18em}
+.card h1{margin:6px 0 10px;font-size:clamp(26px,7vw,44px);line-height:.98;letter-spacing:-.04em;color:var(--cyan)}
+.card h2{margin:4px 0 10px;font-size:20px;letter-spacing:.02em;color:var(--cyan)}
+.card p{margin:0 0 10px;color:#c6bfd8;line-height:1.55;font-size:12px}
+.card ul{margin:0 0 10px;padding-left:16px;color:#c6bfd8;font-size:12px;line-height:1.6}
+.card button{width:100%;min-height:44px;margin-top:8px;border:1px solid var(--cyan);background:#0d3b45;color:var(--ink);
+  font:800 12px ui-monospace,monospace;letter-spacing:.08em;cursor:pointer}
+.card button:active{transform:translateY(1px);background:#12545f}
+.card button.ghost{border-color:#5a5270;background:transparent;color:var(--muted)}
+.card button.ghost.back{margin-top:14px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:11px;color:#c6bfd8;margin:8px 0 4px}
+.keys b{color:var(--amber);font-weight:700}
+.pick{display:grid;gap:8px}
+.pick button{display:block;text-align:left;min-height:56px;padding:9px 11px;border:1px solid #4b4460;background:#150f22;margin:0}
+.pick button.sel{border-color:var(--cyan)}
+.pick .title{font-weight:800;letter-spacing:.06em;color:var(--ink);font-size:12px}
+.pick .sub{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.45}
+.pick .pro{display:block;color:var(--cyan);font-size:10px}
+.pick .con{display:block;color:#e08a7a;font-size:10px}
+.rewardIcon{float:right;margin:-4px 0 6px 10px;image-rendering:pixelated}
+.stat{display:flex;justify-content:space-between;border-bottom:1px solid #2a2340;padding:4px 0;font-size:11px;color:#c6bfd8}
+.stat b{color:var(--ink)}
+.rotate{position:absolute;z-index:11;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));
+  display:none;font-size:10px;color:var(--amber);background:rgba(9,6,16,.9);padding:5px 9px;border:1px solid #4b3a12}
+@media (orientation:portrait) and (hover:none){.rotate{display:block}}
+@media (max-width:560px){.hud{font-size:10px}.readout{gap:8px}.brand small{display:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="384" height="216" aria-label="Spielbereich"></canvas>
+
+  <div class="hud">
+    <div class="brand">DER RASENDE ROLAND<small id="aktsub">AKT 1 — DIE KATAKOMBEN</small></div>
+    <div class="readout">
+      <span>DECKEL<b id="deckel">0/5</b></span>
+      <span>OHROPAX<b id="ohro">—</b></span>
+      <span>KLUFT<b id="kluft">SCHWARZ</b></span>
+      <span>HITZE<b id="hitze"><span class="bar"><i></i></span></b></span>
+      <span>TAKT<b id="takt"><span class="beat"></span><em id="bpm" style="font-style:normal;margin-left:4px">100</em></b></span>
+      <span>NERVEN<b id="nerven">●●●</b></span>
+    </div>
+  </div>
+
+  <div class="hintbar hidden" id="hintbar"></div>
+
+  <div class="pad" id="pad">
+    <div class="stick" id="stick"><div class="nub" id="nub"></div></div>
+    <div class="btns">
+      <button id="btnJump" type="button">SPRUNG</button>
+      <button id="btnAction" class="act" type="button">TRITT</button>
+    </div>
+  </div>
+
+  <div class="rotate">FÜR MEHR ÜBERSICHT: GERÄT QUER HALTEN</div>
+
+  <!-- Titel -->
+  <section class="panel" id="title">
+    <div class="card">
+      <div class="eyebrow">PIXEL-ART · 41 DIENSTJAHRE · EIN KLEINGARTEN</div>
+      <h1>DER RASENDE<br>ROLAND</h1>
+      <p>Ein Geiger arbeitet sich ein letztes Mal aus dem zweiten Untergeschoss bis auf die Bühne — und danach
+        endlich dorthin, wo kein Frack mehr wartet. Akt 1 führt durch die Katakomben: Notenarchiv, morsche
+        Notenblätter, ein Piccolo mit schlechter Laune und der Materialaufzug nach oben.</p>
+      <div class="keys">
+        <b>A / D ←→</b><span>gehen</span>
+        <b>SPACE / W ↑</b><span>springen (unten + springen = durch Plattform fallen)</span>
+        <b>E</b><span>Tritt — im Takt getroffen wird jeder still</span>
+        <b>S / ↓</b><span>ducken und in Deckung gehen</span>
+        <b>P / ESC</b><span>Pause</span>
+      </div>
+      <button id="startBtn">START&nbsp;→</button>
+      <button id="resetBtn" class="ghost" type="button">Fortschritt zurücksetzen</button>
+    </div>
+  </section>
+
+  <!-- Garderobe / Kleiderwahl -->
+  <section class="panel hidden" id="garde">
+    <div class="card">
+      <div class="eyebrow">GARDEROBE</div>
+      <h2 id="gardeTitle">WAS ZIEHST DU AN?</h2>
+      <p id="gardeNote">Die Kleiderordnung ist Werkzeug: Schwarz ist leise, der Anzug öffnet Diensttüren,
+        der Frack öffnet Absperrbänder — und heizt dir ein.</p>
+      <div class="pick" id="gardeCards"></div>
+      <button id="gardeBack" class="ghost back hidden" type="button">Zurück ins Spiel</button>
+    </div>
+  </section>
+
+  <!-- Pause -->
+  <section class="panel hidden" id="pause">
+    <div class="card">
+      <div class="eyebrow">PAUSE</div>
+      <h2>KURZE ATEMPause</h2>
+      <p>Der Vorhang wartet. Niemand hetzt dich.</p>
+      <button id="resumeBtn">WEITER&nbsp;→</button>
+      <button id="quitBtn" class="ghost" type="button">Zurück zum Titel</button>
+    </div>
+  </section>
+
+  <!-- Zusammenbruch -->
+  <section class="panel hidden" id="collapse">
+    <div class="card">
+      <div class="eyebrow">ZUSAMMENBRUCH</div>
+      <h2>DIE NERVEN SIND AUF</h2>
+      <p id="collapseText">Ein Kollege bringt dich zur Seite, jemand holt Wasser. Nach zwei Minuten geht es weiter —
+        an der letzten Speicherstelle.</p>
+      <button id="collapseBtn">WEITERMACHEN&nbsp;→</button>
+    </div>
+  </section>
+
+  <!-- Akt geschafft -->
+  <section class="panel hidden" id="reward">
+    <div class="card">
+      <div class="eyebrow" id="rewardEyebrow">AKT 1 GESCHAFFT</div>
+      <h2>BELOHNUNG: FEIERABENDBIER</h2>
+      <p>Der Aufzug fährt nach oben. Erster Stock, Probe. Und in der Hand: ein Bier, das niemand mehr
+        wegnehmen kann.</p>
+      <div id="rewardBody"></div>
+      <button id="rewardBtn">NOCHMAL&nbsp;→</button>
+      <button id="rewardQuit" class="ghost" type="button">Zum Titel</button>
+    </div>
+  </section>
+</div>
+<script>
+// Fehlersammler: hält JavaScript-Fehler fest, damit ein leeres Spielfeld nie
+// stillschweigend passiert (und Tests im Browser das prüfen können).
+window.__errors = [];
+window.addEventListener('error', (e) => window.__errors.push(String(e.message || e)));
+window.addEventListener('unhandledrejection', (e) => window.__errors.push('promise: ' + String(e.reason)));
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
