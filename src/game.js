@@ -1235,6 +1235,16 @@ export class Game {
     }
   }
 
+  zielText() {
+    const basis = this.level.ziel || '';
+    const g = this.level.goal || {};
+    if (this.level.ruhig) {
+      return this.setzen ? 'SITZEN UND ANKOMMEN' : 'DIE BANK UNTER DER LAUBE: HINSETZEN (E)';
+    }
+    if (g.applaus) return `${basis} · APPLAUS ${Math.round(this.applaus)}/${g.applaus}`;
+    return basis;
+  }
+
   buildHud() {
     return {
       akt: this.level.name,
@@ -1255,6 +1265,7 @@ export class Game {
       frackAbgelegt: this.frackAbgelegt,
       setzen: !!this.setzen,
       ruhig: !!this.level.ruhig,
+      ziel: this.zielText(),
       hint: this.hint ? this.hint.text : null,
       state: this.state,
       hasMappe: this.hasMappe,

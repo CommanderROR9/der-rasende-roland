@@ -5,6 +5,7 @@ import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { LEVELS } from './world.js';
+import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.js';
 import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
@@ -27,7 +28,7 @@ const ui = {
   walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
   grillReadout: $('#grillReadout'), gPunkte: $('#gPunkte'), gServiert: $('#gServiert'),
   gVerbrannt: $('#gVerbrannt'), gTakt: $('#gTakt'), gBpm: $('#gBpm'),
-  applaus: $('#applaus'), applausWrap: $('#applausWrap'),
+  applaus: $('#applaus'), applausWrap: $('#applausWrap'), journal: $('#journal'),
   uOhro: $('#uOhro'), uKluft: $('#uKluft'), uHitze: $('#uHitze'),
   uWetter: $('#uWetter'), uNass: $('#uNass'), uTakt: $('#uTakt'), uNerven: $('#uNerven'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
@@ -49,51 +50,18 @@ const audio = createAudio();
 // Akte der Reihe nach: jeder Akt ist ein eigenes Levelmodul.
 let aktIndex = 0;
 let LEVEL = LEVELS[0].build();
+// Das Ziel der Station hängt am Level, damit die Simulation es zeigen kann (DRR-03).
+function zielAnhaengen() { LEVEL.ziel = LEVELS[aktIndex].ziel; }
 function loadAct(i) {
   aktIndex = Math.max(0, Math.min(LEVELS.length - 1, i));
   LEVEL = LEVELS[aktIndex].build();
+  zielAnhaengen();
 }
+zielAnhaengen();
 
 // Belohnung und Fortsetzen je Akt
-const REWARDS = {
-  akt1: {
-    title: 'BELOHNUNG: FEIERABENDBIER',
-    text: 'Der Aufzug fährt nach oben, erster Stock: Probenraum. Und in der Hand ein Bier, das niemand mehr wegnehmen kann.',
-  },
-  akt2: {
-    title: 'BELOHNUNG: PAUSENBROT',
-    text: 'Hinter der Bühnentür wird es dunkel und warm. Ein Pausenbrot für die nächste Runde — und ein Nerv mehr.',
-  },
-  akt3: {
-    title: 'BELOHNUNG: KANTINENKAFFEE',
-    text: 'Lauwarm, mit Kondenswasser am Becherrand. Der Applaus hallt noch im Park, '
-      + 'und für einen Moment ist der Frack gar nicht mehr so schlimm.',
-  },
-  akt5: {
-    title: 'STEHENDE OVATIONEN',
-    text: 'Der Vorhang ist gefallen und das Haus steht. Einundvierzig Jahre lang war das '
-      + 'Bühnenlicht unangenehm hell — heute Abend nicht mehr.',
-  },
-  epilog: {
-    title: 'FEIERABEND',
-    text: 'Ramona hat das Bier schon aufgemacht, der Grill ist an, und der Frack hängt im '
-      + 'Schrank der Laube. 41 Jahre. Und jetzt: Feierabend.',
-  },
-  akt4: {
-    title: 'BELOHNUNG: DER TAKTSTOCK',
-    text: 'Der Dirigent hat ihn liegen lassen. Ab jetzt liegt er im Handschuhfach, '
-      + 'zwischen Parkmünzen und einem Fahrschein von 1987.',
-  },
-  motorrad: {
-    title: 'BELOHNUNG: KUEHLE NACHTLUFT',
-    text: 'Zwei Stunden Landstrasse, ein Tunnel und kein Mensch mehr auf der Strasse. '
-      + 'Der Frack haengt trocken im Koffer, und der Hitzebalken ist auf null.',
-  },
-  cabrio: {
-    title: 'ANGEKOMMEN: OPEN-AIR-BÜHNE',
-    text: 'Motor aus, Verdeck bleibt offen. Die Bühne steht schon, der Wind hat die Noten schon einmal verteilt — Akt 3 wartet.',
-  },
-};
+// Belohnungstexte stehen bei den Stationen (src/story.js) — eine Quelle.
+const REWARDS = BELOHNUNGEN;
 function istLetzterAkt() { return aktIndex >= LEVELS.length - 1; }
 function updateActLabels() {
   if (ui.actRow) baueStationswahl();
@@ -133,7 +101,10 @@ window.addEventListener('orientationchange', () => setTimeout(fit, 120));
 // -------------------------------------------------------------------- Save --
 const SAVE_KEY = 'rasender-roland/v1';
 function loadSave() {
-  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; }
+  // Jeder Stand wird beim Lesen in die aktuelle Form gebracht: alte Stände
+  // kannten nur `act` (Index in der alten Reihenfolge), heute gilt `station`.
+  try { return migriereSave(JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
+  catch { return migriereSave({}); }
 }
 function writeSave(patch) {
   const next = { ...loadSave(), ...patch };
@@ -216,7 +187,10 @@ function onGameEvent(e) {
     writeSave({
       bestTime: best,
       bestDeckel: Math.max(save.bestDeckel || 0, s.deckel),
-      act: Math.max(save.act || 0, Math.min(LEVELS.length - 1, aktIndex + 1)),
+      // Stabile ID statt Index: die Reihenfolge darf sich ändern, ohne dass
+      // ein alter Stand auf der falschen Station landet (DRR-03).
+      station: LEVELS[Math.min(LEVELS.length - 1, aktIndex + 1)].id,
+      geschafft: { ...(save.geschafft || {}), [LEVEL.id]: true },
       [`${LEVEL.id}`]: true,
     });
     updateActLabels();
@@ -288,6 +262,7 @@ function refreshHud() {
     ui.walkReadout.classList.add('hidden');
     ui.racerReadout.classList.add('hidden');
     ui.grillReadout.classList.remove('hidden');
+    setzeJournal(null);
     const sigG = [h.punkte, h.serviert, h.verbrannt, h.takt, h.hint].join('|');
     if (sigG === hudPrev) return;
     hudPrev = sigG;
@@ -314,6 +289,7 @@ function refreshHud() {
     ui.rDist.textContent = `${Math.round(h.strecke * 100)}%`;
     ui.rTakt.textContent = String(h.bpm);
     ui.aktsub.textContent = LEVEL.name + (h.rain ? ' · REGEN' : '');
+    setzeJournal(h.ziel);
     if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
     else ui.hintbar.classList.add('hidden');
     return;
@@ -352,8 +328,21 @@ function refreshHud() {
     : (h.gustDir ? (h.gustDir > 0 ? ' · WINDSTOSS →' : ' · ← WINDSTOSS') : '');
   ui.aktsub.textContent = LEVEL.name + zusatz
     + (h.hidden ? ' · VERSTECKT' : h.slow ? ' · TEMPO HÄNGT' : h.glanz > 0.5 ? ' · GLANZALARM' : '');
+  // Journal: der eine Satz, der sagt, was jetzt zu tun ist (DRR-03).
+  setzeJournal(h.ziel);
   if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
   else ui.hintbar.classList.add('hidden');
+}
+
+/** Schreibt das Stationsziel ins HUD. Grill-Pausen zeigen kein Ziel. */
+function setzeJournal(ziel) {
+  if (!ui.journal) return;
+  const text = ziel || LEVEL.ziel || null;
+  const sig = text || '';
+  if (ui.journal.dataset.sig === sig) return;
+  ui.journal.dataset.sig = sig;
+  ui.journal.textContent = text ? `ZIEL: ${text}` : '';
+  ui.journal.classList.toggle('hidden', !text);
 }
 
 // ------------------------------------------------- Objektnamen in der Welt --
@@ -486,7 +475,15 @@ if (IS_TOUCH) ui.pad.classList.add('show');
 window.addEventListener('touchstart', () => { ui.pad.classList.add('show'); audio.resume(); }, { once: true });
 
 // Beim Start dort weitermachen, wo Roland zuletzt war.
-loadAct(Number(loadSave().act) || 0);
+/** Einen alten Spielstand einmalig in die neue Form schreiben (DRR-03). */
+function standAuffrischen() {
+  try {
+    const roh = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (roh && roh.v !== SAVE_VERSION) localStorage.setItem(SAVE_KEY, JSON.stringify(migriereSave(roh)));
+  } catch { /* privater Modus: dann eben nicht */ }
+}
+standAuffrischen();
+loadAct(stationIndex(loadSave()));
 
 // Kurzweg: wer Akt 1 geschafft hat, kann Akt 2 direkt anwählen (zum Ausprobieren
 // und Weitergeben, ohne jedes Mal die Katakomben zu spielen).
@@ -501,7 +498,7 @@ function startLevel() {
 /** Stationswahl: alle Akte und Interludien, damit nichts unerreichbar bleibt. */
 function baueStationswahl() {
   const save = loadSave();
-  const darf = save.akt1 === true || (save.act || 0) >= 1;
+  const darf = save.akt1 === true || stationIndex(save) >= 1 || (save.act || 0) >= 1;
   ui.actRow.classList.toggle('hidden', !darf);
   if (!darf || ui.actRow.childElementCount) return;
   LEVELS.forEach((l, i) => {
@@ -529,5 +526,7 @@ window.__roland = {
   get game() { return game; }, get racer() { return racer; }, get grill() { return grill; },
   get aktiv() { return grill || racer || game; },
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
+  get levelCount() { return LEVELS.length; },
+  get levelIds() { return LEVELS.map((l) => l.id); },
   loadAct, input, get scale() { return scaleNow; },
 };

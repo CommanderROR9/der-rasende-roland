@@ -11,6 +11,7 @@
 // Jede Stufe ist höchstens 32 px hoch (Sprunghöhe 36 px), damit die Route
 // in der Simulation nachweislich spielbar bleibt (siehe tests/smoke.test.mjs).
 import { TILE } from './config.js';
+import { STATIONEN } from './story.js';
 
 const W = 132; // Kacheln breit
 const H = 26;  // Kacheln hoch
@@ -292,16 +293,15 @@ export function buildAkt2() {
 /** Alle Akte an einer Stelle — die Level sind reine Daten. */
 // Stationen in Spielreihenfolge. `mode` gehört hierher, damit Werkzeuge und
 // Oberfläche eine Station einordnen können, ohne sie erst zu bauen.
-export const LEVELS = [
-  { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', mode: 'sidescroller', build: buildAkt1 },
-  { id: 'akt2', name: 'AKT 2 — DIE PROBE', mode: 'sidescroller', build: buildAkt2 },
-  { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', mode: 'racer', build: buildCabrio },
-  { id: 'akt3', name: 'AKT 3 — OPEN AIR', mode: 'sidescroller', build: buildAkt3 },
-  { id: 'akt4', name: 'AKT 4 — DER ORCHESTERGRABEN', mode: 'sidescroller', build: buildAkt4 },
-  { id: 'motorrad', name: 'INTERLUDIUM — MOTORRAD NACH HAUSE', mode: 'racer', build: buildMotorrad },
-  { id: 'akt5', name: 'AKT 5 — DIE BÜHNE', mode: 'sidescroller', build: buildAkt5 },
-  { id: 'epilog', name: 'EPILOG — DER KLEINGARTEN', mode: 'sidescroller', build: buildEpilog },
-];
+// Reihenfolge, Namen und Ziele stehen in story.js — hier hängt jede Station an
+// ihrem Levelbauer. Akt 5 (Finale) kommt vor der Motorrad-Nachtfahrt: die
+// Heimfahrt ist der echte Heimweg (Entscheidung 5.1).
+const BAUER = {
+  akt1: buildAkt1, akt2: buildAkt2, cabrio: buildCabrio, akt3: buildAkt3,
+  akt4: buildAkt4, akt5: buildAkt5, motorrad: buildMotorrad, epilog: buildEpilog,
+};
+
+export const LEVELS = STATIONEN.map((st) => ({ ...st, build: BAUER[st.id] }));
 
 // ============================================================================
 // INTERLUDIUM — CABRIO ZUM OPEN AIR

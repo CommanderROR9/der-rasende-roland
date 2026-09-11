@@ -3,9 +3,10 @@
 // Laden, Start, Umziehen, Tastatur, Rendering und Fehlerfreiheit und legt einen
 // Screenshot ab. Aufruf: node tests/browser-smoke.mjs [url]
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const URL_TO_TEST = process.argv[2] || 'http://127.0.0.1:8123/';
 // Zufallsport: ein alter, haengengebliebener Browser darf den Lauf nicht kapern
@@ -384,15 +385,23 @@ try {
   check('keine Browser-Fehler gesammelt', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
-  const shotPath = '/tmp/roland-browser.png';
+  // Screenshots gehören in den Arbeitsbereich des Projekts, nicht nach /tmp.
+  const shotDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDir, { recursive: true });
+  const shotPath = join(shotDir, 'browser-smoke.png');
   writeFileSync(shotPath, Buffer.from(shot.data, 'base64'));
   check('Screenshot geschrieben', existsSync(shotPath));
   results.push(`SCREENSHOT ${shotPath}`);
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
 
   // --- Übergang per WEITER: der blinde Fleck der alten Tests ---------------
+  // Geprüft wird, dass WEITER wirklich auf der nächsten Station landet — in
+  // jeder Reihenfolge. (Der alte Test lief nur über vier Startindizes und
+  // bestand teilweise, weil ein liegengebliebenes Simulationsobjekt noch
+  // „racer" meldete.)
   const uebergaenge = [];
-  for (const start of [1, 2, 4, 5]) {           // akt2→cabrio, cabrio→akt3, akt4→motorrad, motorrad→akt5
+  const levelIds = JSON.parse(await evaluate('JSON.stringify(window.__roland.levelIds)'));
+  for (let start = 0; start < levelIds.length - 1; start++) {
     await evaluate(`window.__roland.loadAct(${start})`);
     await evaluate("document.getElementById('startBtn').click()");
     await sleep(250);
@@ -404,14 +413,24 @@ try {
     await sleep(900);
     const zustand = JSON.parse(await evaluate(`JSON.stringify({
       akt: window.__roland.aktIndex,
-      modus: window.__roland.aktiv ? window.__roland.aktiv.hud.modus : null,
+      id: window.__roland.level.id,
+      modus: window.__roland.level.mode,
       fehler: window.__errors.length,
       panelOffen: !document.getElementById('reward').classList.contains('hidden')
     })`));
-    uebergaenge.push(`${start}->${zustand.akt}:${zustand.modus}:err${zustand.fehler}:${zustand.panelOffen ? 'offen' : 'zu'}`);
+    uebergaenge.push({
+      text: `${start}->${zustand.akt}:${zustand.id}:${zustand.modus}:err${zustand.fehler}:${zustand.panelOffen ? 'offen' : 'zu'}`,
+      erwartet: levelIds[start + 1],
+      zustand,
+    });
   }
   check('WEITER führt zuverlässig in die nächste Station (auch Interludien)',
-    uebergaenge.every((x) => /:(racer|sidescroller|grill):err0:zu$/.test(x)), uebergaenge.join(' | '));
+    uebergaenge.length === levelIds.length - 1
+      && uebergaenge.every((x, i) => x.zustand.akt === i + 1
+        && x.zustand.id === levelIds[i + 1]
+        && x.zustand.fehler === 0
+        && x.zustand.panelOffen === false),
+    uebergaenge.map((x) => x.text).join(' | '));
 
   // --- Stationswahl: alle Akte und Interludien erreichbar ------------------
   const wahl = JSON.parse(await evaluate(`JSON.stringify({
@@ -421,14 +440,18 @@ try {
   check('Stationswahl listet alle Stationen',
     wahl.sichtbar && wahl.knoepfe.length >= 8 && wahl.knoepfe.some((k) => k.includes('CABRIO')),
     JSON.stringify(wahl.knoepfe));
+  const idxVon = (wort) => wahl.knoepfe.findIndex((k) => k.toUpperCase().includes(wort));
   const fahrProbe = [];
-  for (const idx of [2, 5]) {
-    await evaluate(`window.__roland.loadAct(${idx})`);
+  for (const wort of ['CABRIO', 'MOTORRAD']) {
+    await evaluate(`window.__roland.loadAct(${idxVon(wort)})`);
     await sleep(250);
     fahrProbe.push(await evaluate(`window.__roland.level.id + ':' + (window.__roland.level.fahrzeug || 'ohne')`));
   }
-  check('Stationen 3 und 6 sind die Fahr-Interludien',
+  check('Stationswahl enthält beide Fahr-Interludien',
     fahrProbe[0] === 'cabrio:mx5' && fahrProbe[1] === 'motorrad:motorrad', fahrProbe.join(' | '));
+  check('Die Nachtfahrt ist der Heimweg (Finale vor dem Motorrad)',
+    idxVon('MOTORRAD') > idxVon('DIE BÜHNE') && idxVon('KLEINGARTEN') > idxVon('MOTORRAD'),
+    `bühn=${idxVon('DIE BÜHNE')} motorrad=${idxVon('MOTORRAD')} garten=${idxVon('KLEINGARTEN')}`);
 
   // Befund D1: Der Klick auf den Stationsknopf selbst muss die Fahrt-Interludien
   // starten. Vorher warf `for (const h of LEVEL.hints)` dort einen TypeError,
@@ -467,6 +490,26 @@ try {
       && (await evaluate("document.querySelectorAll('#actRow button').length")) >= 8);
   check('Mit Fortschritt startet das Spiel direkt in Akt 2',
     (await evaluate('window.__roland.aktIndex')) === 1);
+
+  // Save-Migration im echten Spiel (DRR-03): act=5 hieß früher „Motorrad"
+  // (Index 5 der alten Reihenfolge). Nach der Umstellung steht die Nachtfahrt
+  // an sechster Stelle — der Stand darf nicht auf der Bühne landen.
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 5 }))");
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(1600);
+  const migriert = JSON.parse(await evaluate(`JSON.stringify({
+    id: window.__roland.level.id,
+    akt: window.__roland.aktIndex,
+    gespeichert: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').station
+  })`));
+  check('Alter Spielstand landet auf der Nachtfahrt, nicht auf der Bühne',
+    migriert.id === 'motorrad' && migriert.akt === idxVon('MOTORRAD') && migriert.gespeichert === 'motorrad',
+    JSON.stringify(migriert));
+  check('Der aufgefrischte Stand steht in der neuen Form im Speicher',
+    (await evaluate("JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').v")) === 3,
+    String(await evaluate("localStorage.getItem('rasender-roland/v1')")));
+  const wahlDa = await evaluate("document.querySelectorAll('#actRow button').length");
+  check('Stationswahl ist nach dem Laden wieder da', wahlDa >= 8, `Knöpfe=${wahlDa}`);
   await evaluate("document.querySelectorAll('#actRow button')[0].click()");
   await sleep(400);
   check('Stationswahl führt zu Akt 1 und öffnet die Kleiderwahl',
@@ -765,8 +808,8 @@ try {
   check('Akt 4: auch auf dem Steg ist genug zu sehen', stegHell.helligkeit > 25, JSON.stringify(stegHell));
   check('Akt 4: Spieler laeuft im Browser', xb - xa > 60, `dx=${(xb - xa).toFixed(0)}`);
 
-  // --- Motorrad-Interludium (Nachtfahrt) ----------------------------------
-  await evaluate("window.__roland.loadAct(5)");
+  // --- Motorrad-Interludium (Nachtfahrt) — Heimweg nach dem Finale ---------
+  await evaluate(`window.__roland.loadAct(${idxVon('MOTORRAD')})`);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(1500);
   const moto = JSON.parse(await evaluate(`JSON.stringify({
@@ -792,8 +835,8 @@ try {
     nachtBild.max > 120, JSON.stringify(nachtBild));
   check('keine Fehler in der Nachtfahrt', moto.errors.length === 0, JSON.stringify(moto.errors));
 
-  // --- Akt 5 (Finale) ------------------------------------------------------
-  await evaluate("window.__roland.loadAct(6)");
+  // --- Akt 5 (Finale) — vor der Nachtfahrt --------------------------------
+  await evaluate(`window.__roland.loadAct(${idxVon('DIE BÜHNE')})`);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
   await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
@@ -812,7 +855,7 @@ try {
   check('Verfolgerspots wandern', spotA !== spotB, `${spotA} -> ${spotB}`);
 
   // --- Epilog: Kleingarten mit Ramona und Grill ----------------------------
-  await evaluate("window.__roland.loadAct(7)");
+  await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
   await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
@@ -860,6 +903,9 @@ try {
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
+  // Ausdrücklich auf Akt 1 setzen: der Abschnitt prüft die Lauf-Steuerung und
+  // darf nicht davon abhängen, wo der vorige Block den Spielstand gelassen hat.
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, station: 'akt1' }))");
   await send('Emulation.setDeviceMetricsOverride', {
     width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
   });

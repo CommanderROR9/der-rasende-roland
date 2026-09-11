@@ -6,6 +6,7 @@ import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/ra
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
 import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH, VIEW_DESKTOP } from '../src/config.js';
+import { STATIONEN, BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from '../src/story.js';
 
 const results = [];
 let failed = 0;
@@ -1863,6 +1864,49 @@ function place(game, px, py) {
   check('particle pool stays bounded', g2.particles.length <= 400, `p=${g2.particles.length}`);
   check('projectiles stay bounded', g2.projectiles.length < 40, `pr=${g2.projectiles.length}`);
   check('entity list does not leak', g2.entities.length < 60, `e=${g2.entities.length}`);
+}
+
+// ------------------------------------ STORY-GERÜST (DRR-03) -------------------
+{
+  check('Reihenfolge: Finale vor der Nachtfahrt, Garten zuletzt',
+    LEVELS.map((l) => l.id).join(' > ')
+      === 'akt1 > akt2 > cabrio > akt3 > akt4 > akt5 > motorrad > epilog',
+    LEVELS.map((l) => l.id).join(' > '));
+  check('Jede Station hat ID, Name, Modus und ein Ziel',
+    STATIONEN.every((s) => s.id && s.name && s.mode && s.ziel && s.ziel.length > 12),
+    JSON.stringify(STATIONEN.filter((s) => !s.ziel).map((s) => s.id)));
+  check('Die Ziele sind eindeutig formuliert',
+    new Set(STATIONEN.map((s) => s.ziel)).size === STATIONEN.length);
+  check('Leveldaten und Stationen teilen die Ziele',
+    LEVELS.every((l) => l.ziel === STATIONEN.find((s) => s.id === l.id).ziel));
+  check('Jede Station hat eine Belohnung',
+    STATIONEN.every((s) => BELOHNUNGEN[s.id] && BELOHNUNGEN[s.id].title));
+
+  // Migration: alte Stände kannten nur `act` (Index der ALTEN Reihenfolge).
+  const alt = [
+    [0, 'akt1'], [1, 'akt2'], [2, 'cabrio'], [3, 'akt3'],
+    [4, 'akt4'], [5, 'motorrad'], [6, 'akt5'], [7, 'epilog'],
+  ];
+  const falsch = [];
+  for (const [idx, id] of alt) {
+    const s = migriereSave({ act: idx, akt1: true });
+    if (s.station !== id) falsch.push(`act=${idx} → ${s.station} (erwartet ${id})`);
+  }
+  check('Alte Spielstände landen auf derselben Station wie vorher', falsch.length === 0, falsch.join(' | '));
+  check('Alter Index 5 zeigt weiter auf die Nachtfahrt, nicht auf das Finale',
+    stationIndex(migriereSave({ act: 5 })) === 6, String(stationIndex(migriereSave({ act: 5 }))));
+  check('Alter Index 6 zeigt auf die Bühne', migration6(), String(migration6()));
+  function migration6() { return stationIndex(migriereSave({ act: 6 })); }
+
+  // Neue Stände bleiben, unbekannte fallen auf den Anfang zurück.
+  check('Neuer Stand bleibt unverändert',
+    migriereSave({ station: 'akt4' }).station === 'akt4' && stationIndex({ station: 'akt4' }) === 4);
+  check('Unbekannte Station fällt auf Akt 1 zurück',
+    migriereSave({ station: 'gibtsnicht' }).station === 'akt1');
+  check('Leerer Stand beginnt bei Akt 1',
+    stationIndex(migriereSave({})) === 0 && migriereSave(null).station === 'akt1');
+  check('Version und Fortschrittsliste werden gesetzt',
+    migriereSave({}).v === SAVE_VERSION && JSON.stringify(migriereSave({}).geschafft) === '{}');
 }
 
 console.log(results.join('\n'));
