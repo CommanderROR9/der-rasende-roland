@@ -695,6 +695,21 @@ try {
   await key('KeyD', 'keyUp');
   await sleep(150);
   const xb = await evaluate('window.__roland.game.player.x');
+  // Befund 5: Helligkeit dort messen, wo es zaehlt (Steg), nicht am Spawn
+  await evaluate(`(() => { const g = window.__roland.game; g.player.x = 60 * 16; g.player.y = 12 * 16 - g.player.h; })()`);
+  await sleep(600);
+  const stegHell = JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game'); const g = window.__roland.game;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    let s = 0, n = 0;
+    for (let y = Math.max(0, py - 8); y < Math.min(c.height, py + 24); y++)
+      for (let x = Math.max(0, px - 14); x < Math.min(c.width, px + 16); x++) {
+        const i = (y * c.width + x) * 4; s += (d[i] + d[i + 1] + d[i + 2]) / 3; n++;
+      }
+    return JSON.stringify({ helligkeit: Math.round(s / n) });
+  })()`));
+  check('Akt 4: auch auf dem Steg ist genug zu sehen', stegHell.helligkeit > 25, JSON.stringify(stegHell));
   check('Akt 4: Spieler laeuft im Browser', xb - xa > 60, `dx=${(xb - xa).toFixed(0)}`);
 
   // --- Motorrad-Interludium (Nachtfahrt) ----------------------------------

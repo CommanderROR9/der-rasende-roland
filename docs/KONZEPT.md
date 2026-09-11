@@ -156,3 +156,24 @@ braucht nur die vorhandene Takt-Engine plus ein paar Sprites.
 
 Die Verdrahtung ist angelegt: Level sind reine Datenmodule, neue Akte werden im
 Register `LEVELS` ergänzt; Fahr-Abschnitte setzen `mode: 'racer'`.
+
+
+## Umsetzungsstand (ehrlich, Stand jetzt)
+
+**Gebaut und spielbar:** Akt 1 (Katakomben), Akt 2 (Probe), Interludium Cabrio,
+Akt 3 (Open Air mit Wetterzyklus), Akt 4 (Orchestergraben mit Dunkelheit,
+Versenkungen und Souffleurkasten), Interludium Motorrad (Nachtfahrt), Akt 5
+(Bühne mit Applaus, Verfolgerspots und Frack-Off als Lösung), Epilog Kleingarten
+mit Ramona und dem Bratwurst-Grill-Minispiel.
+
+**Gebaut, aber schlanker als hier ursprünglich beschrieben:**
+- Sammelobjekte sind Bierdeckel, Ohropax, Wasserflasche, Notenmappe und **Brezel**
+  (Nervennahrung). Brezel, Kantinenkaffee, Windschutzklammern, Schlüssel und
+  Rasenmäher aus der Ideenliste gibt es **nicht**.
+- Die „Strichliste" (41 Striche) ist nicht implementiert; die Akt-Bilanz läuft über
+  Zeit, Bierdeckel, Takt-Treffer und Nerven.
+- Einen **Sicherheitsdienst** als Gegner gibt es nicht.
+- Der **Gartenzwerg mit Geige** im Epilog fehlt noch.
+
+**Ausdrücklich offen:** Epilog-Inventar und Gartenzwerg, Strichliste,
+Sicherheitsdienst-Jagd im Keller, Motorrad-Tunnel mit Gischt als eigenes Wetter.

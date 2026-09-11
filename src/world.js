@@ -603,6 +603,9 @@ export function buildAkt4() {
   e('item', 62, 12, { item: 'bierdeckel' });
   gleam(62, 11, 4);
   e('checkpoint', 58, 12, { id: 'steg' });
+  gleam(62, 12, 4);   // Steg ausleuchten: hier zaehlt das Timing
+  gleam(76, 12, 4);
+  gleam(90, 12, 4);
   lamp(70, 9);
   gleam(72, 11, 4);
   gates.push({ tx: 82, ty: 9, tw: 1, th: 3, need: 'frack', open: false });

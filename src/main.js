@@ -267,8 +267,19 @@ function frame(now) {
     if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
   }
 }
+// Die Knoepfe heissen in jedem Modus anders — sonst luegen sie (Review Befund 8).
+function setzeKnopfBeschriftung() {
+  const modus = grill ? 'grill' : racer ? 'racer' : 'lauf';
+  const jump = modus === 'lauf' ? 'SPRUNG' : '—';
+  const akt = modus === 'racer' ? 'BREMSE' : modus === 'grill' ? 'WENDEN' : 'TRITT';
+  if (ui.btnJump.textContent !== jump) ui.btnJump.textContent = jump;
+  if (ui.btnAction.textContent !== akt) ui.btnAction.textContent = akt;
+  ui.btnJump.style.opacity = modus === 'lauf' ? '' : '0.3';
+  ui.btnJump.style.pointerEvents = modus === 'lauf' ? '' : 'none';
+}
 function refreshHud() {
   const a = aktiv();
+  setzeKnopfBeschriftung();
   if (!a) return;
   const h = a.hud;
   if (h.modus === 'grill') {
