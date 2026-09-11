@@ -404,7 +404,7 @@ export class Game {
         this.gustTimer -= dt;
         p.vx += this.gustDir * 62 * dt;
       }
-      if (Math.random() < dt * 2.2 && this.blaetter.length < 6) {
+      if (Math.random() < dt * 3.4 && this.blaetter.length < 8) {
         this.blaetter.push({
           x: this.gustDir > 0 ? p.x - 120 : p.x + 120,
           y: p.y - 10 - Math.random() * 26,

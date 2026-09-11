@@ -517,12 +517,19 @@ try {
     if (w === 'wind') gewechselt = w;
   }
   check('Wetter wechselt im Browser', gewechselt === 'wind', String(gewechselt));
+  // Blätter erscheinen nicht im selben Moment wie der Wind — kurz nachsehen
+  let maxBlaetter = 0;
+  for (let i = 0; i < 12 && maxBlaetter === 0; i++) {
+    await sleep(350);
+    maxBlaetter = await evaluate('window.__roland.game.blaetter.length');
+  }
+  check('Wind bringt Notenblätter', maxBlaetter > 0, `max ${maxBlaetter} Blätter`);
   const windProbe = JSON.parse(await evaluate(`JSON.stringify({
-    blaetter: window.__roland.game.blaetter.length,
+    wetter: window.__roland.game.hud.wetter,
     dom: document.getElementById('wetter').textContent,
     errors: window.__errors
   })`));
-  check('Wind bringt Notenblätter', windProbe.blaetter > 0, JSON.stringify(windProbe));
+  check('Wetteranzeige steht auf WIND', windProbe.dom === 'WIND', JSON.stringify(windProbe));
   check('keine Fehler in Akt 3', windProbe.errors.length === 0, JSON.stringify(windProbe.errors));
   await evaluate("window.__roland.loadAct(0)");
 
