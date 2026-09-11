@@ -1567,18 +1567,24 @@ export class Game {
       }
       const dirR = pr.vx >= 0 ? 1 : -1;
       const cx = x + pr.w / 2, cy = y + pr.h / 2;
-      // Drei nach vorn offene Bögen: eine sichtbare Schallwelle.
-      ctx.strokeStyle = 'rgba(255,208,138,0.85)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 3; i++) {
-        const r = 3 + i * 3;
-        const mid = dirR > 0 ? 0 : Math.PI;
-        ctx.beginPath();
-        ctx.arc(cx - dirR * 4, cy, r, mid - 0.8, mid + 0.8);
-        ctx.stroke();
+      // Schallwelle, zweimal gezeichnet: erst dick und dunkel als Rand, dann hell.
+      // Ohne den Rand verschwindet sie im hellen Himmel (Akt 3).
+      for (const [, breite, farbe] of [[0, 4, 'rgba(10,7,14,0.9)'], [1, 1.5, '#ffd08a']]) {
+        ctx.lineWidth = breite;
+        ctx.strokeStyle = farbe;
+        for (let i = 0; i < 3; i++) {
+          const r = 3 + i * 3;
+          const mid = dirR > 0 ? 0 : Math.PI;
+          ctx.beginPath();
+          ctx.arc(cx - dirR * 4, cy, r, mid - 0.8, mid + 0.8);
+          ctx.stroke();
+        }
       }
-      ctx.fillStyle = '#ffd08a';
-      ctx.fillRect(cx - 1, cy - 1, 2, 2);
+      // Kern mit Rand, damit auch der Punkt lesbar bleibt
+      ctx.fillStyle = 'rgba(10,7,14,0.9)';
+      ctx.fillRect(cx - 3, cy - 3, 6, 6);
+      ctx.fillStyle = '#fff2cf';
+      ctx.fillRect(cx - 2, cy - 2, 4, 4);
     }
   }
 

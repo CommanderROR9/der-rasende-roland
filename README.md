@@ -148,15 +148,17 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 244 headless Checks
+tests/smoke.test.mjs 246 headless Checks
+tests/diag.mjs      Einzelabfrage im Browser (Diagnose bei Fehlermeldungen)
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 244 headless Checks: node tests/smoke.test.mjs
+npm test                        # 246 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 94 Checks in echtem Chromium
+npm run browser                 # 98 Checks in echtem Chromium
+node tests/diag.mjs <url> <akt>  # Einzelabfrage: Zustand, Bewegung, Helligkeit
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 

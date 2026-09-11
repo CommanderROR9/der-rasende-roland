@@ -638,6 +638,7 @@ export function buildAkt4() {
     setting: 'graben',
     dark: true,
     bpm: 96,
+    w: W, h: H,
     grid, spawns, gates, lights, gleams, alcoves, hints, shelters, elevators, spooks, takts,
     deckelTotal: spawns.filter((sp) => sp.item === 'bierdeckel').length,
     goal,

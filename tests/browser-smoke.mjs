@@ -531,6 +531,32 @@ try {
   })`));
   check('Wetteranzeige steht auf WIND', windProbe.dom === 'WIND', JSON.stringify(windProbe));
 
+  // Die Schallwelle muss sich vom hellen Himmel abheben (Roland-Befund)
+  await evaluate("window.__roland.game.wetterIdx = 0; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'sonne'");
+  await sleep(350);
+  const kontrast = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const c = document.getElementById('game');
+    const p = g.player;
+    g.projectiles.push({ kind: 'sound', x: p.x + 40, y: p.y + 4, w: 12, h: 8, vx: 90, life: 3, dmg: 1 });
+    g.draw(c.getContext('2d'));
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const sx = Math.round(p.x + 40 - g.cam.x), sy = Math.round(p.y + 4 - g.cam.y);
+    let mn = 999, mx = -1;
+    for (let y = sy - 8; y < sy + 16; y++) {
+      for (let x = sx - 8; x < sx + 22; x++) {
+        if (x < 0 || y < 0 || x >= c.width || y >= c.height) continue;
+        const i = (y * c.width + x) * 4;
+        const h = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        if (h < mn) mn = h;
+        if (h > mx) mx = h;
+      }
+    }
+    return JSON.stringify({ min: Math.round(mn), max: Math.round(mx) });
+  })()`));
+  check('Schallwelle hebt sich vom Himmel ab', kontrast.max - kontrast.min > 60, JSON.stringify(kontrast));
+  await evaluate("window.__roland.game.projectiles.length = 0");
+
   // Himmel statt Höhlenwand: obere Bildhälfte von Akt 3 gegen Akt 1 messen
   const bildOben = `(() => {
     const c = document.getElementById('game');
@@ -588,6 +614,42 @@ try {
   const liftB = await evaluate("window.__roland.game.entities.find((e) => e.kind === 'lift').y");
   check('Akt 4: Versenkung faehrt im Browser', liftA !== liftB, `${liftA} -> ${liftB}`);
   check('keine Fehler im Graben', (await evaluate('JSON.stringify(window.__errors)')) === '[]');
+
+  // Der NaN-Kamerafehler war fuer die frueheren Checks unsichtbar: jetzt wird die
+  // Welt direkt um den Spieler gemessen und Bewegung geprueft.
+  const kam = JSON.parse(await evaluate(`JSON.stringify({
+    camX: window.__roland.game.cam.x, camY: window.__roland.game.cam.y,
+    w: window.__roland.level.w, h: window.__roland.level.h
+  })`));
+  check('Akt 4: Levelmasse und Kamera sind gueltig',
+    Number.isFinite(kam.camX) && Number.isFinite(kam.camY) && kam.w > 0 && kam.h > 0,
+    JSON.stringify(kam));
+
+  const umSpieler = JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game');
+    const g = window.__roland.game;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    let s = 0, n = 0;
+    for (let y = Math.max(0, py - 12); y < Math.min(c.height, py + 26); y++) {
+      for (let x = Math.max(0, px - 14); x < Math.min(c.width, px + 16); x++) {
+        const i = (y * c.width + x) * 4;
+        s += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        n++;
+      }
+    }
+    return JSON.stringify({ helligkeit: Math.round(s / Math.max(1, n)) });
+  })()`));
+  check('Akt 4: die Welt um den Spieler ist sichtbar', umSpieler.helligkeit > 25,
+    JSON.stringify(umSpieler));
+
+  const xa = await evaluate('window.__roland.game.player.x');
+  await key('KeyD', 'keyDown');
+  await sleep(1300);
+  await key('KeyD', 'keyUp');
+  await sleep(150);
+  const xb = await evaluate('window.__roland.game.player.x');
+  check('Akt 4: Spieler laeuft im Browser', xb - xa > 60, `dx=${(xb - xa).toFixed(0)}`);
 
   // --- Motorrad-Interludium (Nachtfahrt) ----------------------------------
   await evaluate("window.__roland.loadAct(5)");

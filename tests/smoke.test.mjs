@@ -1104,6 +1104,38 @@ function place(game, px, py) {
   check('Akt 3: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
+// ---------------------------------------------- Levelmasse und Kamera -------
+{
+  const bauer = {
+    akt1: buildAkt1, akt2: buildAkt2, akt3: buildAkt3, akt4: buildAkt4,
+  };
+  const ohneMasse = [];
+  const krummeKamera = [];
+  for (const [id, build] of Object.entries(bauer)) {
+    const lv = build();
+    if (!(lv.w > 0) || !(lv.h > 0)) ohneMasse.push(id);
+    const i = createInput(null);
+    const g = new Game({
+      level: lv, input: i,
+      audio: { play() {}, engine() {}, engineOff() {} },
+      events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+    });
+    g.reset('schwarz');
+    i.setKey('right', true);
+    for (let k = 0; k < 90; k++) {
+      g.update(1 / 60);
+      if (g.state === 'paused') g.resume();   // Kleiderstaender anhalten ist kein Fehler
+    }
+    if (!Number.isFinite(g.cam.x) || !Number.isFinite(g.cam.y)) {
+      krummeKamera.push(`${id} (${g.cam.x}/${g.cam.y})`);
+    }
+    // Und der Spieler muss sich wirklich bewegt haben
+    if (!(g.player.x > 60)) krummeKamera.push(`${id} steht (x=${g.player.x.toFixed(0)})`);
+  }
+  check('jedes Level liefert Breite und Hoehe', ohneMasse.length === 0, ohneMasse.join(', '));
+  check('Kamera bleibt endlich und der Spieler laeuft', krummeKamera.length === 0, krummeKamera.join(' | '));
+}
+
 // ============================================================ AKT 4: GRABEN ===
 {
   const lv = buildAkt4();
