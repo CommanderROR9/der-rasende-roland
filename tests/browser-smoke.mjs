@@ -104,7 +104,7 @@ try {
   await send('Runtime.enable');
   await send('Log.enable');
   await send('Page.enable');
-  await send('Page.navigate', { url: URL_TO_TEST });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
   await sleep(2200);
 
   check('Seite geladen', (await evaluate('document.readyState')) === 'complete');
@@ -402,7 +402,7 @@ try {
   await evaluate("document.getElementById('quitBtn') ? 0 : 0");
   await new Promise((r) => setTimeout(r, 50));
   await evaluate("window.__roland.loadAct(0)");
-  await send('Page.navigate', { url: URL_TO_TEST });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
   await sleep(1600);
   check('Mit Fortschritt erscheint der Akt-Wechsler',
     (await evaluate("document.getElementById('jumpActBtn').classList.contains('hidden')")) === false);
@@ -790,7 +790,7 @@ try {
     width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
   });
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  await send('Page.navigate', { url: URL_TO_TEST });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
   await sleep(2000);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
