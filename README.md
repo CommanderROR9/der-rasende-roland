@@ -22,6 +22,10 @@ nächsten Akt ein Nerv mehr.
 Zwischendurch wechselt das Tempo: unterwegs gibt der Dirigent **Allegro** und später
 **Andante** vor, sichtbar im HUD und angesagt als Meldung.
 
+**Fortschritt:** Nach Akt 1 startet das Spiel beim nächsten Mal direkt in Akt 2. Im
+Titelbild gibt es dafür einen Wechsler („AKT 1 NOCHMAL SPIELEN"), und der Startknopf
+setzt dort fort, wo man zuletzt war. `Fortschritt zurücksetzen` löscht das.
+
 **Steuerung**
 
 | Taste | Wirkung |

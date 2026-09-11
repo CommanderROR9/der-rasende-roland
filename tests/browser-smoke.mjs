@@ -111,6 +111,8 @@ try {
   check('Titel gesetzt', (await evaluate('document.title')) === 'Der Rasende Roland');
   check('Fehlersammler installiert', Array.isArray(await evaluate('window.__errors')));
   check('Spielmodul geladen', (await evaluate('typeof window.__roland')) === 'object');
+  check('Kurzweg zu Akt 2 ist zu Beginn verborgen',
+    (await evaluate("document.getElementById('jumpActBtn').classList.contains('hidden')")) === true);
   const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
   check('Standard-Schwierigkeit ist gemütlich', diffStart.includes('GEMÜTLICH'), diffStart);
   check('Startübersicht sichtbar',
@@ -355,6 +357,25 @@ try {
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
 
   // --- Akt 2 im echten Browser --------------------------------------------
+  // Nach Akt 1 erscheint der Kurzweg (hier über den Spielstand simuliert)
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 1 }))");
+  await evaluate("document.getElementById('quitBtn') ? 0 : 0");
+  await new Promise((r) => setTimeout(r, 50));
+  await evaluate("window.__roland.loadAct(0)");
+  await send('Page.navigate', { url: URL_TO_TEST });
+  await sleep(1600);
+  check('Mit Fortschritt erscheint der Akt-Wechsler',
+    (await evaluate("document.getElementById('jumpActBtn').classList.contains('hidden')")) === false);
+  check('Mit Fortschritt startet das Spiel direkt in Akt 2',
+    (await evaluate('window.__roland.aktIndex')) === 1);
+  await evaluate("document.getElementById('jumpActBtn').click()");
+  await sleep(400);
+  check('Wechsler führt zurück zu Akt 1 und öffnet die Kleiderwahl',
+    (await evaluate("document.getElementById('garde').classList.contains('hidden')")) === false
+    && (await evaluate("window.__roland.aktIndex")) === 0);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(500);
+
   await evaluate("window.__roland.loadAct(1)");
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
