@@ -28,6 +28,8 @@ export const PAL = {
   p: '#7a4b8a',
   k: '#20202a',
   K: '#3a3a4a',
+  L: '#6e4423',
+  M: '#a97540',
   e: '#2b3b2a',
 };
 
@@ -104,14 +106,14 @@ export const DIFFICULTY = {
     note: 'empfohlen: langsame Gegner, viel Schonfrist',
     enemySpeed: 0.55, fireEvery: 3, fireRange: 0.55, shotSpeed: 0.62, aimTime: 0.75,
     invuln: 2.0, trittWindow: 0.20, tenorSlow: 0.26, tenorRange: 96, kofferSpeed: 0.6,
-    sopranWind: 1.6, sopranRange: 0.48, sopranDmg: 1,
+    sopranWind: 1.6, sopranRange: 0.48, sopranDmg: 1, dirigentEvery: 3,
   },
   zuegig: {
     id: 'zuegig', label: 'ZÜGIG',
     note: 'mehr Druck, weniger Schonfrist',
     enemySpeed: 0.85, fireEvery: 2, fireRange: 0.6, shotSpeed: 0.85, aimTime: 0.55,
     invuln: 1.5, trittWindow: 0.16, tenorSlow: 0.38, tenorRange: 116, kofferSpeed: 0.85,
-    sopranWind: 1.2, sopranRange: 0.6, sopranDmg: 2,
+    sopranWind: 1.2, sopranRange: 0.6, sopranDmg: 2, dirigentEvery: 2,
   },
 };
 

@@ -1,6 +1,6 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1 } from '../src/world.js';
+import { buildAkt1, buildAkt2, LEVELS } from '../src/world.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
 import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH } from '../src/config.js';
@@ -509,7 +509,7 @@ function place(game, px, py) {
   // Sprungsteuerung des Bots: halten (sonst wird der Sprung abgeschnitten),
   // danach zwingend ein paar Frames loslassen — sonst gibt es keine neue
   // Sprungkante und der Bot hüpft nie wieder.
-  let jumpHold = 0, jumpRelease = 0;
+  let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
     const [wx, row] = stepItem.wp;
@@ -521,12 +521,28 @@ function place(game, px, py) {
     for (let i = 0; i < 14 * 60; i++) {
       const p = game.player;
       const d = tx - (p.x + p.w / 2);
-      input.setKey('right', d > 3);
-      input.setKey('left', d < -3);
+      // Stehen wir schon über dem Ziel, aber zu hoch, müssen wir zur nächsten
+      // Kante laufen, um abzusteigen — sonst steht der Bot still und kommt nie runter.
+      const zielTiefer = feetY > p.y + p.h + 6;
+      const amZielX = Math.abs(d) < 12;
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      if (amZielX && zielTiefer) {
+        // Zu hoch über dem Ziel: stur in der letzten Laufrichtung weiter, bis
+        // eine Kante kommt. Die Zielkorrektur darf die Richtung nicht verwischen,
+        // sonst pendelt der Bot an der Kante hin und her.
+        richtung = letzteRichtung;
+      } else if (richtung !== 0) {
+        letzteRichtung = richtung;
+      }
+      input.setKey('right', richtung > 0);
+      input.setKey('left', richtung < 0);
       const higher = feetY < p.y + p.h - 8;
       // Sprung auch über gleichhohe Lücken hinweg
       const footRow = Math.floor((p.y + p.h + 1) / TILE);
-      const holeAhead = game.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0;
+      // Über eine Kante nur springen, wenn das Ziel nicht tiefer liegt —
+      // sonst hüpft der Bot gegen die eigene Abstiegsroute an.
+      const holeAhead = feetY <= p.y + p.h + 4
+        && game.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0;
       // Kein Fortschritt mehr (Hindernis im Weg)? Dann drüberspringen.
       if (Math.abs(d) < bestDist - 4) { bestDist = Math.abs(d); noProgress = 0; } else noProgress++;
       const needJump = higher || holeAhead || noProgress > 20;
@@ -564,6 +580,150 @@ function place(game, px, py) {
     game.gates.find((g) => g.need === 'frack').open === true);
   check('Notenmappe is collected on the way', game.hasMappe === true);
   check('Bierdeckel are collected on the way', game.deckel >= 2, `deckel=${game.deckel}`);
+}
+
+// ============================================================== AKT 2 ========
+{
+  const level = buildAkt2();
+  check('Akt 2 existiert als eigenes Levelmodul', level.id === 'akt2' && level.w >= 120);
+  check('Akt 2: fünf Bierdeckel', level.deckelTotal === 5, `n=${level.deckelTotal}`);
+  check('Akt 2: Bühnentür verlangt den Frack',
+    level.gates.length === 1 && level.gates[0].need === 'frack');
+  check('Akt 2: Tür blockiert solange sie zu ist',
+    level.grid[level.gates[0].ty + level.gates[0].th - 1][level.gates[0].tx] === 1);
+  check('Akt 2: zwei Taktwechsel vorgesehen', (level.takts || []).length === 2);
+  check('Akt 2: Dirigent, Piccolo-Duo, Sopran, Tenor, Koffer vorhanden',
+    ['dirigent', 'piccolo', 'sopran', 'tenor', 'koffer'].every((k) => level.spawns.some((s) => s.kind === k)));
+  check('Akt 2: Beleuchtungsbrücke als oberer Weg',
+    level.grid[14].slice(54, 97).every((v) => v === 1));
+  check('Akt 2: über der Brücke ist Luft zum Springen',
+    [11, 12, 13].every((y) => level.grid[y].slice(56, 94).every((v) => v === 0)));
+  check('Akt 2: Bühnentür sperrt die volle Ganghöhe (kein Überspringen)',
+    level.gates[0].th >= 3 && level.grid[22][112] === 1 && level.grid[24][112] === 1);
+  check('Akt 2: Pulte sind in Sprunghöhe gestaffelt (32 px)',
+    level.grid[23][30] === 2 && level.grid[21][35] === 2 && level.grid[19][40] === 2
+    && level.grid[17][45] === 2 && level.grid[16][50] === 2);
+  check('Akt 2: Level steht im Register',
+    LEVELS.length === 2 && LEVELS[1].id === 'akt2' && typeof LEVELS[1].name === 'string');
+}
+
+// Der Dirigent: Taktstock im Bogen, im Takt getroffen verliert er ihn
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  const dir = game.entities.find((e) => e.kind === 'dirigent');
+  check('Dirigent steht im Saal', !!dir);
+  place(game, dir.x + 90, 25 * TILE - PHYS.playerH);
+  let baton = null;
+  for (let i = 0; i < 60 * 12 && !baton; i++) {
+    game.update(1 / 60);
+    baton = game.projectiles.find((p) => p.kind === 'baton') || null;
+  }
+  check('Dirigent wirft Taktstöcke', !!baton, 'kein Wurf in 12s');
+  if (baton) {
+    check('Taktstock fliegt im Bogen (steigt zuerst)', baton.vy < 0 || baton.y > 0);
+    const y0 = baton.y, t0 = game.time;
+    for (let i = 0; i < 45; i++) game.update(1 / 60);
+    check('Taktstock fällt danach wieder', y0 > 0 && game.time > t0);
+  }
+  // Im Takt getroffen: verliert den Taktstock
+  const dir2 = game.entities.find((e) => e.kind === 'dirigent');
+  place(game, dir2.x - 20, dir2.y + dir2.h - PHYS.playerH);
+  game.beatPhase = 0.02;
+  game.input.setKey('action', true);
+  game.update(1 / 60);
+  check('Beton-Tritt erreicht den Dirigenten', dir2.stun > 0, `stun=${dir2.stun}`);
+}
+
+// Taktwechsel beim Durchschreiten
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  check('Akt 2 startet mit 100 bpm', game.bpm === 100, `bpm=${game.bpm}`);
+  place(game, 40 * TILE + 10, 25 * TILE - PHYS.playerH);
+  step(game, 0.3);
+  check('Taktwechsel greift beim Durchschreiten', game.bpm !== 100, `bpm=${game.bpm}`);
+  check('Wechsel wird angesagt',
+    !!game.hud.hint && /BPM/.test(game.hud.hint), `hint=${game.hud.hint}`);
+  check('gemütlich führt den Wechsel sanfter aus', game.bpm < 132 && game.bpm > 100, `bpm=${game.bpm}`);
+}
+
+// Durchspiel-Bot für Akt 2 (oberer Weg über die Pulte, dann über die Brücke)
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  game.maxNerves = 99; game.nerves = 99;
+  const route = [
+    { wp: [10, 25] },
+    { wp: [31, 23] }, { wp: [37, 21] }, { wp: [42, 19] }, { wp: [47, 17] }, { wp: [52, 16] },
+    { wp: [58, 14] }, { wp: [94, 14] },
+    { wp: [60, 14] },                       // zurück über die Brücke
+    { wp: [49, 25] },                       // an der Kante hinunter auf den Saalboden
+    { wp: [60, 25] }, { wp: [100, 25] },    // durch den Saal zur Hinterbühne
+    { wp: [108, 25] },
+    { outfit: 'frack' },
+    { wp: [116, 25] }, { wp: [120, 25] },   // genau auf die Bühnentür zu
+  ];
+  const failures = [];
+  let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
+  for (const stepItem of route) {
+    if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    const [wx, row] = stepItem.wp;
+    const tx = wx * TILE + 8;
+    const feetY = row * TILE;
+    let ok = false, bestDist = Infinity, noProgress = 0;
+    for (let i = 0; i < 16 * 60; i++) {
+      const p = game.player;
+      const d = tx - (p.x + p.w / 2);
+      // Stehen wir schon über dem Ziel, aber zu hoch, müssen wir zur nächsten
+      // Kante laufen, um abzusteigen — sonst steht der Bot still und kommt nie runter.
+      const zielTiefer = feetY > p.y + p.h + 6;
+      const amZielX = Math.abs(d) < 12;
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      if (amZielX && zielTiefer) {
+        // Zu hoch über dem Ziel: stur in der letzten Laufrichtung weiter, bis
+        // eine Kante kommt. Die Zielkorrektur darf die Richtung nicht verwischen,
+        // sonst pendelt der Bot an der Kante hin und her.
+        richtung = letzteRichtung;
+      } else if (richtung !== 0) {
+        letzteRichtung = richtung;
+      }
+      input.setKey('right', richtung > 0);
+      input.setKey('left', richtung < 0);
+      const higher = feetY < p.y + p.h - 8;
+      const footRow = Math.floor((p.y + p.h + 1) / TILE);
+      // Über eine Kante nur springen, wenn das Ziel nicht tiefer liegt —
+      // sonst hüpft der Bot gegen die eigene Abstiegsroute an.
+      const holeAhead = feetY <= p.y + p.h + 4
+        && game.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0;
+      if (Math.abs(d) < bestDist - 4) { bestDist = Math.abs(d); noProgress = 0; } else noProgress++;
+      const needJump = higher || holeAhead || noProgress > 20;
+      if (jumpHold > 0) { input.setKey('jump', true); jumpHold -= 1; if (jumpHold === 0) jumpRelease = 3; }
+      else if (jumpRelease > 0) { input.setKey('jump', false); jumpRelease -= 1; }
+      else if (p.onGround && needJump) { jumpHold = 16; input.setKey('jump', true); jumpHold -= 1; }
+      else input.setKey('jump', false);
+      game.update(1 / 60);
+      if (game.state === 'paused') game.resume();
+      if (game.state === 'collapse') game.respawnFromCheckpoint();
+      if (game.state === 'complete') { ok = true; break; }
+      if (Math.abs(d) < 8 && Math.abs((p.y + p.h) - feetY) < 18 && p.onGround) { ok = true; break; }
+    }
+    if (!ok) {
+      const p = game.player;
+      failures.push(`${wx}/${row} (x=${p.x.toFixed(0)} fuß=${(p.y + p.h).toFixed(0)})`);
+    }
+  }
+  check('Akt 2: Bot läuft die gebaute Route', failures.length === 0, failures.join(' | '));
+  check('Akt 2: Route endet an der Bühnentür', game.state === 'complete', `state=${game.state}`);
+  check('Akt 2: Frack öffnet die Bühnentür',
+    game.gates[0].open === true || game.state === 'complete');
+  check('Akt 2: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
 // ------------------------------------------------------ Pause & Langzeitlauf --

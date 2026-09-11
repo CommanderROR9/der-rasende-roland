@@ -119,11 +119,19 @@ Browser-Durchlauf.
 
 ## Status
 
-**Fertig:** Akt 1 (Katakomben) vollständig spielbar — Garderobe, Kletterroute,
-Diensttür, Archiv, Absperrband, Materialaufzug; Kleiderwechsel, Taktmechanik mit
-Beton-Tritt, Hitze und Frack-Off, Piccolo, Sopran, Tenor, Instrumentenkoffer,
-morsche Notenblätter, Ohropax, Bierdeckel, Speicherpunkte, Pause, Touch-Steuerung,
-Aktabschluss mit Feierabendbier.
+**Fertig:**
 
-**Geplant:** Akte 2–8 und die beiden Fahr-Interludien (siehe Phasen P3–P6 im
-Umsetzungsplan). Die Verdrahtung dafür ist angelegt: Level sind reine Datenmodule.
+- **Akt 1 (Katakomben):** Garderobe, Kletterroute, Diensttür, Archiv, Absperrband,
+  Materialaufzug; Kleiderwechsel, Taktmechanik mit Beton-Tritt, Hitze und Frack-Off,
+  Piccolo, Sopran, Tenor, Instrumentenkoffer, morsche Notenblätter, Ohropax,
+  Bierdeckel, Speicherpunkte, Pause, Touch-Steuerung, Feierabendbier.
+- **Akt 2 (Die Probe):** Probenraum mit zwei Wegen (unten zwischen den Stühlen, oben
+  über Notenpulte und Beleuchtungsbrücke), **Dirigent** mit Bogenwurf-Taktstöcken,
+  **Taktwechsel** (Allegro/Andante) unterwegs, Frack-Gate an der Bühnentür,
+  Belohnung Pausenbrot und ein Nerv mehr für den Folgeakt.
+- Beide Akte hängen aneinander: Aktabschluss führt über die Garderobe in den nächsten
+  Akt, der Fortschritt bleibt gespeichert.
+
+**Geplant:** Cabrio-Interludium (Pseudo-3D), Akte 3–8, Motorrad-Interludium, Finale,
+Epilog. Die Verdrahtung ist angelegt: Level sind reine Datenmodule, neue Akte werden
+im Register `LEVELS` ergänzt.

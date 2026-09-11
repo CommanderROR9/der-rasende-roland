@@ -129,7 +129,11 @@ export function buildAkt1() {
   e('sopran', 125, 13, { dir: -1 });
 
   // Ziel: Materialaufzug nach oben
-  const goal = { x: 127 * TILE, y: 10 * TILE, w: TILE, h: 3 * TILE };
+  const goal = {
+    x: 127 * TILE, y: 10 * TILE, w: TILE, h: 3 * TILE,
+    name: 'MATERIALAUFZUG', need: 'mappe',
+    locked: 'DER AUFZUG RÜHRT SICH NICHT. OHNE NOTENMAPPE FÄHRT ER NICHT.',
+  };
 
   // Kontexttips
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
@@ -156,3 +160,135 @@ export function buildAkt1() {
     deckelTotal: spawns.filter((s) => s.kind === 'item' && s.item === 'bierdeckel').length,
   };
 }
+
+// ============================================================================
+// AKT 2 — DIE PROBE
+// Aufzug raus, durch den Flur in den Probenraum. Der Dirigent wirft Taktstöcke,
+// im Saal gibt es zwei Wege: unten zwischen den Stühlen (Bodenkampf) oder oben
+// über Notenpulte und Beleuchtungsbrücke (klettern). Zum Schluss führt nur der
+// Frack durch die Bühnentür.
+// ============================================================================
+export function buildAkt2() {
+  const W2 = 140;
+  const H2 = 26;
+  const grid = [];
+  for (let y = 0; y < H2; y++) grid.push(new Array(W2).fill(1));
+
+  const spawns = [];
+  const gates = [];
+  const lights = [];
+  const alcoves = [];
+  const hints = [];
+  const takts = [];
+
+  const carve = (x, y, w, h) => {
+    for (let j = y; j < y + h; j++) {
+      for (let i = x; i < x + w; i++) {
+        if (j >= 0 && j < H2 && i >= 0 && i < W2) grid[j][i] = 0;
+      }
+    }
+  };
+  const rect = (x, y, w, h, kind) => {
+    const v = kind === '=' ? 2 : kind === 'x' ? 3 : 1;
+    for (let j = y; j < y + h; j++) {
+      for (let i = x; i < x + w; i++) {
+        if (j >= 0 && j < H2 && i >= 0 && i < W2) grid[j][i] = v;
+      }
+    }
+  };
+  const e = (kind, tx, surfaceRow, extra = {}) => spawns.push({ kind, tx, walkRow: surfaceRow - 1, ...extra });
+  const lamp = (tx, ty) => lights.push({ x: (tx - 2) * TILE, y: ty * TILE, w: 5 * TILE, h: 4 * TILE });
+  const alcove = (tx, ty, w = 2) => alcoves.push({ x: tx * TILE, y: ty * TILE, w: w * TILE, h: TILE });
+  const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
+
+  // ---------------------------------------------------------------- Hohlräume --
+  carve(1, 21, 24, 4);        // Flur x1..24
+  carve(25, 11, 72, 14);      // Probensaal x25..96 (hoch genug für die Brücke)
+  carve(97, 21, 28, 4);       // Hinterbühne x97..124
+
+  // ------------------------------------------------------- Bühne und Brücke --
+  rect(78, 19, 19, 1);        // Bühnenboden x78..96, Kante 304
+  rect(73, 23, 3, 1, '=');    // Auftrittstufe 1, Kante 368
+  rect(76, 21, 2, 1, '=');    // Auftrittstufe 2, Kante 336
+  rect(54, 14, 43, 1);        // Beleuchtungsbrücke x54..96, Kante 224
+  rect(88, 17, 3, 1, '=');    // Aufstieg zur Brücke 1, Kante 272
+  rect(92, 15, 3, 1, '=');    // Aufstieg zur Brücke 2, Kante 240
+
+  // Notenpulte im Saal: der obere Weg über den Stühlen.
+  // Höchstens 32 px Höhe und eine Kachel Abstand — sonst ist es nicht springbar.
+  rect(30, 23, 4, 1, '=');
+  rect(35, 21, 4, 1, '=');
+  rect(40, 19, 4, 1, '=');
+  rect(45, 17, 4, 1, '=');
+  rect(50, 16, 4, 1, '=');
+
+  // Podium des Dirigenten
+  rect(50, 23, 5, 2);
+
+  // ------------------------------------------------------------- Besetzung --
+  e('spawn', 4, 25, { isSpawn: true });
+  e('stand', 8, 25);
+  e('item', 12, 25, { item: 'bierdeckel' });
+  lamp(10, 21);
+
+  e('item', 36, 21, { item: 'bierdeckel' });
+  e('item', 41, 19, { item: 'bierdeckel' });
+  e('item', 70, 14, { item: 'bierdeckel' });   // auf der Beleuchtungsbrücke
+  e('item', 106, 25, { item: 'bierdeckel' });
+
+  lamp(40, 20);
+  lamp(66, 12);               // Arbeitslicht über der Brücke
+  lamp(84, 17);               // Bühnenlicht
+  lamp(116, 21);
+
+  e('dirigent', 52, 23, { dir: -1 });
+  alcove(45, 24);
+  e('sopran', 47, 25, { dir: -1 });
+  alcove(58, 24);
+  e('piccolo', 64, 25, { patrol: [62, 66], dir: -1 });
+  e('piccolo', 68, 25, { patrol: [67, 71], dir: -1 });
+  e('tenor', 84, 19, { patrol: [80, 92], dir: -1 });
+  e('item', 70, 25, { item: 'wasser' });
+
+  e('koffer', 102, 25, { patrol: [100, 108] });
+
+  // Bühnentür: nur im Frack
+  rect(112, 22, 1, 3);
+  gates.push({ tx: 112, ty: 22, tw: 1, th: 3, need: 'frack', open: false });
+  e('stand', 108, 25);
+  e('item', 110, 25, { item: 'wasser' });
+
+  const goal = {
+    x: 120 * TILE, y: 21 * TILE, w: TILE, h: 3 * TILE,
+    name: 'BÜHNENEINGANG', need: null,
+    locked: '',
+  };
+
+  // Taktwechsel: der Dirigent bestimmt das Tempo
+  takts.push({ x: 40 * TILE, bpm: 132, label: 'ALLEGRO — DER DIRIGENT ZIEHT AN' });
+  takts.push({ x: 98 * TILE, bpm: 88, label: 'ANDANTE — ER WIRD LANGSAMER' });
+
+  tip(1, 'AKT 2 — PROBENRAUM. HIER WIRD GEPROBT, AUCH MIT TAKTSTÖCKEN');
+  tip(25, 'ZWEI WEGE: UNTEN ZWISCHEN DEN STÜHLEN ODER OBEN ÜBER DIE PULTE');
+  tip(40, 'DER DIRIGENT WIRFT IM BOGEN — DUCK ODER SEITWÄRTS WEG');
+  tip(50, 'IM TAKT GETROFFEN VERLIERT ER DEN TAKTSTOCK');
+  tip(78, 'BÜHNE. VON HIER GEHT ES ÜBER DIE BELEUCHTUNGSBRÜCKE ZURÜCK');
+  tip(100, 'HINTERBÜHNE. ZUM AUFTRITT NUR IM FRACK — AB HIER WIRD ES WARM');
+  tip(119, 'BÜHNENEINGANG. ENDE AKT 2');
+
+  return {
+    id: 'akt2',
+    name: 'AKT 2 — DIE PROBE',
+    subtitle: 'Probenraum. Es riecht nach Kolophonium und Nervosität.',
+    w: W2, h: H2,
+    grid, spawns, gates, lights, alcoves, hints, takts, goal,
+    bpm: 100,
+    deckelTotal: spawns.filter((s) => s.kind === 'item' && s.item === 'bierdeckel').length,
+  };
+}
+
+/** Alle Akte an einer Stelle — die Level sind reine Daten. */
+export const LEVELS = [
+  { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', build: buildAkt1 },
+  { id: 'akt2', name: 'AKT 2 — DIE PROBE', build: buildAkt2 },
+];

@@ -354,6 +354,59 @@ try {
   results.push(`SCREENSHOT ${shotPath}`);
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
 
+  // --- Akt 2 im echten Browser --------------------------------------------
+  await evaluate("window.__roland.loadAct(1)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(800);
+  const akt2 = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.game.level.name,
+    dirigent: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').length,
+    takts: (window.__roland.game.level.takts || []).length,
+    deckel: window.__roland.game.hud.deckelTotal,
+    state: window.__roland.game.state,
+    bpm: window.__roland.game.hud.bpm,
+    nerven: window.__roland.game.maxNerves
+  })`));
+  check('Akt 2 lädt und läuft', akt2.name.includes('AKT 2') && akt2.state === 'play', JSON.stringify(akt2));
+  check('Akt 2: Dirigent und zwei Taktwechsel vorhanden',
+    akt2.dirigent === 1 && akt2.takts === 2, JSON.stringify(akt2));
+  check('Akt 2: fünf Bierdeckel, ein Nerv mehr als Belohnung',
+    akt2.deckel === 5 && akt2.nerven === 4, JSON.stringify(akt2));
+
+  const a2x0 = await evaluate('window.__roland.game.player.x');
+  await key('KeyD', 'keyDown');
+  await sleep(1200);
+  await key('KeyD', 'keyUp');
+  await sleep(150);
+  const a2x1 = await evaluate('window.__roland.game.player.x');
+  check('Akt 2: Spieler läuft im Probenraum', a2x1 - a2x0 > 60, `dx=${(a2x1 - a2x0).toFixed(0)}`);
+
+  // Taktwechsel beim Durchschreiten (Spieler hinter den Wechselpunkt setzen)
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    g.player.x = g.level.takts[0].x + 20;
+    g.player.y = 25 * 16 - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(400);
+  const taktWechsel = JSON.parse(await evaluate(`JSON.stringify({
+    bpm: window.__roland.game.hud.bpm,
+    text: window.__roland.game.hud.hint || ''
+  })`));
+  // Die Ansage darf hinter direktem Feedback (z.B. Bierdeckel) in der
+  // Warteschlange stehen — sie muss aber angekommen sein.
+  const wartend = await evaluate("JSON.stringify((window.__roland.game.hintQueue || []).map(q => q.text))");
+  check('Taktwechsel wirkt und wird angesagt',
+    taktWechsel.bpm !== 100 && (/BPM/.test(taktWechsel.text) || /BPM/.test(wartend)),
+    `${JSON.stringify(taktWechsel)} queue=${wartend}`);
+  check('keine Fehler in Akt 2',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+    await evaluate('JSON.stringify(window.__errors)'));
+
+  await evaluate("window.__roland.loadAct(0)");
+
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
   await send('Emulation.setDeviceMetricsOverride', {
     width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,

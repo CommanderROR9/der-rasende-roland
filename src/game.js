@@ -12,7 +12,7 @@ const ITEM_DEFS = {
   bier: { spr: 'bier', w: 10, h: 13, label: 'FEIERABENDBIER' },
 };
 
-const ENEMY_KINDS = new Set(['piccolo', 'sopran', 'tenor', 'koffer']);
+const ENEMY_KINDS = new Set(['piccolo', 'sopran', 'tenor', 'koffer', 'dirigent']);
 
 // Was ist das, und was macht es? Beim ersten Kontakt einmal erklärt.
 const ENEMY_INFO = {
@@ -20,6 +20,7 @@ const ENEMY_INFO = {
   sopran: { name: 'SOPRAN', tip: 'SOPRAN — LEBENSGEFÄHRLICH LAUT. OHROPAX ODER IN EINE NISCHE.' },
   tenor: { name: 'TENOR', tip: 'TENOR — VERSCHLEPPT DAS TEMPO. IM TAKT GETROFFEN IST ER KURZ STILL.' },
   koffer: { name: 'INSTRUMENTENKOFFER', tip: 'INSTRUMENTENKOFFER — ROLLT UND BLOCKIERT. DRÜBERSPRINGEN.' },
+  dirigent: { name: 'DIRIGENT', tip: 'DIRIGENT — WIRFT TAKTSTÖCKE IM BOGEN. IM TAKT GETROFFEN VERLIERT ER SIE.' },
 };
 // Gegnerreichweiten richten sich nach Schwierigkeit und Sichtbreite
 const SOPRAN_CONE_H = 22;
@@ -58,7 +59,8 @@ export class Game {
     this.time = 0;
     this.beats = 0;
     this.beatPhase = 0;
-    this.bpm = BPM_BASE;
+    this.bpm = this.level.bpm || BPM_BASE;
+    this.taktBpm = this.level.bpm || BPM_BASE;
     this.nerves = 3;
     this.maxNerves = 3;
     this.heat = 0;
@@ -78,6 +80,7 @@ export class Game {
     this.goalNote = -99;
     this.met = {};
     this.hintQueue = [];
+    this.taktChanges = (this.level.takts || []).map((t) => ({ ...t, done: false }));
     this.lastTritt = null;
     this.state = 'play';
     this.stats = { time: 0, deckel: 0, taktHits: 0, akt: 1 };
@@ -123,6 +126,8 @@ export class Game {
         return { kind: 'sopran', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 19, w: 12, h: 19, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, phase: 'idle', t: 1.1, bob: Math.random() * 6.28 };
       case 'tenor':
         return { kind: 'tenor', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 14, h: 16, patrol: s.patrol, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, bob: Math.random() * 6.28 };
+      case 'dirigent':
+        return { kind: 'dirigent', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22, dir: s.dir ?? 1, alive: true, stun: 0, flash: 0, bob: 0, aim: 0 };
       case 'koffer':
         return { kind: 'koffer', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 16, h: 12, patrol: s.patrol, dir: 1, alive: true, stun: 0, flash: 0, bob: 0, wait: 0 };
       default:
@@ -377,7 +382,7 @@ export class Game {
 
   // ---------------------------------------------------------------- Takt --
   updateTakt(dt) {
-    this.bpm = this.slowField > 0.25 ? BPM_TENOR : BPM_BASE;
+    this.bpm = this.slowField > 0.25 ? BPM_TENOR : this.taktBpm;
     this.beatPhase += dt * (this.bpm / 60);
     if (this.beatPhase >= 1) {
       this.beatPhase -= 1;
@@ -392,6 +397,24 @@ export class Game {
       && Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2)) < this.vw * 0.8);
     if (nah && this.beats % 2 === 0) this.audio.play('beat');
     for (const en of this.entities) {
+      if (en.kind === 'dirigent') {
+        if (!en.alive || en.stun > 0) continue;
+        const ccx = en.x + en.w / 2, ccy = en.y + 6;
+        const ddx = (p.x + p.w / 2) - ccx;
+        if (Math.abs(ddx) > this.vw * 0.9) { en.aim = 0; continue; }
+        if ((this.beats + 1) % this.diff.dirigentEvery === 0) { en.aim = this.diff.aimTime; continue; }
+        if (this.beats % this.diff.dirigentEvery !== 0) continue;
+        en.aim = 0;
+        // Bogenwurf auf die Stelle, an der der Spieler gerade steht
+        const tt = 0.8;
+        const vx = ddx / tt;
+        const vy = ((p.y + p.h) - ccy - 0.5 * PHYS.gravity * tt * tt) / tt;
+        this.projectiles.push({
+          kind: 'baton', x: ccx + en.dir * 10, y: ccy, w: 10, h: 4,
+          vx, vy, life: 3.0, dmg: 1, spin: 0,
+        });
+        continue;
+      }
       if (en.kind !== 'piccolo' || !en.alive || en.stun > 0) continue;
       const cx = en.x + en.w / 2, cy = en.y + en.h / 2;
       const dx = (this.player.x + this.player.w / 2) - cx;
@@ -521,6 +544,11 @@ export class Game {
           if (overlap(p, en)) this.damage(1, en.x);
           break;
         }
+        case 'dirigent': {
+          if (en.aim > 0) en.aim -= dt;
+          if (overlap(p, en)) this.damage(this.diff.sopranDmg > 1 ? 1 : 1, en.x);
+          break;
+        }
         case 'sopran': {
           if (en.stun > 0) { en.phase = 'idle'; en.t = 0.6; break; }
           en.t -= dt;
@@ -559,11 +587,19 @@ export class Game {
   updateProjectiles(dt) {
     const p = this.player;
     for (const pr of this.projectiles) {
+      if (pr.kind === 'baton' && !pr.stuck) {
+        pr.vy += PHYS.gravity * dt;
+        pr.spin += dt * 12;
+      }
       pr.x += pr.vx * dt;
+      pr.y += (pr.vy || 0) * dt;
       pr.life -= dt;
       const tx = Math.floor((pr.x + pr.w / 2) / TILE);
       const ty = Math.floor((pr.y + pr.h / 2) / TILE);
-      if (this.tileVal(tx, ty) === 1) pr.life = 0;
+      if (this.tileVal(tx, ty) === 1) {
+        if (pr.kind === 'baton' && !pr.stuck) { pr.stuck = true; pr.vx = 0; pr.vy = 0; pr.life = Math.min(pr.life, 0.7); }
+        else pr.life = 0;
+      }
       if (overlap(p, pr)) {
         pr.life = 0;
         if (this.ohropax <= 0) this.damage(pr.dmg, pr.x);
@@ -673,10 +709,22 @@ export class Game {
     // Ziel: Materialaufzug
     const goal = this.level.goal;
     if (overlap(p, goal)) {
-      if (this.hasMappe) this.complete();
+      // Was ein Ziel verlangt, steht in den Leveldaten (Akt 1: Notenmappe, Akt 2: nichts).
+      const erfuellt = !goal.need || (goal.need === 'mappe' && this.hasMappe);
+      if (erfuellt) this.complete();
       else if (this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
-        this.message('DER AUFZUG RÜHRT SICH NICHT. OHNE NOTENMAPPE FÄHRT ER NICHT.', 4.5, 2);
+        this.message(goal.locked || 'HIER GEHT ES NICHT WEITER.', 4.5, 2);
+      }
+    }
+    // Taktwechsel: der Dirigent bestimmt das Tempo
+    for (const t of this.taktChanges) {
+      if (!t.done && p.x + p.w > t.x) {
+        t.done = true;
+        // In gemütlich wird der Wechsel sanfter ausgeführt
+        const ziel = BPM_BASE + (t.bpm - BPM_BASE) * (this.difficulty === 'gemuetlich' ? 0.6 : 1);
+        this.taktBpm = Math.round(ziel);
+        this.message(`${t.label} · ${this.taktBpm} BPM`, 6, 2);
       }
     }
     // Kontexttips
@@ -722,7 +770,8 @@ export class Game {
     if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
-    if (dg < 96) best = { text: this.hasMappe ? 'AUFZUG: EINSTEIGEN' : 'AUFZUG: NOTENMAPPE FEHLT', x: g.x + 8, y: g.y - 2 };
+    const zielFrei = !g.need || (g.need === 'mappe' && this.hasMappe);
+    if (dg < 96) best = { text: `${g.name}: ${zielFrei ? 'WEITER' : 'ES FEHLT ETWAS'}`, x: g.x + 8, y: g.y - 2 };
     if (!best) return null;
     return {
       text: best.text, action: !!best.action, key: best.key,
@@ -1016,8 +1065,8 @@ export class Game {
     for (let i = 0; i < g.h - 6; i += 6) {
       ctx.fillRect(x + 7, y + 3 + i, 2, 3);
     }
-    const pulse = 0.5 + Math.sin(this.time * 4) * 0.5;
-    ctx.fillStyle = `rgba(93,224,207,${0.25 + pulse * 0.35})`;
+    const pulse = 0.5 + Math.sin(this.time * 1.6) * 0.5;   // langsam, kein Flackern
+    ctx.fillStyle = `rgba(93,224,207,${0.3 + pulse * 0.2})`;
     ctx.fillRect(x + 3, y - 6, TILE - 6, 4);
     if (this.hasMappe) {
       ctx.fillStyle = `rgba(232,196,106,${0.35 + pulse * 0.4})`;
@@ -1049,7 +1098,7 @@ export class Game {
           ctx.fillStyle = '#b0392f'; ctx.fillRect(x + 4, y - 16, 8, 3);
           const near = Math.abs((this.player.x + this.player.w / 2) - (en.x + 8)) < 26;
           if (near) {
-            ctx.fillStyle = `rgba(93,224,207,${0.4 + Math.sin(this.time * 8) * 0.3})`;
+            ctx.fillStyle = 'rgba(93,224,207,0.75)';
             ctx.fillRect(x + 4, y - 32, 8, 2);
           }
           break;
@@ -1108,6 +1157,17 @@ export class Game {
           if (en.stun > 0) this.drawStun(ctx, x + 6, y - 6);
           break;
         }
+        case 'dirigent': {
+          const spr = this.spr('dirigent');
+          blit(ctx, spr, x, y + en.h - spr.h, en.dir < 0, en.flash);
+          if (en.aim > 0) {
+            ctx.fillStyle = 'rgba(232,196,106,0.8)';
+            ctx.fillRect(x + 6, y - 10, 2, 5);
+            ctx.fillRect(x + 6, y - 4, 2, 2);
+          }
+          if (en.stun > 0) this.drawStun(ctx, x + 7, y - 6);
+          break;
+        }
         case 'koffer': {
           const spr = this.spr('koffer');
           blit(ctx, spr, x, y, en.dir < 0, en.flash);
@@ -1120,7 +1180,7 @@ export class Game {
 
   drawStun(ctx, x, y) {
     ctx.fillStyle = '#e8c46a';
-    const t = this.time * 6;
+    const t = this.time * 2.5;
     for (let i = 0; i < 3; i++) {
       const a = t + (i * Math.PI * 2) / 3;
       ctx.fillRect(Math.round(x + Math.cos(a) * 7), Math.round(y + Math.sin(a) * 2), 2, 2);
@@ -1130,6 +1190,16 @@ export class Game {
   drawProjectiles(ctx, camX, camY) {
     for (const pr of this.projectiles) {
       const x = Math.round(pr.x - camX), y = Math.round(pr.y - camY);
+      if (pr.kind === 'baton') {
+        // Taktstock: je nach Flugphase waagerecht oder senkrecht
+        ctx.fillStyle = '#f0eee4';
+        const waagerecht = Math.floor(pr.spin || 0) % 2 === 0;
+        if (waagerecht) ctx.fillRect(x, y + 1, 10, 2);
+        else ctx.fillRect(x + 4, y - 3, 2, 10);
+        ctx.fillStyle = 'rgba(240,238,228,0.35)';
+        ctx.fillRect(waagerecht ? x - 3 : x + 4, waagerecht ? y + 1 : y - 6, waagerecht ? 3 : 2, waagerecht ? 2 : 3);
+        continue;
+      }
       const dirR = pr.vx >= 0 ? 1 : -1;
       const cx = x + pr.w / 2, cy = y + pr.h / 2;
       // Drei nach vorn offene Bögen: eine sichtbare Schallwelle.
@@ -1156,22 +1226,32 @@ export class Game {
     const spr = this.spr(frame, OUTFIT_PALETTES[this.outfit.id]);
     const x = Math.round(p.x - camX - 2);
     const y = Math.round(p.y - camY + p.h - spr.h);
-    const blink = p.invuln > 0 && Math.floor(this.time * 20) % 2 === 0;
-    if (!blink) blit(ctx, spr, x, y, p.dir < 0, p.flash);
-    // Glanzalarm auf dem Haarkranz
+    const hurt = p.invuln > 0;
+    blit(ctx, spr, x, y, p.dir < 0, p.flash, hurt ? 0.6 : 1);
+    if (hurt) {
+      // Ruhender Schutzrahmen statt Blinken: man sieht den Schutz, ohne dass
+      // die Figur flimmert.
+      const a = 'rgba(93,224,207,0.5)';
+      ctx.fillStyle = a;
+      ctx.fillRect(x - 2, y - 2, spr.w + 4, 1);
+      ctx.fillRect(x - 2, y + spr.h + 1, spr.w + 4, 1);
+      ctx.fillRect(x - 2, y - 2, 1, spr.h + 4);
+      ctx.fillRect(x + spr.w + 1, y - 2, 1, spr.h + 4);
+    }
+    // Glanz auf dem Haarkranz: gleichmäßig, ohne Pulsieren
     if (this.glanz > 0.25) {
-      const a = this.glanz * (0.55 + Math.sin(this.time * 12) * 0.45);
-      ctx.fillStyle = `rgba(255,255,255,${Math.max(0, a)})`;
+      const a = 0.3 + this.glanz * 0.5;
       const gx = p.dir < 0 ? x + 3 : x + 6;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.fillRect(gx, y + 1, 2, 1);
       ctx.fillRect(gx - 1, y + 2, 1, 1);
       ctx.fillRect(gx + 2, y + 2, 1, 1);
-      ctx.fillStyle = `rgba(255,255,255,${Math.max(0, this.glanz * 0.5)})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.2 + this.glanz * 0.25})`;
       ctx.fillRect(gx - 4, y - 1, 8, 1);
     }
     if (this.frackBoost > 0) {
-      ctx.fillStyle = `rgba(240,238,228,${0.2 + Math.sin(this.time * 20) * 0.15})`;
-      ctx.fillRect(x - 3, y - 4, 18, 24);
+      ctx.fillStyle = 'rgba(240,238,228,0.16)';
+      ctx.fillRect(x - 3, y - 4, 18, 26);
     }
   }
 

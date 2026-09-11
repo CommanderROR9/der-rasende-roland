@@ -4,7 +4,7 @@ import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
-import { buildAkt1 } from './world.js';
+import { LEVELS } from './world.js';
 import { Game } from './game.js';
 
 const $ = (s) => document.querySelector(s);
@@ -18,6 +18,7 @@ const ui = {
   pause: $('#pause'), resumeBtn: $('#resumeBtn'), quitBtn: $('#quitBtn'),
   collapse: $('#collapse'), collapseBtn: $('#collapseBtn'),
   reward: $('#reward'), rewardBody: $('#rewardBody'), rewardBtn: $('#rewardBtn'), rewardQuit: $('#rewardQuit'),
+  rewardEyebrow: $('#rewardEyebrow'), rewardTitle: $('#rewardTitle'), rewardText: $('#rewardText'), rewardNote: $('#rewardNote'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
@@ -34,7 +35,36 @@ let scaleNow = 1;
 
 const input = createInput(window);
 const audio = createAudio();
-const LEVEL = buildAkt1();
+// Akte der Reihe nach: jeder Akt ist ein eigenes Levelmodul.
+let aktIndex = 0;
+let LEVEL = LEVELS[0].build();
+function loadAct(i) {
+  aktIndex = Math.max(0, Math.min(LEVELS.length - 1, i));
+  LEVEL = LEVELS[aktIndex].build();
+}
+
+// Belohnung und Fortsetzen je Akt
+const REWARDS = {
+  akt1: {
+    title: 'BELOHNUNG: FEIERABENDBIER',
+    text: 'Der Aufzug fährt nach oben, erster Stock: Probenraum. Und in der Hand ein Bier, das niemand mehr wegnehmen kann.',
+  },
+  akt2: {
+    title: 'BELOHNUNG: PAUSENBROT',
+    text: 'Hinter der Bühnentür wird es dunkel und warm. Ein Pausenbrot für die nächste Runde — und ein Nerv mehr.',
+  },
+};
+function istLetzterAkt() { return aktIndex >= LEVELS.length - 1; }
+function updateActLabels() {
+  const r = REWARDS[LEVEL.id] || { title: 'AKT GESCHAFFT', text: 'Weiter geht es.' };
+  ui.rewardEyebrow.textContent = `${LEVEL.name} GESCHAFFT`;
+  ui.rewardTitle.textContent = r.title;
+  ui.rewardText.textContent = r.text;
+  ui.rewardNote.textContent = istLetzterAkt()
+    ? 'Akt 3 ist noch in Arbeit — bis hierher, und danke fürs Durchhalten.'
+    : `Weiter mit ${LEVELS[aktIndex + 1].name}.`;
+  ui.rewardBtn.textContent = istLetzterAkt() ? 'NOCHMAL \u2192' : 'WEITER \u2192';
+}
 let game = null;
 let gardeMode = 'start';
 let pendingOutfit = null;
@@ -100,6 +130,9 @@ function newGame(outfitId) {
   for (const h of LEVEL.hints) h.shown = false;
   game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
   game.reset(outfitId);
+  // Wer einen Akt geschafft hat, geht mit einem Nerv mehr in den nächsten.
+  if (aktIndex > 0) { game.maxNerves = 4; game.nerves = 4; game.hud = game.buildHud(); }
+  updateActLabels();
   hideAll();
   audio.resume();
   last = performance.now();
@@ -111,7 +144,13 @@ function onGameEvent(e) {
     const s = e.stats;
     const save = loadSave();
     const best = save.bestTime ? Math.min(save.bestTime, s.time) : s.time;
-    writeSave({ akt1: true, bestTime: best, bestDeckel: Math.max(save.bestDeckel || 0, s.deckel) });
+    writeSave({
+      bestTime: best,
+      bestDeckel: Math.max(save.bestDeckel || 0, s.deckel),
+      act: Math.max(save.act || 0, Math.min(LEVELS.length - 1, aktIndex + 1)),
+      [`${LEVEL.id}`]: true,
+    });
+    updateActLabels();
     ui.rewardBody.innerHTML = '';
     const stats = [
       ['ZEIT', fmtTime(s.time)],
@@ -198,7 +237,11 @@ function updateWorldLabel() {
 // ------------------------------------------------------------------- Input --
 ui.startBtn.onclick = () => { audio.resume(); renderGarde('start'); };
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
-ui.resetBtn.onclick = () => { try { localStorage.removeItem(SAVE_KEY); } catch {} ui.resetBtn.textContent = 'Zurückgesetzt ✓'; };
+ui.resetBtn.onclick = () => {
+  try { localStorage.removeItem(SAVE_KEY); } catch {}
+  loadAct(0);
+  ui.resetBtn.textContent = 'Zurückgesetzt ✓';
+};
 
 // Schwierigkeit: „Gemütlich" ist Voreinstellung und Empfehlung.
 const DIFF_KEYS = Object.keys(DIFFICULTY);
@@ -231,7 +274,13 @@ applyDifficulty();
 ui.resumeBtn.onclick = () => { game.resume(); hideAll(); };
 ui.quitBtn.onclick = () => { game = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
 ui.collapseBtn.onclick = () => { game.respawnFromCheckpoint(); hideAll(); };
-ui.rewardBtn.onclick = () => { newGame(game.outfit.id); };
+ui.rewardBtn.onclick = () => {
+  const outfit = game.outfit.id;
+  if (istLetzterAkt()) { newGame(outfit); return; }
+  loadAct(aktIndex + 1);          // nächster Akt: wieder über die Garderobe
+  for (const h of LEVEL.hints) h.shown = false;
+  renderGarde('start');
+};
 ui.rewardQuit.onclick = () => { game = null; hudPrev = ''; show('title'); };
 
 window.addEventListener('keydown', (e) => {
@@ -277,6 +326,11 @@ holdButton(ui.btnAction, 'action');
 if (IS_TOUCH) ui.pad.classList.add('show');
 window.addEventListener('touchstart', () => { ui.pad.classList.add('show'); audio.resume(); }, { once: true });
 
+// Beim Start dort weitermachen, wo Roland zuletzt war.
+loadAct(Number(loadSave().act) || 0);
 fit();
 requestAnimationFrame(frame);
-window.__roland = { get game() { return game; }, level: LEVEL, input, get scale() { return scaleNow; } };
+window.__roland = {
+  get game() { return game; }, get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
+  loadAct, input, get scale() { return scaleNow; },
+};

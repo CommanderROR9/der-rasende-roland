@@ -5,11 +5,22 @@ bis in den Kleingarten. Browser-Spiel, keine Installation, keine Abhängigkeiten
 
 **Spielen:** https://commanderror9.github.io/der-rasende-roland/
 
-## Akt 1 — Die Katakomben (spielbar)
+## Die Akte
 
-Der Weg führt aus der Garderobe über Notenblatt-Stufen nach oben, durch eine Luke
-wieder hinunter, an Piccolo und Sopran vorbei, durch die Diensttür ins Archiv,
-über das Absperrband zur Obermaschinerie und endet am Materialaufzug.
+**Akt 1 — Die Katakomben.** Aus der Garderobe über Notenblatt-Stufen nach oben, durch
+eine Luke wieder hinunter, an Piccolo und Sopran vorbei, durch die Diensttür ins Archiv,
+über das Absperrband zur Obermaschinerie — Ende am Materialaufzug. Belohnung:
+**Feierabendbier**.
+
+**Akt 2 — Die Probe.** Oben angekommen geht es durch den Flur in den Probenraum.
+Zwei Wege führen durch den Saal: unten zwischen den Stühlen an Sopran und Piccolo-Duo
+vorbei, oder oben über die Notenpulte und die Beleuchtungsbrücke. In der Mitte steht
+der Dirigent auf dem Podium und wirft Taktstöcke. Hinter der Bühne sperrt die
+Bühnentür, und die geht nur im **Frack** auf. Belohnung: **Pausenbrot** — und für den
+nächsten Akt ein Nerv mehr.
+
+Zwischendurch wechselt das Tempo: unterwegs gibt der Dirigent **Allegro** und später
+**Andante** vor, sichtbar im HUD und angesagt als Meldung.
 
 **Steuerung**
 
@@ -57,6 +68,7 @@ ein Satz in der Hinweisleiste, und ein Schild zeigt beim Annähern den Namen:
 | **Sopran** | lebensgefährlich laut, langer Anlauf mit sichtbarem Kegel | Ohropax oder Deckung in einer Nische |
 | **Tenor** | verschleppt das Tempo, alles wird zäh | im Takt treffen, Abstand gewinnen |
 | **Instrumentenkoffer** | rollt, blockiert, wartet an den Enden | im Fenster drüberspringen |
+| **Dirigent** | wirft Taktstöcke im Bogen auf die Stelle, an der man steht | ducken, zur Seite weg oder im Takt treffen (dann verliert er den Stock) |
 
 Morsche Notenblätter brechen nach kurzer Zeit weg, wachsen aber nach.
 
@@ -90,15 +102,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 126 headless Checks
+tests/smoke.test.mjs 150 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 126 headless Checks: node tests/smoke.test.mjs
+npm test                        # 150 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 56 Checks in echtem Chromium
+npm run browser                 # 62 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -116,8 +128,8 @@ Bodenkachel, kein Standbild), HUD, Pause — und in Geräteemulation das Smartph
 Touch-Pad sichtbar, Kamera enger, Figur groß genug, Stick bewegt den Spieler. Beide
 Suiten laufen gegen die Live-URL.
 
-## Nächste Akte (geplant)
+## Als Nächstes
 
-Akt 2 Probenraum · Cabrio-Interludium (Pseudo-3D) · Akt 3 Open Air mit Wetter ·
+Cabrio-Interludium (Pseudo-3D zum Open Air) · Akt 3 Open Air mit Wetter ·
 Akt 4 Orchestergraben · Motorrad-Interludium · Finale mit Frack-Off · Epilog
-Kleingarten. Konzept: [docs/KONZEPT.md](docs/KONZEPT.md)
+Kleingarten. Konzept und Stand: [docs/KONZEPT.md](docs/KONZEPT.md)
