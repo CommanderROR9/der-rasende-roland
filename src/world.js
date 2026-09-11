@@ -582,7 +582,7 @@ export function buildAkt4() {
   gleam(45, 22, 3);
   e('item', 68, 25, { item: 'brezel' });   // zweite Staerkung nach dem Kasten
   alcove(54, 24);             // Deckung vor dem Sopran
-  e('sopran', 58, 25, { dir: -1 });
+  e('sopran', 70, 25, { dir: -1 });   // Abstand zur Versenkung: beim Warten nicht beschossen werden
   alcove(47, 24);
   gleam(52, 23, 3.5);
   e('item', 57, 21, { item: 'bierdeckel' });
@@ -602,6 +602,8 @@ export function buildAkt4() {
   e('stand', 66, 12);
   e('item', 62, 12, { item: 'bierdeckel' });
   gleam(62, 11, 4);
+  gleam(58, 24, 3.5);   // Licht an der Versenkung: man muss sehen, wo man einsteigt
+  gleam(88, 24, 3);
   e('checkpoint', 58, 12, { id: 'steg' });
   gleam(62, 12, 4);   // Steg ausleuchten: hier zaehlt das Timing
   gleam(76, 12, 4);
@@ -622,8 +624,8 @@ export function buildAkt4() {
   lamp(112, 22);
 
   // Versenkungen
-  lift(59, 12, 24, 4, 11, 0);      // Hauptversenkung: Graben -> Steg
-  lift(88, 16, 23, 3, 7, 2.5);     // Requisitenaufzug
+  lift(59, 12, 25, 4, 11, 0);      // Hauptversenkung: Unterkante bündig mit dem Boden (400)
+  lift(88, 16, 25, 3, 7, 2.5);     // Requisitenaufzug: ebenfalls bündig
 
   const goal = {
     x: 96 * TILE, y: 10 * TILE, w: TILE, h: 2 * TILE,

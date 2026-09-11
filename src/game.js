@@ -268,7 +268,15 @@ export class Game {
       if (en.kind !== 'lift') continue;
       const ph = (((this.time + en.phase) % en.period) + en.period) % en.period;
       const t = ph / en.period;
-      const k = t < 0.5 ? t * 2 : 2 - t * 2;          // Dreieckswelle
+      // Dreieckswelle MIT Standzeit an beiden Enden: Ein- und Aussteigen darf
+      // keine Punktlandung verlangen (Playtest-Befund Orchestergraben).
+      const stand = 0.14;
+      let k;
+      if (t < stand || t > 1 - stand) k = 0;
+      else {
+        const u = (t - stand) / (1 - 2 * stand);
+        k = u < 0.5 ? u * 2 : 2 - u * 2;
+      }
       const ny = Math.round(en.bottom + (en.top - en.bottom) * k);
       en.dy = ny - en.y;
       en.y = ny;
@@ -278,6 +286,13 @@ export class Game {
         p.y = en.y - p.h;
         p.vy = 0;
         p.onGround = true;
+      }
+      // Hinweis, wenn die Versenkung unten steht und man davorsteht: der Weg nach
+      // oben muss ohne Punktlandung auffindbar sein (Playtest-Befund).
+      if (k < 0.18 && Math.abs((p.x + p.w / 2) - (en.x + en.w / 2)) < 78
+          && this.time > (this.liftNote || 0) + 9) {
+        this.liftNote = this.time;
+        this.message('DIE VERSENKUNG STEHT UNTEN. EINFACH DRAUF STELLEN.', 5, 2);
       }
     }
   }

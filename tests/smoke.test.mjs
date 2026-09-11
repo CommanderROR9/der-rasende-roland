@@ -1723,6 +1723,39 @@ function place(game, px, py) {
     `Ziel ${ziel4}/${weg4.length}, Zusammenbrüche=${zusammenbrueche} (Druckmesser)`);
 }
 
+// ------------------------------- Akt 4: Weg nach oben ohne Punktlandung -------
+// Playtest-Befund: die obere Etage war nur per Glitch erreichbar, weil die
+// Versenkung 16 px ueber dem Boden stand und man punktgenau hineinspringen musste.
+{
+  const iL = createInput(null);
+  const gl = new Game({
+    level: buildAkt4(), input: iL,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gl.reset('schwarz');
+  const lift = gl.entities.find((e) => e.kind === 'lift');
+  check('Akt 4: Versenkung ist buendig mit dem Boden',
+    lift.bottom === 25 * TILE && lift.top === 12 * TILE,
+    `unten=${lift.bottom} oben=${lift.top}`);
+  place(gl, lift.x - 30, 25 * TILE - PHYS.playerH);
+  let anBord = false, oben = false, frames = 0;
+  for (let i = 0; i < 60 * 45; i++) {
+    const p = gl.player;
+    const mittel = p.x + p.w / 2;
+    const drauf = mittel > lift.x + 6 && mittel < lift.x + lift.w - 6;
+    iL.setKey('right', !anBord && !drauf);      // hinlaufen, dann stehen bleiben
+    iL.setKey('jump', false);                   // ausdruecklich OHNE Sprung
+    if (drauf) anBord = true;
+    gl.update(1 / 60);
+    frames += 1;
+    if (gl.state === 'paused') gl.resume();
+    if (anBord && p.y + p.h <= lift.top + 6) { oben = true; break; }
+  }
+  check('Akt 4: ohne Sprung per Versenkung nach oben',
+    oben, `anBord=${anBord} nach ${(frames / 60).toFixed(1)}s, y=${(gl.player.y + gl.player.h).toFixed(0)}`);
+}
+
 // ------------------------------------------------------ Pause & Langzeitlauf --
 {
   const { game } = fresh('schwarz', { stands: false });
