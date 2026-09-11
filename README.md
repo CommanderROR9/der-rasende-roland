@@ -44,6 +44,12 @@ man nicht stehen bleiben darf, der **Souffleurkasten**, der einem plötzlich den
 flüstert, der Dirigent auf seinem Podium und das **Absperrband**, das nur der Frack öffnet.
 Belohnung: **der Taktstock** des Dirigenten.
 
+**Interludium — Motorrad nach Hause.** Nach der Oper im Dunkeln heim: der
+**Scheinwerferkegel** ist das einzige Licht, im **Tunnel** ziehen die Deckenlampen vorbei,
+und in den Waldkurven liegt **nasses Laub** — kein Krach, aber der Grip ist kurz weg.
+Das Motorrad ist flinker als das Cabrio und zackiger zu fahren; die Nachtluft ist die
+Belohnung: der Hitzebalken ist danach auf null.
+
 **Interludium — Cabrio zum Open Air.** Pseudo-3D-Landstraße in der Abendsonne, Sicht
 von hinten aufs offene Cabrio. Unterwegs ist einiges los: Kolonnen und Gegenverkehr,
 parkende LKW, Radarfallen (wer zu schnell vorbeifährt, wird geblitzt), Schlaglöcher,
@@ -142,15 +148,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 234 headless Checks
+tests/smoke.test.mjs 244 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 234 headless Checks: node tests/smoke.test.mjs
+npm test                        # 244 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 88 Checks in echtem Chromium
+npm run browser                 # 94 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -170,7 +176,6 @@ Suiten laufen gegen die Live-URL.
 
 ## Als Nächstes
 
-Motorrad-Interludium (Nachtfahrt, Tunnel, kühlt den Hitzebalken) ·
-Finale auf der Bühne mit Frack-Off · Epilog Kleingarten mit
+Akt 5 Bühne mit dem großen Finale und Frack-Off · Epilog Kleingarten mit
 **Bratwurst-Grill** als kleinem Bonusspiel. Konzept und Stand:
 [docs/KONZEPT.md](docs/KONZEPT.md)

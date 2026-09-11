@@ -15,7 +15,7 @@ export const CAM_DEPTH = 1 / Math.tan(((FOV / 2) * Math.PI) / 180);
 const FOG = '#241b33';
 
 // Breite der Objekte als Anteil der projizierten halben Straßenbreite.
-const SPRITE_F = { auto: 0.30, lkw: 0.40, mx5: 0.34, baum: 0.22, schild: 0.13, blitzer: 0.15, notenstaender: 0.09, schlagloch: 0.17 };
+const SPRITE_F = { auto: 0.30, lkw: 0.40, mx5: 0.34, motorrad: 0.22, baum: 0.22, schild: 0.13, blitzer: 0.15, notenstaender: 0.09, schlagloch: 0.17, laub: 0.16 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -102,7 +102,13 @@ export class Racer {
     this.playerX = 0;
     this.playerZ = 420;
     this.speed = 0;
-    this.maxSpeed = SEG_LEN * 58 * (this.difficulty === 'gemuetlich' ? 0.8 : 1);
+    this.fahrzeug = this.level.fahrzeug || 'mx5';
+    this.nacht = !!this.level.nacht;
+    this.tunnel = this.level.tunnel || [];
+    this.rutsch = 0;
+    // Das Motorrad ist flinker als das Cabrio
+    const grund = SEG_LEN * 58 * (this.difficulty === 'gemuetlich' ? 0.8 : 1);
+    this.maxSpeed = grund * (this.fahrzeug === 'motorrad' ? 1.22 : 1);
     this.damage = 0;
     this.hits = 0;
     this.topSpeed = 0;
@@ -159,6 +165,17 @@ export class Racer {
       });
     }
     // Schlaglöcher auf der Fahrbahn
+    // Nasses Laub: kein Krach, aber der Grip ist kurz weg
+    this.laub = [];
+    const laubAnzahl = Math.max(6, Math.round(this.trackLength / SEG_LEN / 26));
+    for (let i = 0; i < laubAnzahl; i++) {
+      this.laub.push({
+        z: 6000 + (i / laubAnzahl) * (this.trackLength - 9000),
+        lane: (hash2(i, 41, 9) - 0.5) * 1.5,
+        done: false,
+      });
+    }
+    if (this.thisLaubAktiv !== false) { /* Laub ist immer da */ }
     this.potholes = [];
     const holes = Math.max(8, Math.round(segmente / 44));
     for (let i = 0; i < holes; i++) {
@@ -216,7 +233,8 @@ export class Racer {
     const curve = seg ? seg.curve : 0;
     const pct = this.speed / this.maxSpeed;
     // In der Kurve zieht es nach außen, Lenken arbeitet dagegen
-    const flieh = this.diff.centrifugal * (this.rain ? 1.5 : 1);
+    this.lenkung = inp.axis();
+    const flieh = this.diff.centrifugal * (this.rain ? 1.5 : 1) * (this.rutsch > 0 ? 1.8 : 1);
     this.playerX -= curve * pct * pct * flieh * dt * 1.9;
     this.playerX += lenkung * dt * (1.5 + pct * 1.7) * (this.rain ? 0.85 : 1);
     this.playerX = clamp(this.playerX, -1.9, 1.9);
@@ -276,6 +294,18 @@ export class Racer {
 
   updateObjects(dt) {
     // Schlaglöcher
+    if (this.rutsch > 0) this.rutsch = Math.max(0, this.rutsch - dt);
+    for (const l of this.laub) {
+      const dz = l.z - (this.position + this.playerZ);
+      if (l.done || Math.abs(dz) >= SEG_LEN) continue;
+      if (Math.abs(l.lane - this.playerX) > 0.22) continue;
+      l.done = true;
+      this.laubTreffer = (this.laubTreffer || 0) + 1;
+      this.rutsch = 1.2;
+      this.standTilt = 0.7;
+      this.audio.play('morsch');
+      this.message('NASSES LAUB. DER HINTERREIFEN GRUESST.', 4, 2);
+    }
     for (const h of this.potholes) {
       if (h.done) continue;
       const dz = h.z - (this.position + this.playerZ);
@@ -343,16 +373,18 @@ export class Racer {
     this.state = 'complete';
     this.audio.engineOff();
     this.audio.play('fanfare');
+    this.rows = [
+      ['FAHRZEIT', fmt(this.time)],
+      ['HÖCHSTGESCHWINDIGKEIT', `${Math.round(kmh(this.topSpeed))} km/h`],
+      ['KONTAKTE', String(this.hits)],
+      ['SCHLAGLÖCHER', String(this.bumps)],
+      ['NASSES LAUB', String(this.laubTreffer || 0)],
+      ['REGEN', this.rain ? 'ja, leider' : 'nein, alles trocken'],
+    ];
     this.events({
       type: 'complete',
       stats: { time: this.time, speed: this.topSpeed, hits: this.hits },
-      rows: [
-        ['FAHRZEIT', fmt(this.time)],
-        ['HÖCHSTGESCHWINDIGKEIT', `${Math.round(kmh(this.topSpeed))} km/h`],
-        ['KONTAKTE', String(this.hits)],
-        ['SCHLAGLÖCHER', String(this.bumps)],
-        ['REGEN', this.rain ? 'ja, leider' : 'nein, alles trocken'],
-      ],
+      rows: this.rows,
     });
   }
 
@@ -412,6 +444,7 @@ export class Racer {
     for (const r of this.roadside) alle.push({ z: r.z, kind: r.kind, xf: r.x, breite: SPRITE_F[r.kind] || 0.2 });
     for (const c of this.traffic) alle.push({ z: c.z, kind: c.kind, xf: c.lane, breite: SPRITE_F[c.kind] || 0.3 });
     for (const h of this.potholes) alle.push({ z: h.z, kind: 'schlagloch', xf: h.lane, breite: SPRITE_F.schlagloch });
+    for (const l of this.laub) alle.push({ z: l.z, kind: 'laub', xf: l.lane, breite: SPRITE_F.laub });
     for (const o of alle) {
       const rel = o.z - this.position;
       if (rel < 0 || rel > DRAW_DIST * SEG_LEN) continue;
@@ -435,13 +468,68 @@ export class Racer {
     for (const o of frame.drawList) {
       this.drawSpriteAt(ctx, o.kind, o.breite, o.sx, o.sy, o.half, o.fog, o.clip);
     }
+    if (this.nacht) this.drawScheinwerfer(ctx);
     this.drawCar(ctx);
     if (this.rain) this.drawRain(ctx);
     this.drawFx(ctx);
   }
 
+  /** Ist der Wagen gerade im Tunnel? */
+  imTunnel() {
+    const seg = Math.floor(this.position / SEG_LEN);
+    return this.tunnel.some((t) => seg >= t.from && seg < t.to);
+  }
+
   drawSky(ctx) {
     const vw = this.vw, vh = this.vh;
+    if (this.imTunnel()) {
+      ctx.fillStyle = '#08060c';
+      ctx.fillRect(0, 0, vw, Math.ceil(vh / 2));
+      // Deckenlampen ziehen vorbei
+      ctx.fillStyle = '#3a3226';
+      ctx.fillRect(0, Math.round(vh / 2) - 10, vw, 10);
+      const off = (this.position * 0.35) % 96;
+      for (let i = -1; i < vw / 96 + 2; i++) {
+        const lx = Math.round(i * 96 - off);
+        ctx.fillStyle = '#ffd68c';
+        ctx.fillRect(lx + 30, Math.round(vh / 2) - 10, 36, 3);
+        ctx.fillStyle = 'rgba(255,214,140,0.10)';
+        ctx.fillRect(lx + 24, Math.round(vh / 2) - 7, 48, 24);
+      }
+      ctx.fillStyle = '#1a1620';
+      ctx.fillRect(0, Math.round(vh / 2), vw, 2);
+      return;
+    }
+    if (this.nacht) {
+      const gradN = ctx.createLinearGradient(0, 0, 0, vh / 2);
+      gradN.addColorStop(0, '#05060f');
+      gradN.addColorStop(0.6, '#0d1226');
+      gradN.addColorStop(1, this.rain ? '#161a2a' : '#232a3f');
+      ctx.fillStyle = gradN;
+      ctx.fillRect(0, 0, vw, Math.ceil(vh / 2));
+      // Sterne
+      ctx.fillStyle = 'rgba(226,232,255,0.75)';
+      for (let i = 0; i < 26; i++) {
+        const sx = Math.round((hash2(i, 7, 3) * vw + this.position * 0.005) % vw);
+        const sy = Math.round(hash2(i, 11, 5) * (vh / 2 - 18));
+        ctx.fillRect(sx, sy, 1, 1);
+      }
+      // Mond
+      ctx.fillStyle = 'rgba(226,236,255,0.22)';
+      ctx.fillRect(Math.round(vw * 0.74) - 9, 18, 18, 18);
+      ctx.fillStyle = '#dfe8ff';
+      ctx.fillRect(Math.round(vw * 0.74) - 6, 21, 12, 12);
+      // Baumreihe im Dunkeln
+      ctx.fillStyle = '#060810';
+      for (let i = 0; i < 16; i++) {
+        const bx = Math.round(((i * 34 - this.position * 0.02) % (vw + 68) + (vw + 68)) % (vw + 68)) - 34;
+        const hgt = 12 + Math.round(hash2(i, 2, 5) * 14);
+        ctx.fillRect(bx, Math.round(vh / 2) - hgt, 30, hgt + 4);
+      }
+      ctx.fillStyle = '#05070e';
+      ctx.fillRect(0, Math.round(vh / 2), vw, 2);
+      return;
+    }
     const grad = ctx.createLinearGradient(0, 0, 0, vh / 2);
     grad.addColorStop(0, '#2a2350');
     grad.addColorStop(0.55, '#6b4a7a');
@@ -466,8 +554,10 @@ export class Racer {
 
   drawSegment(ctx, vw, seg) {
     const dunkel = Math.floor(seg.index / 3) % 2 === 0;
-    const gras = this.rain ? (dunkel ? '#26361f' : '#22301d') : (dunkel ? '#3b3a26' : '#34361f');
-    const strasse = dunkel ? '#3a3a42' : '#35353d';
+    const nachtF = this.nacht && !this.imTunnel();
+    const gras = nachtF ? (dunkel ? '#0b1016' : '#090e13')
+      : this.rain ? (dunkel ? '#26361f' : '#22301d') : (dunkel ? '#3b3a26' : '#34361f');
+    const strasse = nachtF ? (dunkel ? '#1c1e26' : '#191b22') : (dunkel ? '#3a3a42' : '#35353d');
     const rand = dunkel ? '#b8402f' : '#d8d2c0';
     const { x: x1, y: y1, w: w1 } = seg.p1.screen;
     const { x: x2, y: y2, w: w2 } = seg.p2.screen;
@@ -510,8 +600,22 @@ export class Racer {
     ctx.globalAlpha = 1;
   }
 
+  /** Scheinwerferkegel: nur die nahe Fahrbahn ist hell. */
+  drawScheinwerfer(ctx) {
+    const vw = this.vw, vh = this.vh;
+    const mitte = vw / 2 + this.playerX * -9;
+    const oben = Math.round(vh * 0.52);
+    ctx.fillStyle = this.imTunnel() ? 'rgba(255,228,170,0.16)' : 'rgba(255,232,180,0.11)';
+    for (let i = 0; i < 42; i++) {
+      const t = i / 41;
+      const y = Math.round(vh - 4 - t * (vh - oben));
+      const breite = Math.round(28 + t * (vw * 0.9));
+      ctx.fillRect(Math.round(mitte - breite / 2), y, breite, 2);
+    }
+  }
+
   drawCar(ctx) {
-    const spr = this.sprite('mx5');
+    const spr = this.sprite(this.fahrzeug);
     const scale = (this.vh / 216) * 2.3;
     const w = Math.round(spr.w * scale);
     const h = Math.round(spr.h * scale);
@@ -519,11 +623,12 @@ export class Racer {
     const x = Math.round(
       this.vw / 2 - w / 2
       + this.playerX * -9
+      + Math.round((this.lenkung || 0) * (this.fahrzeug === 'motorrad' ? 4 : 1))
       + (this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0)
     );
     const y = Math.round(this.vh - h - 4);
     ctx.drawImage(spr.canvas, 0, 0, spr.w, spr.h, x, y, w, h);
-    if (this.standTilt > 0) {
+    if (this.standTilt > 0 && this.fahrzeug === 'mx5') {
       const ns = this.sprite('notenstaender');
       const nw = Math.round(ns.w * scale), nh = Math.round(ns.h * scale);
       const nx = x + Math.round(w * 0.6);

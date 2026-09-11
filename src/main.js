@@ -68,6 +68,11 @@ const REWARDS = {
     text: 'Der Dirigent hat ihn liegen lassen. Ab jetzt liegt er im Handschuhfach, '
       + 'zwischen Parkmünzen und einem Fahrschein von 1987.',
   },
+  motorrad: {
+    title: 'BELOHNUNG: KUEHLE NACHTLUFT',
+    text: 'Zwei Stunden Landstrasse, ein Tunnel und kein Mensch mehr auf der Strasse. '
+      + 'Der Frack haengt trocken im Koffer, und der Hitzebalken ist auf null.',
+  },
   cabrio: {
     title: 'ANGEKOMMEN: OPEN-AIR-BÜHNE',
     text: 'Motor aus, Verdeck bleibt offen. Die Bühne steht schon, der Wind hat die Noten schon einmal verteilt — Akt 3 wartet.',

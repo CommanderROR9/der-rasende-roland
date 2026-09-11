@@ -589,6 +589,33 @@ try {
   check('Akt 4: Versenkung faehrt im Browser', liftA !== liftB, `${liftA} -> ${liftB}`);
   check('keine Fehler im Graben', (await evaluate('JSON.stringify(window.__errors)')) === '[]');
 
+  // --- Motorrad-Interludium (Nachtfahrt) ----------------------------------
+  await evaluate("window.__roland.loadAct(5)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(1500);
+  const moto = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.level.name,
+    fahrzeug: window.__roland.racer.fahrzeug,
+    nacht: window.__roland.racer.nacht,
+    laub: window.__roland.racer.laub.length,
+    tunnel: window.__roland.racer.tunnel.length,
+    kmh: window.__roland.racer.hud.speed,
+    state: window.__roland.racer.state,
+    errors: window.__errors
+  })`));
+  check('Motorrad startet direkt (ohne Umkleide)',
+    moto.fahrzeug === 'motorrad' && moto.state === 'play', JSON.stringify(moto));
+  check('Motorrad: Nacht, Laub und Tunnel vorhanden',
+    moto.nacht === true && moto.laub > 5 && moto.tunnel > 0, JSON.stringify(moto));
+  check('Motorrad faehrt los', moto.kmh > 20, JSON.stringify(moto));
+
+  const nachtBild = JSON.parse(await evaluate(bildStat));
+  check('Nachtfahrt ist dunkel, aber nicht schwarz',
+    nachtBild.schnitt >= 3 && nachtBild.schnitt < 70, JSON.stringify(nachtBild));
+  check('Motorrad: Licht im Bild (Scheinwerfer, Rueckleuchten)',
+    nachtBild.max > 120, JSON.stringify(nachtBild));
+  check('keine Fehler in der Nachtfahrt', moto.errors.length === 0, JSON.stringify(moto.errors));
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------

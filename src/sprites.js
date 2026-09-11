@@ -132,7 +132,45 @@ export const ROLAND_FRAMES = {
   ],
 };
 
+// Interludium: Motorrad von hinten (Fahrer mit Helm)
+const MOTORRAD = [
+  '     hhhhhh     ',
+  '    hhhhhhhh    ',
+  '    h......h    ',
+  '    h.cccc.h    ',
+  '   kkkkkkkkkk   ',
+  '   kkkkkkkkkk   ',
+  ' kkkkkkkkkkkkkk ',
+  ' kkrrrrrrrrrrkk ',
+  ' kkrrrrrrrrrrkk ',
+  ' kkkkkkkkkkkkkk ',
+  ' bb kkkkkkkk bb ',
+  ' bb kkkkkkkk bb ',
+  '   kkkkkkkkkk   ',
+  '   kkkkkkkkkk   ',
+  '  mmyyyyyyyymm  ',
+  '  mm  rOOr  mm  ',
+  '  mm dddddd mm  ',
+  '  mm dddddd mm  ',
+  '  mm dddddd mm  ',
+  '  mm dddddd mm  ',
+  '     dddddd     ',
+  '    dddddddd    ',
+];
+
+// Nasses Laub auf der Fahrbahn
+const LAUB = [
+  '     oOo     ',
+  '   oOooOo  o ',
+  '  ooOooOooOo ',
+  '    oooOoo   ',
+  '      oo     ',
+  '             ',
+];
+
 export const SPRITES = {
+  laub: LAUB,
+  motorrad: MOTORRAD,
   roland_idle: ROLAND_FRAMES.idle,
   roland_walk1: ROLAND_FRAMES.walk1,
   roland_walk2: ROLAND_FRAMES.walk2,

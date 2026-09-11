@@ -1,6 +1,6 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildCabrio, LEVELS } from '../src/world.js';
+import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildCabrio, buildMotorrad, LEVELS } from '../src/world.js';
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
@@ -758,8 +758,8 @@ function place(game, px, py) {
 
 // Fahren: Gas, Lenken, Neben der Straße, Kontakt, Ziel
 {
-  const mkRacer = (difficulty = 'gemuetlich') => {
-    const level = buildCabrio();
+  const mkRacer = (difficulty = 'gemuetlich', lvl = null) => {
+    const level = lvl || buildCabrio();
     const input = createInput(null);
     const events = [];
     const r = new Racer({ level, input, audio: { play() {}, engine() {}, engineOff() {} },
@@ -1230,6 +1230,80 @@ function place(game, px, py) {
   check('Akt 4: Route endet mit dem Auftritt', g6.state === 'complete', `state=${g6.state}`);
   check('Akt 4: Frack oeffnet den Auftritt', g6.gates.every((g) => g.open === true));
 }
+// ================================================= INTERLUDIUM: MOTORRAD ====
+{
+  const lv = buildMotorrad();
+  check('Motorrad-Interludium: Racer, Nacht, Motorrad',
+    lv.mode === 'racer' && lv.fahrzeug === 'motorrad' && lv.nacht === true,
+    `${lv.mode}/${lv.fahrzeug}/${lv.nacht}`);
+  check('Motorrad: Tunnel und nasses Laub vorhanden',
+    Array.isArray(lv.tunnel) && lv.tunnel.length > 0 && lv.laub > 0, JSON.stringify(lv.tunnel));
+
+  const iM = createInput(null);
+  const rm = new Racer({
+    level: buildMotorrad(), input: iM,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  rm.reset();
+  const rCab = new Racer({
+    level: buildCabrio(), input: createInput(null),
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  rCab.reset();
+  check('Motorrad ist flotter als das Cabrio', rm.maxSpeed > rCab.maxSpeed * 1.1,
+    `${Math.round(rm.maxSpeed)} vs ${Math.round(rCab.maxSpeed)}`);
+
+  // Nacht und Tunnel
+  rm.position = 0;
+  check('Motorrad: ausserhalb des Tunnels ist freie Sicht', rm.imTunnel() === false);
+  const tun = lv.tunnel[0];
+  rm.position = (tun.from + 3) * SEG_LEN;
+  check('Motorrad: im Tunnel erkannt', rm.imTunnel() === true, `Segment ${tun.from + 3}`);
+
+  // Nasses Laub: kurzer Grippverlust
+  rm.position = 20000;
+  const l0 = rm.laub[0];
+  l0.z = rm.position + 1500;
+  l0.lane = 0;
+  l0.done = false;
+  let gerutscht = false;
+  for (let i = 0; i < 120 && !gerutscht; i++) {
+    rm.playerX = 0;
+    rm.update(1 / 60);
+    if (rm.rutsch > 0) gerutscht = true;
+  }
+  check('Motorrad: nasses Laub kostet kurz den Grip', gerutscht, `rutsch=${rm.rutsch.toFixed(2)}`);
+  check('Motorrad: Grip kommt zurueck', (() => { for (let i = 0; i < 120; i++) rm.update(1 / 60); return rm.rutsch === 0; })());
+
+  // Strecke ist bestueckt und der Bot kommt an
+  const frame = rm.buildFrame();
+  check('Motorrad: Strecke ist bestueckt', rm.laub.length > 5 && rm.traffic.length > 5,
+    `Laub ${rm.laub.length}, Verkehr ${rm.traffic.length}`);
+
+  const iB = createInput(null);
+  const rb = new Racer({
+    level: buildMotorrad(), input: iB,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  rb.reset();
+  rb.traffic.length = 0;
+  rb.laub.length = 0;
+  let zeit = 0;
+  for (let i = 0; i < 60 * 120 && rb.state === 'play'; i++) {
+    iB.setKey('left', rb.playerX > 0.06);
+    iB.setKey('right', rb.playerX < -0.06);
+    rb.update(1 / 60);
+    zeit += 1 / 60;
+  }
+  check('Motorrad: Bot kommt in der Nacht nach Hause', rb.state === 'complete', `state=${rb.state} nach ${zeit.toFixed(1)}s`);
+  check('Motorrad: Abschluss nennt Fahrzeit und Kontakte',
+    rb.rows.some(([k]) => k === 'FAHRZEIT') && rb.rows.some(([k]) => k === 'KONTAKTE'),
+    JSON.stringify(rb.rows));
+}
+
 // -------------------------------------------------- Schauplatz (Keller/Freiluft) --
 {
   const j3 = buildAkt3();
