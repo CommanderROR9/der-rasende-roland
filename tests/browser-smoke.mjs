@@ -111,6 +111,8 @@ try {
   check('Titel gesetzt', (await evaluate('document.title')) === 'Der Rasende Roland');
   check('Fehlersammler installiert', Array.isArray(await evaluate('window.__errors')));
   check('Spielmodul geladen', (await evaluate('typeof window.__roland')) === 'object');
+  const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
+  check('Standard-Schwierigkeit ist gemütlich', diffStart.includes('GEMÜTLICH'), diffStart);
   check('Startübersicht sichtbar',
     (await evaluate("!document.getElementById('title').classList.contains('hidden')")) === true);
 
@@ -195,6 +197,21 @@ try {
     JSON.stringify(afterWardrobe));
   check('Umkleide schließt sich wieder', afterWardrobe.overlayZu === true);
 
+  // Schwierigkeit umschalten: wirkt sofort und bleibt gemerkt
+  await evaluate("document.getElementById('diffBtn').click()");
+  await sleep(250);
+  const diffAfter = JSON.parse(await evaluate(`JSON.stringify({
+    text: document.getElementById('diffBtn').textContent,
+    game: window.__roland.game.difficulty,
+    gespeichert: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').difficulty
+  })`));
+  check('Umschalten wirkt sofort im Spiel', diffAfter.game === 'zuegig', JSON.stringify(diffAfter));
+  check('Umschalten wird gemerkt', diffAfter.gespeichert === 'zuegig', JSON.stringify(diffAfter));
+  await evaluate("document.getElementById('diffBtn').click()");
+  await sleep(250);
+  check('Zurückschalten auf gemütlich',
+    (await evaluate('window.__roland.game.difficulty')) === 'gemuetlich');
+
   // Rendering: leeres Canvas wäre ein Totalausfall
   const px = JSON.parse(await evaluate(`(() => {
     const c = document.getElementById('game');
@@ -273,6 +290,23 @@ try {
   const bodenOk = look.boden && look.boden[0] <= 0x50 && look.boden[1] <= 0x48 && look.boden[2] <= 0x70;
   check('Bodenkachel unter der Figur ist gezeichnet', look.tile === 1 && bodenOk,
     JSON.stringify(look));
+
+  // Gegnername erscheint, wenn man davorsteht (Antwort auf "was schiesst das?")
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'piccolo');
+    g.player.x = en.x + 30;
+    g.player.y = en.y + en.h - g.player.h;   // Füße auf dieselbe Kante
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(400);
+  const enemyLabel = JSON.parse(await evaluate(`JSON.stringify({
+    text: (window.__roland.game.hud.label || {}).text || null,
+    sichtbar: !document.getElementById('worldlabel').classList.contains('hidden'),
+    dom: document.getElementById('worldlabel').textContent
+  })`));
+  check('Gegner wird beim Nähern benannt', enemyLabel.text === 'PICCOLO', JSON.stringify(enemyLabel));
+  check('Name steht auch im DOM', enemyLabel.sichtbar && enemyLabel.dom === 'PICCOLO', JSON.stringify(enemyLabel));
 
   const hud = JSON.parse(await evaluate(`JSON.stringify({
     kluft: document.getElementById('kluft').textContent,

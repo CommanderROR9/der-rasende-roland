@@ -1,5 +1,5 @@
 // main.js — Verkabelung: DOM, Canvas-Skalierung, Overlays, Speicherung.
-import { OUTFITS, pickView } from './config.js';
+import { OUTFITS, DIFFICULTY, pickView } from './config.js';
 import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
@@ -18,7 +18,7 @@ const ui = {
   pause: $('#pause'), resumeBtn: $('#resumeBtn'), quitBtn: $('#quitBtn'),
   collapse: $('#collapse'), collapseBtn: $('#collapseBtn'),
   reward: $('#reward'), rewardBody: $('#rewardBody'), rewardBtn: $('#rewardBtn'), rewardQuit: $('#rewardQuit'),
-  worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'),
+  worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
 const ctx = ui.canvas.getContext('2d');
@@ -98,7 +98,7 @@ function renderGarde(mode) {
 // ------------------------------------------------------------------- Spiel --
 function newGame(outfitId) {
   for (const h of LEVEL.hints) h.shown = false;
-  game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW });
+  game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
   game.reset(outfitId);
   hideAll();
   audio.resume();
@@ -200,6 +200,25 @@ ui.startBtn.onclick = () => { audio.resume(); renderGarde('start'); };
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
 ui.resetBtn.onclick = () => { try { localStorage.removeItem(SAVE_KEY); } catch {} ui.resetBtn.textContent = 'Zurückgesetzt ✓'; };
 
+// Schwierigkeit: „Gemütlich" ist Voreinstellung und Empfehlung.
+const DIFF_KEYS = Object.keys(DIFFICULTY);
+let diffKey = DIFFICULTY[loadSave().difficulty] ? loadSave().difficulty : 'gemuetlich';
+function applyDifficulty() {
+  const d = DIFFICULTY[diffKey];
+  ui.diffBtn.textContent = `SCHWIERIGKEIT: ${d.label}`;
+  ui.diffBtn2.textContent = `SCHWIERIGKEIT: ${d.label}`;
+  ui.diffBtn.title = d.note;
+  ui.diffBtn2.title = d.note;
+  if (game) game.setDifficulty(diffKey);
+}
+function cycleDifficulty() {
+  diffKey = DIFF_KEYS[(DIFF_KEYS.indexOf(diffKey) + 1) % DIFF_KEYS.length];
+  writeSave({ difficulty: diffKey });
+  applyDifficulty();
+}
+ui.diffBtn.onclick = cycleDifficulty;
+ui.diffBtn2.onclick = cycleDifficulty;
+
 // Ton lässt sich abschalten (das Ticken war zu viel des Guten).
 let soundOn = loadSave().sound !== false;
 function applySound() {
@@ -208,6 +227,7 @@ function applySound() {
 }
 ui.soundBtn.onclick = () => { soundOn = !soundOn; writeSave({ sound: soundOn }); applySound(); };
 applySound();
+applyDifficulty();
 ui.resumeBtn.onclick = () => { game.resume(); hideAll(); };
 ui.quitBtn.onclick = () => { game = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
 ui.collapseBtn.onclick = () => { game.respawnFromCheckpoint(); hideAll(); };

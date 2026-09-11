@@ -1,6 +1,6 @@
 // game.js — Simulation. Bewusst DOM-frei: main.js liefert Input und zeichnet,
 // die Tests in Node fahren dieselbe Logik ohne Browser.
-import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, BPM_BASE, BPM_TENOR } from './config.js';
+import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, DIFFICULTY, BPM_BASE, BPM_TENOR } from './config.js';
 import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
 import { spriteCanvas, blit, hash2 } from './render.js';
 
@@ -13,7 +13,15 @@ const ITEM_DEFS = {
 };
 
 const ENEMY_KINDS = new Set(['piccolo', 'sopran', 'tenor', 'koffer']);
-const SOPRAN_RANGE = 160;
+
+// Was ist das, und was macht es? Beim ersten Kontakt einmal erklärt.
+const ENEMY_INFO = {
+  piccolo: { name: 'PICCOLO', tip: 'PICCOLO — ES SCHIESST SCHALLWELLEN. DRÜBERSPRINGEN ODER IM TAKT TREFFEN (E).' },
+  sopran: { name: 'SOPRAN', tip: 'SOPRAN — LEBENSGEFÄHRLICH LAUT. OHROPAX ODER IN EINE NISCHE.' },
+  tenor: { name: 'TENOR', tip: 'TENOR — VERSCHLEPPT DAS TEMPO. IM TAKT GETROFFEN IST ER KURZ STILL.' },
+  koffer: { name: 'INSTRUMENTENKOFFER', tip: 'INSTRUMENTENKOFFER — ROLLT UND BLOCKIERT. DRÜBERSPRINGEN.' },
+};
+// Gegnerreichweiten richten sich nach Schwierigkeit und Sichtbreite
 const SOPRAN_CONE_H = 22;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -21,10 +29,12 @@ const overlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 export class Game {
-  constructor({ level, input, audio, events = () => {}, view = VIEW_DESKTOP }) {
+  constructor({ level, input, audio, events = () => {}, view = VIEW_DESKTOP, difficulty = 'gemuetlich' }) {
     this.level = level;
     this.vw = view.w;
     this.vh = view.h;
+    this.difficulty = DIFFICULTY[difficulty] ? difficulty : 'gemuetlich';
+    this.diff = DIFFICULTY[this.difficulty];
     this.input = input;
     this.audio = audio || { play() {}, resume() {} };
     this.events = events;
@@ -66,6 +76,8 @@ export class Game {
     this.hint = null;
     this.pauseReason = null;
     this.goalNote = -99;
+    this.met = {};
+    this.hintQueue = [];
     this.lastTritt = null;
     this.state = 'play';
     this.stats = { time: 0, deckel: 0, taktHits: 0, akt: 1 };
@@ -106,7 +118,7 @@ export class Game {
       case 'checkpoint':
         return { kind: 'checkpoint', id: s.id, x: s.tx * TILE, y: s.walkRow * TILE, w: TILE, h: TILE, alive: true, taken: false, active: false };
       case 'piccolo':
-        return { kind: 'piccolo', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 15, w: 14, h: 15, patrol: s.patrol, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, bob: Math.random() * 6.28, vx: 0 };
+        return { kind: 'piccolo', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 15, w: 14, h: 15, patrol: s.patrol, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, bob: Math.random() * 6.28, vx: 0, aim: 0 };
       case 'sopran':
         return { kind: 'sopran', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 19, w: 12, h: 19, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, phase: 'idle', t: 1.1, bob: Math.random() * 6.28 };
       case 'tenor':
@@ -125,7 +137,13 @@ export class Game {
     if (!OUTFITS[id]) return;
     this.outfit = OUTFITS[id];
     this.standCooldown = 1.0;
-    this.message(`UMGEZOGEN: ${this.outfit.label}`);
+    this.message(`UMGEZOGEN: ${this.outfit.label}`, 4.5, 2);
+  }
+  setDifficulty(key) {
+    if (!DIFFICULTY[key]) return;
+    this.difficulty = key;
+    this.diff = DIFFICULTY[key];
+    this.message(`${this.diff.label}: ${this.diff.note}`, 5, 2);
   }
   pause(reason = 'user') { if (this.state === 'play') { this.state = 'paused'; this.pauseReason = reason; } }
   resume() { if (this.state === 'paused') { this.state = 'play'; this.pauseReason = null; } }
@@ -138,10 +156,27 @@ export class Game {
     this.invuln = 1.5;
     this.state = 'play';
   }
-  /** prio 1 = laufendes Spielgeschehen, prio 0 = allgemeiner Kontexttip. */
+  /** Meldungen mit Rang: 2 = Rückmeldung auf eine Aktion, 1 = Erklärung,
+   *  0 = Kontexttip. Höherer Rang darf verdrängen; alles andere wird entweder
+   *  aufgehoben (Kontext) oder der Aufrufer versucht es später erneut.
+   *  @returns true, wenn die Meldung jetzt angezeigt wird */
   message(text, dur = 4.5, prio = 1) {
-    if (this.hint && this.hint.prio > prio && this.time - this.hint.at < 2) return;
+    if (this.hint && this.time - this.hint.at < 1.5 && this.hint.prio >= prio) {
+      // Nie verdrängen: aufheben und gleich danach zeigen (ohne Doppelte).
+      if (!this.hintQueue) this.hintQueue = [];
+      const schonDa = this.hintQueue.some((q) => q.text === text);
+      if (!schonDa && this.hintQueue.length < 5) this.hintQueue.push({ text, dur, prio });
+      return false;
+    }
+    // War gerade noch etwas Frisches zu sehen, kommt es danach zurück.
+    if (this.hint && this.time - this.hint.at < 1.5) {
+      if (!this.hintQueue) this.hintQueue = [];
+      if (!this.hintQueue.some((q) => q.text === this.hint.text) && this.hintQueue.length < 5) {
+        this.hintQueue.push({ text: this.hint.text, dur: 4, prio: this.hint.prio });
+      }
+    }
     this.hint = { text, until: this.time + dur, prio, at: this.time };
+    return true;
   }
 
   // ------------------------------------------------------------ Simulation --
@@ -177,7 +212,7 @@ export class Game {
     const frozen = this.stunTimer > 0;
     if (frozen) { this.stunTimer -= dt; }
     const axis = frozen ? 0 : inp.axis();
-    const slow = 1 - 0.42 * this.slowField;
+    const slow = 1 - this.diff.tenorSlow * this.slowField;
     const boost = this.frackBoost > 0 ? 1.35 : 1;
     const speed = this.outfit.speed * slow * boost;
 
@@ -354,18 +389,25 @@ export class Game {
   onBeat() {
     const p = this.player;
     const nah = this.entities.some((en) => en.alive && ENEMY_KINDS.has(en.kind)
-      && Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2)) < TUNE.beatEarshot);
+      && Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2)) < this.vw * 0.8);
     if (nah && this.beats % 2 === 0) this.audio.play('beat');
     for (const en of this.entities) {
       if (en.kind !== 'piccolo' || !en.alive || en.stun > 0) continue;
       const cx = en.x + en.w / 2, cy = en.y + en.h / 2;
       const dx = (this.player.x + this.player.w / 2) - cx;
-      const range = 250 * (this.glanz > 0.5 ? 1.4 : 1);
-      if (Math.sign(dx) !== en.dir && Math.abs(dx) > 8) continue;
-      if (Math.abs(dx) > range || Math.abs((this.player.y + this.player.h / 2) - cy) > 40) continue;
+      // Reichweite richtet sich nach dem Bild: was man nicht sieht, schiesst nicht.
+      const range = this.vw * this.diff.fireRange * (this.glanz > 0.5 ? 1.2 : 1);
+      const inFront = Math.sign(dx) === en.dir || Math.abs(dx) < 8;
+      const inReach = inFront && Math.abs(dx) <= range
+        && Math.abs((this.player.y + this.player.h / 2) - cy) < 46;
+      if (!inReach) { en.aim = 0; continue; }
+      // Ein Schlag Vorwarnung, dann erst der Schuss
+      if ((this.beats + 1) % this.diff.fireEvery === 0) { en.aim = this.diff.aimTime; continue; }
+      if (this.beats % this.diff.fireEvery !== 0) continue;
+      en.aim = 0;
       this.projectiles.push({
-        kind: 'sound', x: cx + en.dir * 8, y: cy - 3, w: 12, h: 8,
-        vx: en.dir * 135, life: 2.6, dmg: 1,
+        kind: 'sound', x: cx + en.dir * 9, y: cy - 3, w: 12, h: 8,
+        vx: en.dir * 135 * this.diff.shotSpeed, life: 3.4, dmg: 1,
       });
       en.flash = 0.15;
     }
@@ -374,7 +416,7 @@ export class Game {
   tryTritt() {
     const p = this.player;
     const acc = this.beatAccuracy();
-    const inTakt = acc <= TUNE.trittWindow;
+    const inTakt = acc <= this.diff.trittWindow;
     this.audio.play('tritt');
     this.shake = Math.max(this.shake, 2.5);
     for (let i = 0; i < 6; i++) {
@@ -392,11 +434,11 @@ export class Game {
     if (inTakt && hits > 0) {
       this.taktHits += hits;
       this.heat = Math.max(0, this.heat - 4);
-      this.message(`IM TAKT! ${hits} GERADE AUS DEM KONZEPT`);
+      this.message(`IM TAKT! ${hits} GERADE AUS DEM KONZEPT`, 4.5, 2);
     } else if (inTakt) {
-      this.message('IM TAKT — ABER NIEMAND IN REICHWEITE');
+      this.message('IM TAKT — ABER NIEMAND IN REICHWEITE', 4.5, 2);
     } else {
-      this.message('DANEBEN. DER TAKT IST DIE MITTE DES PULSES');
+      this.message('DANEBEN. DER TAKT IST DIE MITTE DES PULSES', 4.5, 2);
     }
     this.lastTritt = { inTakt, hits };
   }
@@ -408,7 +450,7 @@ export class Game {
     this.audio.play('frackoff');
     this.shake = 5;
     for (let i = 0; i < 26; i++) this.burst(this.player.x + 5, this.player.y + 8, i % 2 ? '#f0eee4' : '#191622', 1);
-    this.message('FRACK-OFF. WEISSE WESTE, FREIE SCHULTERN, ENDLICH LUFT');
+    this.message('FRACK-OFF. WEISSE WESTE, FREIE SCHULTERN, ENDLICH LUFT', 4.5, 2);
   }
 
   // -------------------------------------------------------------- Gegner --
@@ -420,10 +462,16 @@ export class Game {
       if (en.stun > 0) en.stun -= dt;
       if (en.flash > 0) en.flash -= dt;
       en.bob += dt * 3;
+      const info = ENEMY_INFO[en.kind];
+      if (info && !this.met[en.kind]) {
+        const dd = Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2));
+        if (dd < 130 && this.message(info.tip, 7, 1)) this.met[en.kind] = true;
+      }
       switch (en.kind) {
         case 'piccolo': {
+          if (en.aim > 0) en.aim -= dt;
           if (en.stun <= 0 && en.patrol) {
-            en.x += en.dir * 20 * dt;
+            en.x += en.dir * 20 * this.diff.enemySpeed * dt;
             if (en.x < en.patrol[0] * TILE) { en.x = en.patrol[0] * TILE; en.dir = 1; }
             if (en.x + en.w > (en.patrol[1] + 1) * TILE) { en.x = (en.patrol[1] + 1) * TILE - en.w; en.dir = -1; }
           }
@@ -436,7 +484,7 @@ export class Game {
           if (en.wait > 0) {
             en.wait -= dt;
           } else {
-            en.x += en.dir * (en.stun > 0 ? 6 : 22) * dt;
+            en.x += en.dir * (en.stun > 0 ? 6 : 22 * this.diff.kofferSpeed) * dt;
           }
           if (en.patrol) {
             const left = en.patrol[0] * TILE;
@@ -466,7 +514,7 @@ export class Game {
             if (en.x + en.w > (en.patrol[1] + 1) * TILE) { en.x = (en.patrol[1] + 1) * TILE - en.w; en.dir = -1; }
           }
           const d = Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2));
-          if (d < 110 && en.stun <= 0) {
+          if (d < this.diff.tenorRange && en.stun <= 0) {
             slowActive = true;
             if (this.slowField < 0.1) { this.audio.play('tenor'); this.message('DER TENOR VERSCHLEPPT DAS TEMPO'); }
           }
@@ -477,7 +525,7 @@ export class Game {
           if (en.stun > 0) { en.phase = 'idle'; en.t = 0.6; break; }
           en.t -= dt;
           if (en.phase === 'idle' && en.t <= 0) {
-            en.phase = 'windup'; en.t = 1.1;
+            en.phase = 'windup'; en.t = this.diff.sopranWind;
             this.audio.play('piccolo');
           } else if (en.phase === 'windup' && en.t <= 0) {
             en.phase = 'shriek'; en.t = 0.5;
@@ -487,11 +535,11 @@ export class Game {
             const px = p.x + p.w / 2, py = p.y + p.h / 2;
             const dx = px - cx;
             const inFront = Math.sign(dx) === en.dir || Math.abs(dx) < 6;
-            const range = SOPRAN_RANGE * (this.glanz > 0.5 ? 1.3 : 1);
+            const range = this.vw * this.diff.sopranRange * (this.glanz > 0.5 ? 1.2 : 1);
             if (inFront && Math.abs(dx) < range && Math.abs(py - cy) < SOPRAN_CONE_H
               && this.los(cx, cy, px, py) && !this.inAlcove(p) && this.ohropax <= 0) {
-              this.damage(2, cx);
-              this.message('DAS SOPRAN. LEBENSGEFÄHRLICH LAUT. OHROPAX ODER DECKUNG.');
+              this.damage(this.diff.sopranDmg, cx);
+              this.message('DAS SOPRAN. LEBENSGEFÄHRLICH LAUT. OHROPAX ODER DECKUNG.', 4.5, 2);
             }
           } else if (en.phase === 'shriek' && en.t <= 0) {
             en.phase = 'recover'; en.t = 1.4;
@@ -519,7 +567,7 @@ export class Game {
       if (overlap(p, pr)) {
         pr.life = 0;
         if (this.ohropax <= 0) this.damage(pr.dmg, pr.x);
-        else this.message('OHROPAX HÄLT. DER SCHALL PRALLT AB.');
+        else this.message('OHROPAX HÄLT. DER SCHALL PRALLT AB.', 4.5, 2);
       }
     }
     this.projectiles = this.projectiles.filter((pr) => pr.life > 0);
@@ -540,7 +588,7 @@ export class Game {
       this.stunTimer = 2.2;
       this.shake = 7;
       this.audio.play('collapse');
-      this.message('KREISLAUF. DER FRACK HAT GEWONNEN. KURZ DURCHATMEN.');
+      this.message('KREISLAUF. DER FRACK HAT GEWONNEN. KURZ DURCHATMEN.', 4.5, 2);
     }
     const glanzTarget = light && (this.outfit.id === 'frack' || this.heat > 60) ? 1 : 0;
     this.glanz = clamp(this.glanz + (glanzTarget - this.glanz) * Math.min(1, dt * 2), 0, 1);
@@ -586,7 +634,7 @@ export class Game {
         en.taken = true;
         this.checkpoint = { x: en.x + (TILE - p.w) / 2, y: (en.y + TILE) - p.h };
         this.lastCheckpointId = en.id;
-        this.message('SPEICHERPUNKT. VON HIER GEHT ES WEITER.');
+        this.message('SPEICHERPUNKT. VON HIER GEHT ES WEITER.', 4.5, 2);
         this.audio.play('pickup');
         continue;
       }
@@ -615,11 +663,11 @@ export class Game {
         g.open = true;
         for (let j = g.ty; j < g.ty + g.th; j++) for (let i = g.tx; i < g.tx + g.tw; i++) this.grid[j][i] = 0;
         this.audio.play('gate');
-        this.message(g.need === 'anzug' ? 'DIENSTTÜR OFFEN. DER ANZUG MACHT DEN UNTERSCHIED.' : 'ABSperrband BEISEITE. DER FRACK HAT PRESTIGE.');
+        this.message(g.need === 'anzug' ? 'DIENSTTÜR OFFEN. DER ANZUG MACHT DEN UNTERSCHIED.' : 'ABSperrband BEISEITE. DER FRACK HAT PRESTIGE.', 4.5, 2);
         g.notified = 0;
       } else if (this.time > g.notified + 3) {
         g.notified = this.time;
-        this.message(g.need === 'anzug' ? 'DIE DIENSTTÜR BLEIBT ZU. DAFÜR BRAUCHT ES DEN ANZUG.' : 'DAS ABSperrband HÄLT. NUR IM FRACK GEHT DAS AUF.');
+        this.message(g.need === 'anzug' ? 'DIE DIENSTTÜR BLEIBT ZU. DAFÜR BRAUCHT ES DEN ANZUG.' : 'DAS ABSperrband HÄLT. NUR IM FRACK GEHT DAS AUF.', 4.5, 2);
       }
     }
     // Ziel: Materialaufzug
@@ -628,7 +676,7 @@ export class Game {
       if (this.hasMappe) this.complete();
       else if (this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
-        this.message('DER AUFZUG RÜHRT SICH NICHT. OHNE NOTENMAPPE FÄHRT ER NICHT.');
+        this.message('DER AUFZUG RÜHRT SICH NICHT. OHNE NOTENMAPPE FÄHRT ER NICHT.', 4.5, 2);
       }
     }
     // Kontexttips
@@ -662,6 +710,9 @@ export class Game {
       if (en.kind === 'item') {
         const d = Math.hypot((en.x + en.w / 2) - cx, (en.y + en.h / 2) - cy);
         if (d < bestD) { bestD = d; best = { text: (ITEM_DEFS[en.item] || {}).label || 'FUNDSTÜCK', x: en.x + en.w / 2, y: en.y - 2 }; }
+      } else if (ENEMY_INFO[en.kind]) {
+        const d = Math.hypot((en.x + en.w / 2) - cx, (en.y + en.h / 2) - cy);
+        if (d < 58) { bestD = d; best = { text: ENEMY_INFO[en.kind].name, x: en.x + en.w / 2, y: en.y - 2 }; }
       } else if (en.kind === 'checkpoint' && !en.taken) {
         const d = Math.hypot((en.x + 8) - cx, (en.y + 8) - cy);
         if (d < bestD - 8) { bestD = d; best = { text: 'SPEICHERPUNKT', x: en.x + 8, y: en.y - 4 }; }
@@ -684,22 +735,22 @@ export class Game {
       case 'bierdeckel':
         this.deckel += 1;
         this.audio.play('pickup');
-        this.message(`BIERDECKEL ${this.deckel}/${this.level.deckelTotal}`);
+        this.message(`BIERDECKEL ${this.deckel}/${this.level.deckelTotal}`, 4.5, 2);
         break;
       case 'ohropax':
         this.ohropax = TUNE.ohropaxTime;
         this.audio.play('pickup');
-        this.message('OHROPAX. ENDLICH RUHIG. FLÖTEN SIND JETZT DEKORATION.');
+        this.message('OHROPAX. ENDLICH RUHIG. FLÖTEN SIND JETZT DEKORATION.', 4.5, 2);
         break;
       case 'wasser':
         this.heat = Math.max(0, this.heat - 30);
         this.audio.play('pickup');
-        this.message('WASSER. DER FRACK DAMPFT KURZ NICHT.');
+        this.message('WASSER. DER FRACK DAMPFT KURZ NICHT.', 4.5, 2);
         break;
       case 'mappe':
         this.hasMappe = true;
         this.audio.play('pickup');
-        this.message('NOTENMAPPE GESICHERT. JETZT ZUM AUFZUG.');
+        this.message('NOTENMAPPE GESICHERT. JETZT ZUM AUFZUG.', 4.5, 2);
         break;
       default: break;
     }
@@ -710,11 +761,11 @@ export class Game {
     const p = this.player;
     if (p.invuln > 0 || this.state !== 'play') return false;
     this.nerves -= n;
-    p.invuln = PHYS.invuln;
+    p.invuln = this.diff.invuln;
     p.flash = 0.25;
     p.vx = Math.sign(p.x - (fromX ?? p.x)) * 110;
     p.vy = -90;
-    this.invuln = PHYS.invuln;
+    this.invuln = this.diff.invuln;
     this.shake = 6;
     this.audio.play('hurt');
     this.hud = this.buildHud();
@@ -766,7 +817,11 @@ export class Game {
   }
 
   updateHints() {
-    if (this.hint && this.time > this.hint.until) this.hint = null;
+    if (this.hint && this.time > this.hint.until) {
+      this.hint = null;
+      const next = this.hintQueue && this.hintQueue.shift();
+      if (next) this.hint = { text: next.text, until: this.time + next.dur, prio: next.prio, at: this.time };
+    }
   }
 
   buildHud() {
@@ -1009,7 +1064,17 @@ export class Game {
         }
         case 'piccolo': {
           const spr = this.spr('piccolo');
-          blit(ctx, spr, x, y + bob, en.dir < 0, en.flash);
+          const top = y + en.h - spr.h + bob;
+          blit(ctx, spr, x, top, en.dir < 0, en.flash);
+          if (en.aim > 0) {
+            // ruhige Vorwarnung: Ausrufezeichen und Schusslinie, kein Blinken
+            const len = Math.round(this.vw * this.diff.fireRange);
+            ctx.fillStyle = 'rgba(232,196,106,0.75)';
+            ctx.fillRect(x + 6, top - 10, 2, 5);
+            ctx.fillRect(x + 6, top - 4, 2, 2);
+            ctx.fillStyle = 'rgba(232,196,106,0.22)';
+            ctx.fillRect(en.dir > 0 ? x + en.w : x - len, top + 8, len, 1);
+          }
           if (en.stun > 0) this.drawStun(ctx, x + 7, y - 6);
           break;
         }
@@ -1028,7 +1093,7 @@ export class Game {
           const spr = this.spr('sopran');
           if (en.phase === 'windup' || en.phase === 'shriek') {
             const grow = en.phase === 'windup' ? 1 - en.t / 1.1 : 1;
-            const range = SOPRAN_RANGE * (this.glanz > 0.5 ? 1.3 : 1) * grow;
+            const range = this.vw * this.diff.sopranRange * (this.glanz > 0.5 ? 1.2 : 1) * grow;
             const cx = en.dir > 0 ? x + en.w : x;
             const y0 = y + 5;
             ctx.fillStyle = en.phase === 'shriek' ? 'rgba(255,220,180,0.34)' : 'rgba(255,180,180,0.16)';
@@ -1065,10 +1130,20 @@ export class Game {
   drawProjectiles(ctx, camX, camY) {
     for (const pr of this.projectiles) {
       const x = Math.round(pr.x - camX), y = Math.round(pr.y - camY);
-      ctx.fillStyle = 'rgba(255,208,138,0.85)';
-      ctx.fillRect(x, y + 2, pr.w, 3);
-      ctx.fillStyle = 'rgba(255,208,138,0.4)';
-      ctx.fillRect(x - 4, y + 3, 4, 1);
+      const dirR = pr.vx >= 0 ? 1 : -1;
+      const cx = x + pr.w / 2, cy = y + pr.h / 2;
+      // Drei nach vorn offene Bögen: eine sichtbare Schallwelle.
+      ctx.strokeStyle = 'rgba(255,208,138,0.85)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) {
+        const r = 3 + i * 3;
+        const mid = dirR > 0 ? 0 : Math.PI;
+        ctx.beginPath();
+        ctx.arc(cx - dirR * 4, cy, r, mid - 0.8, mid + 0.8);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#ffd08a';
+      ctx.fillRect(cx - 1, cy - 1, 2, 2);
     }
   }
 

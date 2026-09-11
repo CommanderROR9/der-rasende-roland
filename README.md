@@ -48,10 +48,24 @@ den Frack auf: **Frack-Off**, einmal pro Durchgang, Hitze auf null und kurz schn
 **Takt:** Die Welt läuft auf 100 bpm (sichtbarer Puls am Bildrand). Piccolos feuern
 auf den Schlag, der **Beton-Tritt** im Takt (`E`) betäubt jeden Gegner in Reichweite.
 
-**Gefahren:** Piccolo (Schallwellen, Stumpf), Sopran (lebensgefährlich laut — nur
-Ohropax oder Deckung in einer Nische hilft), Tenor (verschleppt das Tempo und macht
-alles zäh), rollender Instrumentenkoffer (drüberspringen), morsche Notenblätter
-(brechen nach kurzer Zeit weg, wachsen aber nach).
+**Gefahren:** Beim ersten Kontakt stellt sich jede von selbst vor — Name über der Figur,
+ein Satz in der Hinweisleiste, und ein Schild zeigt beim Annähern den Namen:
+
+| Gegner | Verhalten | Konter |
+|---|---|---|
+| **Piccolo** | schießt sichtbare Schallwellen (drei Bögen, ein Schlag Vorwarnung mit `!` und Schusslinie) | drüberspringen oder im Takt treffen |
+| **Sopran** | lebensgefährlich laut, langer Anlauf mit sichtbarem Kegel | Ohropax oder Deckung in einer Nische |
+| **Tenor** | verschleppt das Tempo, alles wird zäh | im Takt treffen, Abstand gewinnen |
+| **Instrumentenkoffer** | rollt, blockiert, wartet an den Enden | im Fenster drüberspringen |
+
+Morsche Notenblätter brechen nach kurzer Zeit weg, wachsen aber nach.
+
+**Schwierigkeit:** Voreinstellung ist **GEMÜTLICH**, weil das Spiel ein Geschenk ist.
+Dort sind Gegner halb so schnell, der erste Schuss kommt erst nach einer Schonfrist,
+Schallwellen fliegen langsamer, nach einem Treffer gibt es zwei Sekunden Unverwundbarkeit,
+das Taktfenster ist deutlich größer und der Sopran kostet nur einen Nerv statt zwei.
+Umschaltbar im Titelbild und in der Pause (`SCHWIERIGKEIT`), die Wahl bleibt gemerkt.
+Wichtig: Gegner schießen nur innerhalb des sichtbaren Bildes — nie von außerhalb.
 
 **Belohnung:** Am Ende von Akt 1 wartet das **Feierabendbier**. Bierdeckel sind die
 Sammelobjekte, für einen davon muss man auf die morsche Kante steigen.
@@ -76,15 +90,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 112 headless Checks
+tests/smoke.test.mjs 126 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 112 headless Checks: node tests/smoke.test.mjs
+npm test                        # 126 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 50 Checks in echtem Chromium
+npm run browser                 # 56 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -95,8 +109,9 @@ Bot ein kompletter Durchlauf über die gebaute Route bis zum Aufzug. Damit ist b
 dass jede Stufe innerhalb der Sprunghöhe liegt und es keinen Abkürzungsweg am Boden gibt.
 
 `tests/browser-smoke.mjs` startet Chromium, steuert ihn über das DevTools-Protokoll und
-prüft das echte Spiel: Laden ohne JavaScript-Fehler, Start, Kleiderwahl, Tastatur,
-Umkleide erst auf Tastendruck, Objektbeschriftung, Zeichnung im Framebuffer (Figur,
+prüft das echte Spiel: Laden ohne JavaScript-Fehler, Start, Kleiderwahl, Standard-
+Schwierigkeit GEMÜTLICH samt Umschalten, Tastatur, Umkleide erst auf Tastendruck,
+Objekt- und Gegnerbeschriftung, Zeichnung im Framebuffer (Figur,
 Bodenkachel, kein Standbild), HUD, Pause — und in Geräteemulation das Smartphone:
 Touch-Pad sichtbar, Kamera enger, Figur groß genug, Stick bewegt den Spieler. Beide
 Suiten laufen gegen die Live-URL.

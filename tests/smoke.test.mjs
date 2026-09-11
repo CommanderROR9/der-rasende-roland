@@ -3,7 +3,7 @@
 import { buildAkt1 } from '../src/world.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
-import { PHYS, BPM_BASE, BPM_TENOR } from '../src/config.js';
+import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH } from '../src/config.js';
 
 const results = [];
 let failed = 0;
@@ -18,7 +18,7 @@ const TILE = 16;
  * Frische Simulation. stands:false entfernt die Kleiderständer, damit reine
  * Physiktests nicht in der Umkleide hängen bleiben.
  */
-function fresh(outfit = 'schwarz', { stands = true } = {}) {
+function fresh(outfit = 'schwarz', { stands = true } = {}, difficulty = 'gemuetlich') {
   const level = buildAkt1();
   if (!stands) {
     const blocked = new Set(level.spawns.filter((s) => s.kind === 'stand').map((s) => s.tx));
@@ -26,7 +26,7 @@ function fresh(outfit = 'schwarz', { stands = true } = {}) {
     for (const tx of blocked) level.hints = level.hints.filter((h) => h.x !== tx * TILE);
   }
   const input = createInput(null);
-  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {}, difficulty });
   game.reset(outfit);
   return { level, input, game };
 }
@@ -146,9 +146,15 @@ function place(game, px, py) {
   const { game } = fresh('schwarz', { stands: false });
   const pic = game.entities.find((e) => e.kind === 'piccolo');
   check('piccolo exists', !!pic);
-  const p = place(game, pic.x - 60, pic.y);
-  step(game, 1.2);
+  const p = place(game, pic.x - 150, pic.y);
+  step(game, 0.55);
+  check('piccolo schiesst nicht sofort (Schonfrist)', game.projectiles.length === 0,
+    `proj=${game.projectiles.length}`);
+  step(game, 1.45);
   check('piccolo fires on the beat', game.projectiles.length > 0, `proj=${game.projectiles.length}`);
+  const vorher = game.nerves;
+  step(game, 3.5);
+  check('Schallwelle trifft den stehenden Spieler', game.nerves < vorher, `nerves=${game.nerves}`);
   const nervesBefore = game.nerves;
   place(game, p.x, p.y);
   game.player.invuln = 0;
@@ -279,6 +285,66 @@ function place(game, px, py) {
   check('off-beat tritt does not stun', pic2.stun === 0);
   check('off-beat tritt is called out',
     !!g2.hud.hint && g2.hud.hint.includes('DANEBEN'), `hint=${g2.hud.hint}`);
+  step(g2, 5);
+  check('Erklärung folgt nach der Rückmeldung (nichts geht verloren)',
+    !!g2.hud.hint && g2.hud.hint.includes('PICCOLO'), `hint=${g2.hud.hint}`);
+}
+
+// ---------------------------------------------------------- Schwierigkeit ----
+{
+  const ersterSchuss = (key) => {
+    const { game } = fresh('schwarz', { stands: false }, key);
+    const pic = game.entities.find((e) => e.kind === 'piccolo');
+    place(game, pic.x - 40, pic.y);
+    for (let i = 0; i < 60 * 10; i++) {
+      game.update(1 / 60);
+      if (game.projectiles.length) return game.time;
+    }
+    return Infinity;
+  };
+  const tGem = ersterSchuss('gemuetlich');
+  const tZue = ersterSchuss('zuegig');
+  check('gemütlich lässt mehr Zeit vor dem ersten Schuss', tGem > tZue,
+    `gemütlich ${tGem.toFixed(2)}s vs zügig ${tZue.toFixed(2)}s`);
+  check('Vorwarnung ist lang genug zum Reagieren', tGem >= 0.6, `${tGem.toFixed(2)}s`);
+
+  const { game: gGem } = fresh('schwarz', { stands: false }, 'gemuetlich');
+  const { game: gZue } = fresh('schwarz', { stands: false }, 'zuegig');
+  check('gemütlich: langsamere Gegner', gGem.diff.enemySpeed < gZue.diff.enemySpeed);
+  check('gemütlich: langsamere Schallwellen', gGem.diff.shotSpeed < gZue.diff.shotSpeed);
+  check('gemütlich: mehr Schonfrist nach Treffer', gGem.diff.invuln > gZue.diff.invuln);
+  check('gemütlich: Sopran kostet nur einen Nerv', gGem.diff.sopranDmg === 1);
+  check('Standard ist gemütlich',
+    new Game({ level: buildAkt1(), input: createInput(null), audio: { play() {}, resume() {} }, events: () => {} })
+      .difficulty === 'gemuetlich');
+
+  // Am Handy darf nichts von ausserhalb des Bildes schiessen
+  const touch = new Game({
+    level: buildAkt1(), input: createInput(null), audio: { play() {}, resume() {} }, events: () => {},
+    view: VIEW_TOUCH, difficulty: 'gemuetlich',
+  });
+  check('Schussreichweite bleibt im sichtbaren Bild',
+    touch.vw * touch.diff.fireRange < touch.vw * 0.75,
+    `${Math.round(touch.vw * touch.diff.fireRange)}px bei ${touch.vw}px Sicht`);
+
+  // Umschalten zur Laufzeit wirkt sofort
+  const { game: gSwitch } = fresh('schwarz', { stands: false }, 'gemuetlich');
+  gSwitch.setDifficulty('zuegig');
+  check('Umschalten wirkt sofort', gSwitch.diff.id === 'zuegig' && gSwitch.difficulty === 'zuegig');
+}
+
+// ------------------------------------------------- Gegner werden erklärt -----
+{
+  const { game } = fresh('schwarz', { stands: false });
+  const pic = game.entities.find((e) => e.kind === 'piccolo');
+  place(game, pic.x - 80, pic.y);
+  step(game, 0.4);
+  check('Erster Kontakt erklärt den Gegner',
+    !!game.hud.hint && game.hud.hint.includes('SCHALLWELLEN'), `hint=${game.hud.hint}`);
+  place(game, pic.x - 40, pic.y);
+  step(game, 0.2);
+  check('Nähe zeigt den Namen über dem Gegner',
+    !!game.hud.label && game.hud.label.text === 'PICCOLO', JSON.stringify(game.hud.label));
 }
 
 // ----------------------------------------------------------- Tenor/Bremse --
@@ -317,6 +383,8 @@ function place(game, px, py) {
   step(g2, 1.5);
   check('Absperrband stays shut in Anzug', band.open === false);
   check('Absperrband is solid until opened', g2.grid[18][band.tx] === 1);
+  // Direkte Rückmeldungen (z.B. Bierdeckel) stehen zuerst, danach kommt der Hinweis.
+  step(g2, 5.5);
   check('Absperrband gives a hint', !!g2.hud.hint && g2.hud.hint.includes('FRACK'), `hint=${g2.hud.hint}`);
   g2.setOutfit('frack');
   step(g2, 0.3);
