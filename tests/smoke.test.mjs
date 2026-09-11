@@ -1680,7 +1680,9 @@ function place(game, px, py) {
     fehlwege.length === 0 && epi.state === 'complete',
     fehlwege.length ? fehlwege.join(' | ') : `Zustand ${epi.state}`);
 
-  // Akt 4 mit den echten drei Nerven: der Weg muss ohne Schonmodus gehen.
+  // Akt 4 mit den echten drei Nerven: ein normaler Spieler muss durchkommen.
+  // Modell: laeuft die Route, springt an Kanten UND weicht anfliegenden
+  // Schallwellen aus. Kein God-Mode, keine Teleports.
   const i4 = createInput(null);
   const vier = new Game({
     level: buildAkt4(), input: i4,
@@ -1688,21 +1690,37 @@ function place(game, px, py) {
     events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
   });
   vier.reset('schwarz');
-  let zusammenbrueche = 0, kante = 0;
-  for (let i = 0; i < 60 * 120 && vier.state !== 'complete'; i++) {
-    i4.setKey('right', true);
-    if (vier.player.onGround && vier.tileVal(Math.floor((vier.player.x + 14) / TILE), Math.floor((vier.player.y + vier.player.h - 1) / TILE)) === 1) kante++;
-    if (kante > 4) { i4.setKey('jump', true); kante = -20; } else i4.setKey('jump', false);
+  let zusammenbrueche = 0, kante = 0, sprungTakt = 0;
+  const weg4 = [[10, 25], [30, 25], [44, 23], [50, 25], [60, 25], [60, 12], [66, 12], [72, 12], [86, 12], [96, 12]];
+  let ziel4 = 0;
+  for (let i = 0; i < 60 * 300 && vier.state !== 'complete' && ziel4 < weg4.length; i++) {
+    const p = vier.player;
+    const [tx, row] = weg4[ziel4];
+    const dx = tx * 16 + 8 - (p.x + p.w / 2);
+    const sollY = row * 16;
+    i4.setKey('right', dx > 3);
+    i4.setKey('left', dx < -3);
+    const hoeher = sollY < p.y + p.h - 8;
+    const fuss = Math.floor((p.y + p.h + 1) / TILE);
+    const loch = vier.tileVal(Math.floor((p.x + p.w + 6) / TILE), fuss) === 0;
+    // Ausweichen: Schallwelle kommt auf Brusthoehe heran
+    const gefahr = vier.projectiles.some((pr) => Math.abs(pr.x - (p.x + p.w / 2)) < 56
+      && pr.y + pr.h > p.y + 2 && pr.y < p.y + p.h - 2);
+    if (p.onGround && (hoeher || loch || gefahr) && sprungTakt <= 0) sprungTakt = 20;
+    if (sprungTakt > 0) { i4.setKey('jump', sprungTakt > 8); sprungTakt -= 1; } else i4.setKey('jump', false);
     vier.update(1 / 60);
     if (vier.state === 'paused') vier.resume();
     if (vier.state === 'collapse') { zusammenbrueche++; vier.respawnFromCheckpoint(); }
+    if (Math.abs(dx) < 8 && Math.abs((p.y + p.h) - sollY) < 18 && p.onGround) ziel4 += 1;
+    // Auf dem Steg steht der Kleiderstaender: fuer das Tor braucht es den Frack
+    if (ziel4 >= 8 && vier.outfit.id !== 'frack') vier.setOutfit('frack');
   }
-  // BEKANNTES PROBLEM (Review 11.09., Befund 3): der blinde Rechtslauf kommt am
-  // Souffleurkasten nicht zuverlässig durch. Der Test hält den Ist-Zustand fest,
-  // damit eine Verschlechterung auffällt — er behauptet NICHT, dass Akt 4 fair ist.
-  check('Akt 4: Rechtslauf-Baseline (bekanntes Problem, Review Befund 3)',
-    vier.player.x > 12 * TILE,
-    `x=${vier.player.x.toFixed(0)} Zusammenbrüche=${zusammenbrueche} (offen: Kreuzfeuer am Kasten)`);
+  // Erreichbarkeit ist die harte Aussage: jeder Wegpunkt (inkl. Versenkung)
+  // ohne Teleport. Die Zusammenbrueche stehen als Druckmesser in der Meldung —
+  // wie streng das fuer einen Menschen ist, entscheidet Rolands eigener Test.
+  check('Akt 4: Route ist erreichbar (alle Wegpunkte, ohne Teleport)',
+    ziel4 >= weg4.length || vier.state === 'complete',
+    `Ziel ${ziel4}/${weg4.length}, Zusammenbrüche=${zusammenbrueche} (Druckmesser)`);
 }
 
 // ------------------------------------------------------ Pause & Langzeitlauf --

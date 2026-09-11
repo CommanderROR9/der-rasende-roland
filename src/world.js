@@ -570,16 +570,19 @@ export function buildAkt4() {
 
   e('item', 27, 23, { item: 'bierdeckel' });
   gleam(30, 23, 4);
-  e('piccolo', 28, 25, { patrol: [26, 32], dir: -1 });   // nicht mehr im Kreuzfeuer am Kasten
+  e('item', 22, 25, { item: 'ohropax' });   // Schutz, BEVOR der erste Schuetze kommt
+  e('item', 36, 25, { item: 'brezel' });   // Nervennahrung vor der Enge
   lamp(38, 22);
   gleam(38, 23, 3.5);
-  e('item', 40, 25, { item: 'ohropax' });   // Schutz, bevor der Kasten kommt
+  e('piccolo', 34, 25, { patrol: [33, 39], dir: -1 });  // Abstand zur Enge am Kasten
   solid(44, 24, 4, 1);        // Kasten steht auf dem Boden (vorher schwebende Platte)
   alcove(41, 24);             // Deckung kurz vor dem Kasten
   spook(44, 23, 4, 2);        // Souffleurkasten: es flüstert direkt am Ohr
   solid(44, 23, 4, 1);        // der Kasten selbst
   gleam(45, 22, 3);
-  e('sopran', 50, 25, { dir: -1 });
+  e('item', 68, 25, { item: 'brezel' });   // zweite Staerkung nach dem Kasten
+  alcove(54, 24);             // Deckung vor dem Sopran
+  e('sopran', 58, 25, { dir: -1 });
   alcove(47, 24);
   gleam(52, 23, 3.5);
   e('item', 57, 21, { item: 'bierdeckel' });

@@ -105,7 +105,8 @@ export function pickView(coarsePointer) {
 export const DIFFICULTY = {
   gemuetlich: {
     id: 'gemuetlich',
-    sicht: 4.6, label: 'GEMÜTLICH',
+    sicht: 4.6,
+    invuln: 2.6, label: 'GEMÜTLICH',
     note: 'empfohlen: langsame Gegner, viel Schonfrist',
     enemySpeed: 0.55, fireEvery: 3, fireRange: 0.55, shotSpeed: 0.62, aimTime: 0.75,
     invuln: 2.0, trittWindow: 0.20, tenorSlow: 0.26, tenorRange: 96, kofferSpeed: 0.6,

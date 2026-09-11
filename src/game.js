@@ -9,6 +9,7 @@ const ITEM_DEFS = {
   ohropax: { spr: 'ohropax', w: 8, h: 6, label: 'OHROPAX' },
   wasser: { spr: 'wasser', w: 6, h: 10, label: 'WASSERFLASCHE' },
   mappe: { spr: 'mappe', w: 12, h: 12, label: 'NOTENMAPPE' },
+  brezel: { spr: 'brezel', w: 10, h: 7, label: 'BREZEL' },
   bier: { spr: 'bier', w: 10, h: 13, label: 'FEIERABENDBIER' },
 };
 
@@ -629,7 +630,8 @@ export class Game {
       const cx = en.x + en.w / 2, cy = en.y + en.h / 2;
       const dx = (this.player.x + this.player.w / 2) - cx;
       // Reichweite richtet sich nach dem Bild: was man nicht sieht, schiesst nicht.
-      const range = this.vw * this.diff.fireRange * (this.glanz > 0.5 ? 1.2 : 1);
+      const dunkelFaktor = this.level.dark ? 0.7 : 1;   // nie weiter als die eigene Sicht
+      const range = this.vw * this.diff.fireRange * (this.glanz > 0.5 ? 1.2 : 1) * dunkelFaktor;
       const inFront = Math.sign(dx) === en.dir || Math.abs(dx) < 8;
       const inReach = inFront && Math.abs(dx) <= range
         && Math.abs((this.player.y + this.player.h / 2) - cy) < 46;
@@ -1053,6 +1055,11 @@ export class Game {
         this.hasMappe = true;
         this.audio.play('pickup');
         this.message('NOTENMAPPE GESICHERT. JETZT ZUM AUFZUG.', 4.5, 2);
+        break;
+      case 'brezel':
+        this.nerves = Math.min(this.maxNerves, this.nerves + 1);
+        this.audio.play('pickup');
+        this.message('BREZEL. EIN NERV ZURUECK. ES GEHT WEITER.', 4.5, 2);
         break;
       default: break;
     }

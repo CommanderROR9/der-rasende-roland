@@ -210,10 +210,21 @@ const GRILL = [
   '    m          m    ',
 ];
 
+// Akt 4: Nervennahrung
+const BREZEL = [
+  '  ..aa..  ',
+  ' .aawwaa. ',
+  ' aawwwwwa ',
+  ' aa.ww.aa ',
+  ' .aawwaa. ',
+  '..aawwaa..',
+  "........'",
+];
 export const SPRITES = {
   ramona: RAMONA,
   grill: GRILL,
   laub: LAUB,
+  brezel: BREZEL,
   motorrad: MOTORRAD,
   roland_idle: ROLAND_FRAMES.idle,
   roland_walk1: ROLAND_FRAMES.walk1,
