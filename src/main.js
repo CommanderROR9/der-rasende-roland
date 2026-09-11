@@ -500,9 +500,9 @@ function baueStationswahl() {
     };
     ui.actRow.appendChild(b);
   });
-  updateActLabels();
+  // Kein Rückruf in updateActLabels: das ergäbe eine Endlosrekursion.
 }
-updateJumpButton();
+baueStationswahl();          // ersetzt den alten Zwei-Wege-Umschalter
 fit();
 requestAnimationFrame(frame);
 window.__roland = {
