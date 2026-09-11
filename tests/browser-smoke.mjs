@@ -428,6 +428,40 @@ try {
 
   await evaluate("window.__roland.loadAct(0)");
 
+  // --- Cabrio-Interludium im Browser --------------------------------------
+  await evaluate("window.__roland.loadAct(2)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(900);
+  const cab = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.level.name,
+    modus: window.__roland.aktiv.hud.modus,
+    state: window.__roland.aktiv.state,
+    racerHud: !document.getElementById('racerReadout').classList.contains('hidden'),
+    walkHudVersteckt: document.getElementById('walkReadout').classList.contains('hidden'),
+    gardeZu: document.getElementById('garde').classList.contains('hidden')
+  })`));
+  check('Cabrio startet direkt (ohne Umkleide)',
+    cab.modus === 'racer' && cab.state === 'play' && cab.gardeZu === true, JSON.stringify(cab));
+  check('Fahr-HUD ersetzt das Lauf-HUD',
+    cab.racerHud === true && cab.walkHudVersteckt === true, JSON.stringify(cab));
+
+  const sigA2 = await evaluate(sigExpr);
+  await sleep(2500);
+  const cab2 = JSON.parse(await evaluate(`JSON.stringify({
+    kmh: window.__roland.aktiv.hud.speed,
+    strecke: window.__roland.aktiv.hud.strecke,
+    errors: window.__errors,
+    dom: document.getElementById('rSpeed').textContent
+  })`));
+  check('Wagen beschleunigt von allein', cab2.kmh > 25, JSON.stringify(cab2));
+  check('Tempo steht auch im DOM-HUD', Number(cab2.dom) > 25, cab2.dom);
+  check('keine Fehler im Interludium', cab2.errors.length === 0, JSON.stringify(cab2.errors));
+  const sigB2 = await evaluate(sigExpr);
+  check('Fahrt bewegt sich im Bild',
+    sigA2.filter((v, i) => v !== sigB2[i]).length >= 3, 'Standbild?');
+
+  await evaluate("window.__roland.loadAct(0)");
+
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
   await send('Emulation.setDeviceMetricsOverride', {
     width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,

@@ -291,4 +291,52 @@ export function buildAkt2() {
 export const LEVELS = [
   { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', build: buildAkt1 },
   { id: 'akt2', name: 'AKT 2 — DIE PROBE', build: buildAkt2 },
+  { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', build: buildCabrio },
 ];
+
+// ============================================================================
+// INTERLUDIUM — CABRIO ZUM OPEN AIR
+// Kein Seitenscroller, sondern eine Pseudo-3D-Strecke (modus: 'racer').
+// Abendsonne, Landstraße, Gegenverkehr, ein Regenguss und der Notenständer
+// auf dem Beifahrersitz.
+// ============================================================================
+export function buildCabrio() {
+  const track = [];
+  const part = (curve, hill, len) => track.push({ curve, hill, len });
+
+  part(0, 0, 70);          // Anfahren aus der Stadt
+  part(0, 24, 50);
+  part(2, 0, 60);          // erste Rechtskurve
+  part(0, -20, 40);
+  part(-2, 0, 60);
+  part(0, 18, 50);
+  part(3, 0, 70);          // lange Rechtskurve
+  part(0, -14, 40);
+  part(-3, 0, 70);
+  part(0, 26, 60);
+  part(3, 0, 50);
+  part(-3, 0, 50);         // S-Kurve
+  part(0, -22, 50);
+  part(4, 0, 60);          // eng und schnell
+  part(0, 10, 40);
+  part(-4, 0, 60);
+  part(0, -12, 50);
+  part(2, 0, 50);
+  part(0, 6, 60);
+  part(-1, 0, 50);         // Einfahrt Open-Air-Gelände
+  part(0, 0, 60);          // Zielgerade
+
+  return {
+    id: 'cabrio',
+    mode: 'racer',
+    name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR',
+    subtitle: 'Landstraße, Abendsonne, Notenständer auf dem Beifahrersitz.',
+    bpm: 104,
+    track,
+    traffic: 14,
+    weather: [{ at: 0.42, rain: true, label: 'REGENGUSS — WENIGER GRIP' },
+              { at: 0.74, rain: false, label: 'DER REGEN LÄSST NACH' }],
+    takts: [{ at: 0.6, bpm: 124, label: 'NOCH ZWÖLF MINUTEN BIS ZUM AUFTRITT' }],
+    goals: { distance: null },
+  };
+}

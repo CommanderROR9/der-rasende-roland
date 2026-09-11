@@ -132,6 +132,18 @@ Browser-Durchlauf.
 - Beide Akte hängen aneinander: Aktabschluss führt über die Garderobe in den nächsten
   Akt, der Fortschritt bleibt gespeichert.
 
-**Geplant:** Cabrio-Interludium (Pseudo-3D), Akte 3–8, Motorrad-Interludium, Finale,
-Epilog. Die Verdrahtung ist angelegt: Level sind reine Datenmodule, neue Akte werden
-im Register `LEVELS` ergänzt.
+- **Interludium Cabrio:** Pseudo-3D-Landstraße (Segmentstraße), Gas automatisch, nur
+  lenken; Gegenverkehr, LKW, Regenguss mit Gripverlust, Radarfallen, kippender
+  Notenständer; Abschlusstafel mit Fahrzeit, Höchsttempo und Kontakten.
+
+**Geplant:** Akte 3–8 (Open Air mit Wetter, Orchestergraben, Bühne, Finale),
+Motorrad-Interludium (Nacht, Tunnel, kühlt den Hitzebalken), Epilog Kleingarten.
+
+**Idee für später — Bratwurst-Grill (Bonusspiel):** ein kleines Minigame im Kleingarten-
+Epilog: Würste im Takt wenden (die Taktmechanik aus dem Spiel, nur entspannt), Kohle
+nachlegen, Gäste bedienen, nichts anbrennen lassen. Kein Scheitern möglich — höchstens
+eine verkohlte Wurst und Gelächter. Passt als Belohnungs-Episode nach dem Finale und
+braucht nur die vorhandene Takt-Engine plus ein paar Sprites.
+
+Die Verdrahtung ist angelegt: Level sind reine Datenmodule, neue Akte werden im
+Register `LEVELS` ergänzt; Fahr-Abschnitte setzen `mode: 'racer'`.

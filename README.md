@@ -22,6 +22,14 @@ nächsten Akt ein Nerv mehr.
 Zwischendurch wechselt das Tempo: unterwegs gibt der Dirigent **Allegro** und später
 **Andante** vor, sichtbar im HUD und angesagt als Meldung.
 
+**Interludium — Cabrio zum Open Air.** Pseudo-3D-Landstraße in der Abendsonne, Sicht
+von hinten aufs offene Cabrio. **Gas gibt es von allein**, man lenkt nur (`A`/`D`,
+am Handy der Stick), `E` bzw. der `TRITT`-Knopf bremst. Unterwegs: Gegenverkehr,
+Baustellen-LKW, ein Regenguss mit weniger Grip, Radarfallen am Straßenrand — und der
+Notenständer auf dem Beifahrersitz, der in jeder engen Kurve umkippt. Angekommen ist,
+wer die Strecke einmal durchfährt; die Abschlusstafel zeigt Fahrzeit, Höchsttempo,
+Kontakte und ob es geregnet hat.
+
 **Fortschritt:** Nach Akt 1 startet das Spiel beim nächsten Mal direkt in Akt 2. Im
 Titelbild gibt es dafür einen Wechsler („AKT 1 NOCHMAL SPIELEN"), und der Startknopf
 setzt dort fort, wo man zuletzt war. `Fortschritt zurücksetzen` löscht das.
@@ -106,15 +114,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 150 headless Checks
+tests/smoke.test.mjs 175 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 150 headless Checks: node tests/smoke.test.mjs
+npm test                        # 175 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 62 Checks in echtem Chromium
+npm run browser                 # 72 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -134,6 +142,7 @@ Suiten laufen gegen die Live-URL.
 
 ## Als Nächstes
 
-Cabrio-Interludium (Pseudo-3D zum Open Air) · Akt 3 Open Air mit Wetter ·
-Akt 4 Orchestergraben · Motorrad-Interludium · Finale mit Frack-Off · Epilog
-Kleingarten. Konzept und Stand: [docs/KONZEPT.md](docs/KONZEPT.md)
+Akt 3 Open Air mit Wetter (Wind, Regen, Hitze) · Akt 4 Orchestergraben ·
+Motorrad-Interludium (Nacht, Tunnel) · Finale mit Frack-Off · Epilog Kleingarten
+mit **Bratwurst-Grill** als kleinem Bonusspiel. Konzept und Stand:
+[docs/KONZEPT.md](docs/KONZEPT.md)

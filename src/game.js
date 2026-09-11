@@ -96,7 +96,7 @@ export class Game {
       w: PHYS.playerW, h: PHYS.playerH,
       vx: 0, vy: 0, dir: 1,
       onGround: false, coyote: 0, jumpBuf: 0,
-      invuln: 0, flash: 0, animT: 0,
+      invuln: 0, flash: 0, animT: 0, dropTimer: 0,
       standingMorsch: null, morschT: 0,
     };
     this.lastCheckpointId = 'spawn';
@@ -244,7 +244,7 @@ export class Game {
     this.prevJump = inp.jump();
     if (jumpPressed) {
       if (inp.down() && p.onGround && p.standingOneway) {
-        p.y += 2; p.vy = 24; p.onGround = false;
+        p.y += 2; p.vy = 24; p.onGround = false; p.dropTimer = 0.12;
       } else {
         p.jumpBuf = PHYS.buffer;
       }
@@ -272,6 +272,7 @@ export class Game {
     this.moveAndCollide(dt);
     if (Math.abs(p.vx) > 12 && p.onGround) p.animT += dt;
     if (p.invuln > 0) p.invuln -= dt;
+    if (p.dropTimer > 0) p.dropTimer -= dt;
     if (p.flash > 0) p.flash -= dt;
   }
 
@@ -341,6 +342,12 @@ export class Game {
     p.onGround = !!g;
     p.standingOneway = !!(g && (g.v === 2 || g.v === 3));
     p.standingMorsch = g && g.v === 3 ? { tx: g.tx, ty: g.ty } : null;
+    // Bodenkontakt exakt halten: sonst summieren sich pro Frame winzige
+    // Fallschritte und die Figur zittert sichtbar um ein Pixel.
+    if (g && p.vy >= 0 && p.dropTimer <= 0) {
+      p.y = g.ty * TILE - p.h;
+      p.vy = 0;
+    }
   }
 
   checkGround() {
@@ -863,6 +870,9 @@ export class Game {
     const k = Math.min(1, dt * 7);
     this.cam.x += (tx - this.cam.x) * k;
     this.cam.y += (ty - this.cam.y) * k;
+    // Ganze Pixel: verhindert 1-px-Zittern von Figur und Umgebung
+    this.cam.x = Math.round(this.cam.x);
+    this.cam.y = Math.round(this.cam.y);
   }
 
   updateHints() {

@@ -1,9 +1,10 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1, buildAkt2, LEVELS } from '../src/world.js';
+import { buildAkt1, buildAkt2, buildCabrio, LEVELS } from '../src/world.js';
+import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
-import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH } from '../src/config.js';
+import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH, VIEW_DESKTOP } from '../src/config.js';
 
 const results = [];
 let failed = 0;
@@ -29,6 +30,10 @@ function fresh(outfit = 'schwarz', { stands = true } = {}, difficulty = 'gemuetl
   const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {}, difficulty });
   game.reset(outfit);
   return { level, input, game };
+}
+function stepAny(obj, seconds, dt = 1 / 60) {
+  const n = Math.round(seconds / dt);
+  for (let i = 0; i < n; i++) obj.update(dt);
 }
 function step(game, seconds, dt = 1 / 60) {
   const n = Math.round(seconds / dt);
@@ -603,8 +608,9 @@ function place(game, px, py) {
   check('Akt 2: Pulte sind in Sprunghöhe gestaffelt (32 px)',
     level.grid[23][30] === 2 && level.grid[21][35] === 2 && level.grid[19][40] === 2
     && level.grid[17][45] === 2 && level.grid[16][50] === 2);
-  check('Akt 2: Level steht im Register',
-    LEVELS.length === 2 && LEVELS[1].id === 'akt2' && typeof LEVELS[1].name === 'string');
+  check('Akte stehen im Register',
+    LEVELS.length >= 3 && LEVELS[1].id === 'akt2' && LEVELS[2].id === 'cabrio'
+    && typeof LEVELS[1].name === 'string');
 }
 
 // Der Dirigent: Taktstock im Bogen, im Takt getroffen verliert er ihn
@@ -724,6 +730,146 @@ function place(game, px, py) {
   check('Akt 2: Frack öffnet die Bühnentür',
     game.gates[0].open === true || game.state === 'complete');
   check('Akt 2: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
+}
+
+// ================================================= INTERLUDIUM — CABRIO ======
+{
+  const level = buildCabrio();
+  check('Cabrio ist ein Fahr-Level', level.mode === 'racer' && Array.isArray(level.track));
+  const { segments, length } = buildTrack(level.track);
+  check('Strecke wird gebaut', segments.length > 600 && length > 100000,
+    `${segments.length} Segmente, ${length} Einheiten`);
+  check('Strecke hat Kurven in beide Richtungen',
+    segments.some((s) => s.curve > 0) && segments.some((s) => s.curve < 0));
+  check('Strecke hat Hügel', Math.max(...segments.map((s) => s.p1.world.y)) > 100);
+
+  // Projektion: fern am Horizont und schmal, nah unten und breit
+  const nah = { world: { x: 0, y: 0, z: 1200 }, camera: {}, screen: {} };
+  const fern = { world: { x: 0, y: 0, z: DRAW_DIST * SEG_LEN }, camera: {}, screen: {} };
+  project(nah, 0, CAM_H, 0, 384, 216);
+  project(fern, 0, CAM_H, 0, 384, 216);
+  check('Fernes Segment liegt am Horizont', Math.abs(fern.screen.y - 108) < 8, `y=${fern.screen.y}`);
+  check('Nahes Segment ist unten und breit', nah.screen.y > 150 && nah.screen.w > 100,
+    `y=${nah.screen.y} w=${nah.screen.w}`);
+  check('Straße wird nach vorn schmaler', nah.screen.w > fern.screen.w * 5,
+    `${nah.screen.w} vs ${fern.screen.w}`);
+}
+
+// Fahren: Gas, Lenken, Neben der Straße, Kontakt, Ziel
+{
+  const mkRacer = (difficulty = 'gemuetlich') => {
+    const level = buildCabrio();
+    const input = createInput(null);
+    const events = [];
+    const r = new Racer({ level, input, audio: { play() {}, engine() {}, engineOff() {} },
+      events: (e) => events.push(e), view: VIEW_DESKTOP, difficulty });
+    return { level, input, r, events };
+  };
+  const { input, r, events } = mkRacer();
+  check('Startet im Stand', r.speed === 0 && r.state === 'play');
+  stepAny(r, 5);
+  check('Gas kommt von allein', r.speed > r.maxSpeed * 0.4, `speed=${r.speed.toFixed(0)}`);
+  // Lenken auf gerader Strecke prüfen (Kurvenkraft würde das Ergebnis verfälschen)
+  const { input: i1, r: r1 } = mkRacer();
+  r1.traffic.length = 0;
+  r1.reset();
+  const x0 = r1.playerX;
+  i1.setKey('right', true);
+  stepAny(r1, 0.5);
+  check('Rechts lenken wandert nach rechts', r1.playerX > x0 + 0.05,
+    `x ${x0.toFixed(2)} -> ${r1.playerX.toFixed(2)}`);
+  i1.setKey('right', false);
+  i1.setKey('left', true);
+  stepAny(r1, 0.9);
+  check('Gegenlenken wirkt', r1.playerX < x0, `x=${r1.playerX.toFixed(2)}`);
+  i1.setKey('left', false);
+
+  // Kurve zieht nach außen: auf einer Rechtskurve ohne Lenken nach links
+  const { r: rk } = mkRacer();
+  rk.traffic.length = 0;
+  rk.reset();
+  stepAny(rk, 4);                    // erst Fahrt aufnehmen
+  rk.position = 80 * SEG_LEN;        // mitten in der ersten Rechtskurve
+  rk.playerX = 0;
+  stepAny(rk, 1.5);
+  check('Kurve zieht nach außen', rk.playerX < -0.05, `x=${rk.playerX.toFixed(2)}`);
+
+  // Neben der Straße wird es langsamer (ohne Verkehr, damit nichts anderes bremst)
+  const { r: r2 } = mkRacer();
+  r2.traffic.length = 0;
+  // gerade Spur halten, damit nur die Straße zählt
+  for (let i = 0; i < 60 * 8; i++) { r2.playerX = 0; r2.update(1 / 60); }
+  const schnell = r2.speed;
+  let daneben = 0;
+  for (let i = 0; i < 120; i++) { r2.playerX = 1.6; r2.update(1 / 60); daneben++; }
+  check('Neben der Straße bremst es deutlich', r2.speed < schnell * 0.5,
+    `${r2.speed.toFixed(0)} statt ${schnell.toFixed(0)} nach ${daneben} Frames daneben`);
+
+  // Kontakt mit einem Fahrzeug
+  const { r: r3 } = mkRacer();
+  stepAny(r3, 3);
+  const car = r3.traffic[0];
+  car.z = r3.position + r3.playerZ;
+  car.lane = r3.playerX;
+  car.speed = 0;
+  const speedVorher = r3.speed;
+  stepAny(r3, 0.2);
+  check('Kontakt kostet Tempo', r3.hits >= 1 && r3.speed < speedVorher,
+    `hits=${r3.hits}`);
+
+  // Ankunft mit einem Bot, der die Spur hält
+  const { input: i4, r: r4, events: ev4 } = mkRacer();
+  for (let i = 0; i < 60 * 120 && r4.state === 'play'; i++) {
+    i4.setKey('left', r4.playerX > 0.06);
+    i4.setKey('right', r4.playerX < -0.06);
+    r4.update(1 / 60);
+  }
+  check('Fahrt endet an der Open-Air-Bühne', r4.state === 'complete', `state=${r4.state} ${(r4.hud.strecke * 100).toFixed(0)}%`);
+  check('Fahrzeit ist plausibel', r4.time > 20 && r4.time < 60, `${r4.time.toFixed(1)}s`);
+  check('Höchstgeschwindigkeit wird angezeigt', r4.hud.speed > 60, `${r4.hud.speed} km/h`);
+  check('Abschluss meldet Fahrwerte',
+    ev4.length === 1 && Array.isArray(ev4[0].rows) && ev4[0].rows.length >= 3,
+    JSON.stringify(ev4[0] && ev4[0].rows));
+
+  // Gemütlich ist gnädiger als zügig
+  const { r: g1 } = mkRacer('gemuetlich');
+  const { r: g2 } = mkRacer('zuegig');
+  check('gemütlich: weniger Verkehr', g1.traffic.length < g2.traffic.length,
+    `${g1.traffic.length} vs ${g2.traffic.length}`);
+  check('gemütlich: langsamer unterwegs', g1.maxSpeed < g2.maxSpeed);
+
+  // Regen und Taktwechsel kommen unterwegs
+  const { r: r5 } = mkRacer();
+  let regen = false, takt = false;
+  for (let i = 0; i < 60 * 90 && r5.state === 'play'; i++) {
+    r5.update(1 / 60);
+    if (r5.rain) regen = true;
+    if (r5.taktBpm !== 104) takt = true;
+    if (regen && takt && r5.state === 'play') break;
+  }
+  check('Regen unterwegs', regen);
+  check('Taktwechsel unterwegs', takt);
+
+  // Dauerlauf: keine Ausnahmen, Listen bleiben begrenzt
+  const { input: i6, r: r6 } = mkRacer();
+  let error = null;
+  try {
+    for (let i = 0; i < 60 * 60; i++) {
+      if (i % 41 === 0) i6.setKey('left', !i6.state.left);
+      if (i % 53 === 0) i6.setKey('right', !i6.state.right);
+      if (i % 97 === 0) i6.setKey('action', true);
+      if (i % 101 === 0) i6.setKey('action', false);
+      r6.update(1 / 60);
+      if (r6.state === 'complete') {
+        r6.reset();
+        r6.state = 'play';
+      }
+    }
+  } catch (e) { error = e; }
+  check('60 Sekunden Fahrt ohne Ausnahme', !error, error && error.message);
+  check('Verkehr bleibt begrenzt', r6.traffic.length < 40, `n=${r6.traffic.length}`);
+  check('Straßenrand bleibt begrenzt', r6.roadside.length < 300, `n=${r6.roadside.length}`);
+  events.length = 0;
 }
 
 // ------------------------------------------------------ Pause & Langzeitlauf --

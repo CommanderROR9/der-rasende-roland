@@ -99,13 +99,20 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 
   <div class="hud">
     <div class="brand">DER RASENDE ROLAND<small id="aktsub">AKT 1 — DIE KATAKOMBEN</small></div>
-    <div class="readout">
+    <div class="readout" id="walkReadout">
       <span>DECKEL<b id="deckel">0/5</b></span>
       <span>OHROPAX<b id="ohro">—</b></span>
       <span>KLUFT<b id="kluft">SCHWARZ</b></span>
       <span>HITZE<b id="hitze"><span class="bar"><i></i></span></b></span>
       <span>TAKT<b id="takt"><span class="beat"></span><em id="bpm" style="font-style:normal;margin-left:4px">100</em></b></span>
       <span>NERVEN<b id="nerven">●●●</b></span>
+    </div>
+    <div class="readout hidden" id="racerReadout">
+      <span>TEMPO<b id="rSpeed">0</b></span>
+      <span>FAHRZEIT<b id="rTime">0:00</b></span>
+      <span>KONTAKTE<b id="rHits">0</b></span>
+      <span>STRECKE<b id="rDist">0%</b></span>
+      <span>TAKT<b id="rTakt">104</b></span>
     </div>
   </div>
 

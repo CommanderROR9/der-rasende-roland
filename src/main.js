@@ -6,6 +6,7 @@ import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { LEVELS } from './world.js';
 import { Game } from './game.js';
+import { Racer } from './racer.js';
 
 const $ = (s) => document.querySelector(s);
 const ui = {
@@ -21,6 +22,8 @@ const ui = {
   rewardEyebrow: $('#rewardEyebrow'), rewardTitle: $('#rewardTitle'), rewardText: $('#rewardText'), rewardNote: $('#rewardNote'),
   jumpActBtn: $('#jumpActBtn'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
+  walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
+  rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
 const ctx = ui.canvas.getContext('2d');
@@ -54,6 +57,10 @@ const REWARDS = {
     title: 'BELOHNUNG: PAUSENBROT',
     text: 'Hinter der Bühnentür wird es dunkel und warm. Ein Pausenbrot für die nächste Runde — und ein Nerv mehr.',
   },
+  cabrio: {
+    title: 'ANGEKOMMEN: OPEN-AIR-BÜHNE',
+    text: 'Motor aus, Verdeck bleibt offen. Die Bühne steht schon, der Wind hat die Noten schon einmal verteilt — Akt 3 wartet.',
+  },
 };
 function istLetzterAkt() { return aktIndex >= LEVELS.length - 1; }
 function updateActLabels() {
@@ -67,7 +74,9 @@ function updateActLabels() {
     : `Weiter mit ${LEVELS[aktIndex + 1].name}.`;
   ui.rewardBtn.textContent = istLetzterAkt() ? 'NOCHMAL \u2192' : 'WEITER \u2192';
 }
-let game = null;
+let game = null;      // Seitenscroller-Simulation
+let racer = null;     // Fahr-Interludium
+const aktiv = () => racer || game;
 let gardeMode = 'start';
 let pendingOutfit = null;
 
@@ -129,11 +138,18 @@ function renderGarde(mode) {
 
 // ------------------------------------------------------------------- Spiel --
 function newGame(outfitId) {
-  for (const h of LEVEL.hints) h.shown = false;
-  game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
-  game.reset(outfitId);
-  // Wer einen Akt geschafft hat, geht mit einem Nerv mehr in den nächsten.
-  if (aktIndex > 0) { game.maxNerves = 4; game.nerves = 4; game.hud = game.buildHud(); }
+  for (const h of LEVEL.hints || []) h.shown = false;
+  if (LEVEL.mode === 'racer') {
+    // Fahr-Interludium: gleiche Steuerung, andere Simulation
+    racer = new Racer({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
+    game = null;
+  } else {
+    racer = null;
+    game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
+    game.reset(outfitId);
+    // Wer einen Akt geschafft hat, geht mit einem Nerv mehr in den nächsten.
+    if (aktIndex > 0) { game.maxNerves = 4; game.nerves = 4; game.hud = game.buildHud(); }
+  }
   updateActLabels();
   hideAll();
   audio.resume();
@@ -143,7 +159,7 @@ function onGameEvent(e) {
   if (e.type === 'stand') renderGarde('wechseln');
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
-    const s = e.stats;
+    const s = e.stats || {};
     const save = loadSave();
     const best = save.bestTime ? Math.min(save.bestTime, s.time) : s.time;
     writeSave({
@@ -154,7 +170,7 @@ function onGameEvent(e) {
     });
     updateActLabels();
     ui.rewardBody.innerHTML = '';
-    const stats = [
+    const stats = e.rows || [
       ['ZEIT', fmtTime(s.time)],
       ['BESTE ZEIT', fmtTime(best)],
       ['BIERDECKEL', `${s.deckel} / ${LEVEL.deckelTotal}`],
@@ -171,8 +187,11 @@ function onGameEvent(e) {
     icon.width = 40; icon.height = 52;
     const g = icon.getContext('2d');
     g.imageSmoothingEnabled = false;
-    const spr = spriteCanvas('bier', SPRITES.bier);
-    g.drawImage(spr.canvas, 0, 0, spr.w, spr.h, 0, 0, 40, 52);
+    const spr = LEVEL.mode === 'racer'
+      ? spriteCanvas('mx5', SPRITES.mx5)
+      : spriteCanvas('bier', SPRITES.bier);
+    const iz = Math.round((40 / spr.w) * spr.h);
+    g.drawImage(spr.canvas, 0, 0, spr.w, spr.h, 0, 0, 40, iz);
     ui.rewardBody.prepend(icon);
     show('reward');
   }
@@ -188,16 +207,38 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));
   last = now;
-  if (game) {
-    game.update(dt);
-    game.draw(ctx);
+  const a = aktiv();
+  if (a) {
+    a.update(dt);
+    a.draw(ctx);
     updateWorldLabel();
     hudAcc += dt;
     if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
   }
 }
 function refreshHud() {
-  const h = game.hud;
+  const a = aktiv();
+  if (!a) return;
+  const h = a.hud;
+  if (h.modus === 'racer') {
+    // Fahr-Interludium: eigenes HUD
+    ui.walkReadout.classList.add('hidden');
+    ui.racerReadout.classList.remove('hidden');
+    const sig = ['r', h.speed, Math.round(h.zeit * 10), h.hits, Math.round(h.strecke * 200), h.bpm, h.hint, h.rain].join('|');
+    if (sig === hudPrev) return;
+    hudPrev = sig;
+    ui.rSpeed.textContent = String(h.speed);
+    ui.rTime.textContent = fmtTime(h.zeit);
+    ui.rHits.textContent = String(h.hits);
+    ui.rDist.textContent = `${Math.round(h.strecke * 100)}%`;
+    ui.rTakt.textContent = String(h.bpm);
+    ui.aktsub.textContent = LEVEL.name + (h.rain ? ' · REGEN' : '');
+    if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
+    else ui.hintbar.classList.add('hidden');
+    return;
+  }
+  ui.walkReadout.classList.remove('hidden');
+  ui.racerReadout.classList.add('hidden');
   const sig = [h.nerves, h.heat, Math.round(h.ohropax), h.outfit.id, h.deckel, h.bpm, h.glanz > 0.5, h.hint, h.hidden].join('|');
   if (sig === hudPrev) return;
   hudPrev = sig;
@@ -216,7 +257,8 @@ function refreshHud() {
 // ------------------------------------------------- Objektnamen in der Welt --
 let labelPrev = '';
 function updateWorldLabel() {
-  const l = game && game.hud ? game.hud.label : null;
+  const a = aktiv();
+  const l = a && a.hud ? a.hud.label : null;
   if (!l) {
     if (labelPrev !== '') { labelPrev = ''; ui.worldlabel.classList.add('hidden'); }
     return;
@@ -237,7 +279,11 @@ function updateWorldLabel() {
 }
 
 // ------------------------------------------------------------------- Input --
-ui.startBtn.onclick = () => { audio.resume(); renderGarde('start'); };
+ui.startBtn.onclick = () => {
+  audio.resume();
+  if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }   // im Auto egal
+  renderGarde('start');
+};
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
 ui.resetBtn.onclick = () => {
   try { localStorage.removeItem(SAVE_KEY); } catch {}
@@ -353,6 +399,7 @@ updateJumpButton();
 fit();
 requestAnimationFrame(frame);
 window.__roland = {
-  get game() { return game; }, get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
+  get game() { return game; }, get racer() { return racer; }, get aktiv() { return racer || game; },
+  get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
   loadAct, input, get scale() { return scaleNow; },
 };

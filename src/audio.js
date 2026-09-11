@@ -48,8 +48,28 @@ export function createAudio() {
     src.start();
   }
 
+  let engOsc = null, engGain = null;
   return {
     resume() { const c = ctx(); if (c && c.state === 'suspended') c.resume(); },
+    /** Motorbrummen für das Fahr-Interludium. */
+    engine(anteil = 0) {
+      const c = ctx();
+      if (!c || !enabled) return;
+      if (!engOsc) {
+        engOsc = c.createOscillator();
+        engGain = c.createGain();
+        engOsc.type = 'sawtooth';
+        engGain.gain.value = 0.025;
+        engOsc.connect(engGain);
+        engGain.connect(master);
+        engOsc.start();
+      }
+      engOsc.frequency.value = 55 + anteil * 105;
+    },
+    engineOff() {
+      if (engOsc) { try { engOsc.stop(); } catch { /* schon aus */ } }
+      engOsc = null; engGain = null;
+    },
     setEnabled(on) { enabled = on; },
     play(name) {
       switch (name) {
