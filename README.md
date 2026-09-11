@@ -73,15 +73,24 @@ tests/smoke.test.mjs 106 headless Checks
 ## Tests
 
 ```bash
-npm test          # oder: node tests/smoke.test.mjs
-npm run serve     # lokaler Server auf http://127.0.0.1:8123
+npm test                        # 106 headless Checks: node tests/smoke.test.mjs
+npm run serve                   # lokaler Server auf http://127.0.0.1:8123
+npm run browser                 # 44 Checks in echtem Chromium
+npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
-Die Tests fahren dieselbe Simulation wie das Spiel ohne Browser. Geprüft werden
-Physik, Takt, alle Gegnertypen, Kleiderwechsel und Türen, Hitze und Frack-Off,
-Items, Speicherpunkte, Aktabschluss, Langzeitstabilität — und mit einem Bot ein
-kompletter Durchlauf über die gebaute Route bis zum Aufzug. Damit ist belegt, dass
-jede Stufe innerhalb der Sprunghöhe liegt und es keinen Abkürzungsweg am Boden gibt.
+`tests/smoke.test.mjs` fährt dieselbe Simulation wie das Spiel, nur ohne Browser.
+Geprüft werden Physik, Takt, alle Gegnertypen, Kleiderwechsel und Türen, Hitze und
+Frack-Off, Items, Speicherpunkte, Aktabschluss und Langzeitstabilität — und mit einem
+Bot ein kompletter Durchlauf über die gebaute Route bis zum Aufzug. Damit ist belegt,
+dass jede Stufe innerhalb der Sprunghöhe liegt und es keinen Abkürzungsweg am Boden gibt.
+
+`tests/browser-smoke.mjs` startet Chromium, steuert ihn über das DevTools-Protokoll und
+prüft das echte Spiel: Laden ohne JavaScript-Fehler, Start, Kleiderwahl, Tastatur,
+Umkleide am Kleiderständer, Zeichnung im Framebuffer (Figur, Bodenkachel, kein
+Standbild), HUD, Pause — und in Geräteemulation das Smartphone: Touch-Pad sichtbar,
+Spielfeld füllt den Bildschirm, Stick bewegt den Spieler. Beide Suiten laufen gegen
+die Live-URL.
 
 ## Nächste Akte (geplant)
 

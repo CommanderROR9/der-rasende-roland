@@ -6,6 +6,7 @@
   "description": "Pixel-Art-Sidescroller: vom zweiten Untergeschoss in den Kleingarten.",
   "scripts": {
     "test": "node tests/smoke.test.mjs",
+    "browser": "node tests/browser-smoke.mjs",
     "serve": "python3 -m http.server 8123"
   }
 }
