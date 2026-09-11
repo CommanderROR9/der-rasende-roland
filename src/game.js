@@ -929,7 +929,7 @@ export class Game {
       const slot = { x: sp.tx * TILE, y: sp.ty * TILE, w: sp.w * TILE, h: sp.h * TILE };
       if (!overlap(p, slot)) continue;
       sp.done = true;
-      this.stunTimer = Math.max(this.stunTimer, 0.5);
+      this.stunTimer = Math.max(this.stunTimer, 0.28);
       this.shake = 5;
       p.vx = -p.dir * 90;
       this.audio.play('sopran');
@@ -1020,7 +1020,10 @@ export class Game {
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
     const zielFrei = this.goalErfuellt();
-    const grund = g.need === 'frack' ? 'NUR IM FRACK' : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
+    const grund = (g.applaus && this.applaus < g.applaus) ? `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`
+      : (g.frackOff && !this.frackOffUsed) ? 'FRACK AUFREISSEN (E)'
+        : g.need === 'frack' ? 'NUR IM FRACK'
+          : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
     if (dg < 96) best = { text: `${g.name}: ${zielFrei ? 'WEITER' : grund}`, x: g.x + 8, y: g.y - 2 };
     if (!best) return null;
     return {

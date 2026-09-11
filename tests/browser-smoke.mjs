@@ -356,6 +356,29 @@ try {
   results.push(`SCREENSHOT ${shotPath}`);
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
 
+  // --- Übergang per WEITER: der blinde Fleck der alten Tests ---------------
+  const uebergaenge = [];
+  for (const start of [1, 2, 4, 5]) {           // akt2→cabrio, cabrio→akt3, akt4→motorrad, motorrad→akt5
+    await evaluate(`window.__roland.loadAct(${start})`);
+    await evaluate("document.getElementById('startBtn').click()");
+    await sleep(250);
+    const istFahr = await evaluate("window.__roland.level.mode === 'racer'");
+    if (!istFahr) { await evaluate("document.querySelectorAll('#gardeCards button')[0].click()"); await sleep(350); }
+    await evaluate("(() => { const a = window.__roland.aktiv(); a.complete ? a.complete() : a.ende(); })()");
+    await sleep(250);
+    await evaluate("document.getElementById('rewardBtn').click()");
+    await sleep(900);
+    const zustand = JSON.parse(await evaluate(`JSON.stringify({
+      akt: window.__roland.aktIndex,
+      modus: window.__roland.aktiv() ? window.__roland.aktiv().hud.modus : null,
+      fehler: window.__errors.length,
+      panelOffen: !document.getElementById('reward').classList.contains('hidden')
+    })`));
+    uebergaenge.push(`${start}->${zustand.akt}:${zustand.modus}:err${zustand.fehler}:${zustand.panelOffen ? 'offen' : 'zu'}`);
+  }
+  check('WEITER führt zuverlässig in die nächste Station (auch Interludien)',
+    uebergaenge.every((x) => /:(racer|sidescroller|grill):err0:zu$/.test(x)), uebergaenge.join(' | '));
+
   // --- Stationswahl: alle Akte und Interludien erreichbar ------------------
   const wahl = JSON.parse(await evaluate(`JSON.stringify({
     sichtbar: !document.getElementById('actRow').classList.contains('hidden'),

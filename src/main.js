@@ -108,6 +108,7 @@ let game = null;      // Seitenscroller-Simulation
 let racer = null;     // Fahr-Interludium
 let grill = null;     // Bratwurst-Minispiel im Epilog
 const aktiv = () => grill || racer || game;
+const aktivModus = () => grill || racer || game;
 let gardeMode = 'start';
 let pendingOutfit = null;
 
@@ -380,6 +381,8 @@ function applyDifficulty() {
   ui.diffBtn.title = d.note;
   ui.diffBtn2.title = d.note;
   if (game) game.setDifficulty(diffKey);
+  if (racer && racer.setDifficulty) racer.setDifficulty(diffKey);
+  if (grill && grill.setDifficulty) grill.setDifficulty(diffKey);
 }
 function cycleDifficulty() {
   diffKey = DIFF_KEYS[(DIFF_KEYS.indexOf(diffKey) + 1) % DIFF_KEYS.length];
@@ -398,9 +401,9 @@ function applySound() {
 ui.soundBtn.onclick = () => { soundOn = !soundOn; writeSave({ sound: soundOn }); applySound(); };
 applySound();
 applyDifficulty();
-ui.resumeBtn.onclick = () => { game.resume(); hideAll(); };
-ui.quitBtn.onclick = () => { game = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
-ui.collapseBtn.onclick = () => { game.respawnFromCheckpoint(); hideAll(); };
+ui.resumeBtn.onclick = () => { const a = aktivModus(); if (a && a.resume) a.resume(); hideAll(); };
+ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
+ui.collapseBtn.onclick = () => { if (game) game.respawnFromCheckpoint(); hideAll(); };
 ui.rewardBtn.onclick = () => {
   if (ui.rewardBtn.dataset.modus === 'grill') {
     delete ui.rewardBtn.dataset.modus;
@@ -410,23 +413,26 @@ ui.rewardBtn.onclick = () => {
     last = performance.now();
     return;
   }
-  const outfit = game.outfit.id;
+  // Nach einem Fahr-Interludium ist `game` null — deshalb hier nicht darauf zugreifen.
+  const outfit = game ? game.outfit.id : OUTFITS.schwarz.id;
   if (istLetzterAkt()) { newGame(outfit); return; }
-  loadAct(aktIndex + 1);          // nächster Akt: wieder über die Garderobe
-  for (const h of LEVEL.hints) h.shown = false;
-  renderGarde('start');
+  loadAct(aktIndex + 1);
+  for (const h of LEVEL.hints || []) h.shown = false;   // Fahr-Level haben keine
+  startLevel();
 };
 ui.rewardQuit.onclick = () => { game = null; hudPrev = ''; show('title'); };
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'Escape') {
-    if (!game) return;
-    if (game.state === 'play') { game.pause('user'); show('pause'); }
-    else if (game.state === 'paused' && game.pauseReason === 'user') { game.resume(); hideAll(); }
+    const a = aktivModus();
+    if (!a) return;
+    if (a.state === 'play') { a.pause('user'); show('pause'); }
+    else if (a.state === 'paused') { a.resume(); hideAll(); }
   }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && game && game.state === 'play') { game.pause('user'); show('pause'); }
+  const a = aktivModus();
+  if (document.hidden && a && a.state === 'play') { a.pause('user'); show('pause'); }
 });
 
 // Touch: Stick

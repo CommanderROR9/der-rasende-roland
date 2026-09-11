@@ -569,9 +569,12 @@ export function buildAkt4() {
 
   e('item', 27, 23, { item: 'bierdeckel' });
   gleam(30, 23, 4);
-  e('piccolo', 36, 25, { patrol: [34, 40], dir: -1 });
+  e('piccolo', 28, 25, { patrol: [26, 32], dir: -1 });   // nicht mehr im Kreuzfeuer am Kasten
   lamp(38, 22);
   gleam(38, 23, 3.5);
+  e('item', 40, 25, { item: 'ohropax' });   // Schutz, bevor der Kasten kommt
+  solid(44, 24, 4, 1);        // Kasten steht auf dem Boden (vorher schwebende Platte)
+  alcove(41, 24);             // Deckung kurz vor dem Kasten
   spook(44, 23, 4, 2);        // Souffleurkasten: es flüstert direkt am Ohr
   solid(44, 23, 4, 1);        // der Kasten selbst
   gleam(45, 22, 3);
@@ -851,15 +854,15 @@ export function buildEpilog() {
 
   // Laube mit Stufe
   solid(70, 19, 16, 1);      // Laubendach, Kante 304
-  solid(70, 19, 2, 6);       // linke Wand
-  solid(84, 19, 2, 6);       // rechte Wand
+  solid(70, 19, 2, 2);       // Pfosten links (Durchgang in Bodenhöhe frei)
+  solid(84, 19, 2, 2);       // Pfosten rechts
   plank(74, 22, 4);          // Stufe zur Laube, Kante 352
   // Bank und Grill
   solid(40, 23, 6, 2);       // Bank, Kante 368
   solid(52, 23, 4, 2);       // Grill, Kante 368
   // Hecke als Begrenzung der Wiese
-  solid(30, 22, 2, 3);
-  solid(96, 21, 2, 4);
+  solid(30, 23, 2, 2);       // Hecke: 32 px, springbar (vorher 48 px = Sackgasse)
+  solid(96, 23, 2, 2);       // Hecke am Ende, gleiche Höhe
   plank(100, 22, 3);
 
   e('spawn', 4, 25, { isSpawn: true });

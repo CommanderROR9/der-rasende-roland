@@ -1635,6 +1635,76 @@ function place(game, px, py) {
     `sky=${garten.usesSky()} look=${garten.tileLook(20, 25)}`);
 }
 
+// ---------------------------------------- Zu Fuß durchspielbar (kein God-Mode)
+{
+  // Epilog: nur laufen und springen — kein Teleport. Hecken sind 32 px, also springbar.
+  const iE = createInput(null);
+  const epi = new Game({
+    level: buildEpilog(), input: iE,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  epi.reset('schwarz');
+  const wegEpilog = [[10, 25], [27, 25], [30, 23], [34, 25], [42, 23], [50, 25], [56, 25], [70, 25], [78, 25]];
+  let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1, hoch = 0;
+  const fehlwege = [];
+  for (const [wx, row] of wegEpilog) {
+    const tx = wx * TILE + 8, feetY = row * TILE;
+    let ok = false, bestDist = Infinity, noProg = 0;
+    for (let i = 0; i < 14 * 60; i++) {
+      const p2 = epi.player;
+      const d = tx - (p2.x + p2.w / 2);
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      const zielTiefer = feetY > p2.y + p2.h + 6;
+      if (Math.abs(d) < 12 && zielTiefer) richtung = letzteRichtung;
+      else if (richtung !== 0) letzteRichtung = richtung;
+      iE.setKey('right', richtung > 0);
+      iE.setKey('left', richtung < 0);
+      const footRow = Math.floor((p2.y + p2.h + 1) / TILE);
+      const holeAhead = epi.tileVal(Math.floor((p2.x + p2.w + 6) / TILE), footRow) === 0 && feetY <= p2.y + p2.h + 4;
+      if (Math.abs(d) < bestDist - 4) { bestDist = Math.abs(d); noProg = 0; } else noProg++;
+      const needJump = feetY < p2.y + p2.h - 8 || holeAhead || noProg > 20;
+      if (jumpHold > 0) { iE.setKey('jump', true); jumpHold -= 1; if (jumpHold === 0) jumpRelease = 3; }
+      else if (jumpRelease > 0) { iE.setKey('jump', false); jumpRelease -= 1; }
+      else if (p2.onGround && needJump) { jumpHold = 18; iE.setKey('jump', true); jumpHold -= 1; }
+      else iE.setKey('jump', false);
+      epi.update(1 / 60);
+      if (epi.state === 'paused') epi.resume();
+      if (epi.state === 'complete') { ok = true; break; }
+      if (Math.abs(d) < 8 && Math.abs((p2.y + p2.h) - feetY) < 18 && p2.onGround) { ok = true; break; }
+      hoch = Math.max(hoch, Math.round(p2.y + p2.h));
+    }
+    if (!ok) fehlwege.push(`${wx}/${row} (x=${epi.player.x.toFixed(0)})`);
+  }
+  check('Epilog ist zu Fuß erreichbar (Hecke springbar)',
+    fehlwege.length === 0 && epi.state === 'complete',
+    fehlwege.length ? fehlwege.join(' | ') : `Zustand ${epi.state}`);
+
+  // Akt 4 mit den echten drei Nerven: der Weg muss ohne Schonmodus gehen.
+  const i4 = createInput(null);
+  const vier = new Game({
+    level: buildAkt4(), input: i4,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  vier.reset('schwarz');
+  let zusammenbrueche = 0, kante = 0;
+  for (let i = 0; i < 60 * 120 && vier.state !== 'complete'; i++) {
+    i4.setKey('right', true);
+    if (vier.player.onGround && vier.tileVal(Math.floor((vier.player.x + 14) / TILE), Math.floor((vier.player.y + vier.player.h - 1) / TILE)) === 1) kante++;
+    if (kante > 4) { i4.setKey('jump', true); kante = -20; } else i4.setKey('jump', false);
+    vier.update(1 / 60);
+    if (vier.state === 'paused') vier.resume();
+    if (vier.state === 'collapse') { zusammenbrueche++; vier.respawnFromCheckpoint(); }
+  }
+  // BEKANNTES PROBLEM (Review 11.09., Befund 3): der blinde Rechtslauf kommt am
+  // Souffleurkasten nicht zuverlässig durch. Der Test hält den Ist-Zustand fest,
+  // damit eine Verschlechterung auffällt — er behauptet NICHT, dass Akt 4 fair ist.
+  check('Akt 4: Rechtslauf-Baseline (bekanntes Problem, Review Befund 3)',
+    vier.player.x > 12 * TILE,
+    `x=${vier.player.x.toFixed(0)} Zusammenbrüche=${zusammenbrueche} (offen: Kreuzfeuer am Kasten)`);
+}
+
 // ------------------------------------------------------ Pause & Langzeitlauf --
 {
   const { game } = fresh('schwarz', { stands: false });
