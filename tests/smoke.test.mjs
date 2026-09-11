@@ -1103,6 +1103,30 @@ function place(game, px, py) {
   check('Akt 3: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
+// -------------------------------------------------- Schauplatz (Keller/Freiluft) --
+{
+  const j3 = buildAkt3();
+  check('Akt 3 ist als Freiluft markiert', j3.setting === 'openair', String(j3.setting));
+  check('Keller bleibt Keller', buildAkt1().setting === 'keller' && buildAkt2().setting === 'saal');
+
+  const { game: keller } = fresh('schwarz', { stands: false });
+  const draussen = new Game({
+    level: buildAkt3(), input: createInput(null),
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  draussen.reset('schwarz');
+  check('Keller zeichnet Fels ueber dem Gang', keller.tileLook(30, 4) === 'stein' && keller.tileLook(30, 20) === 'stein');
+  check('Freiluft zeichnet Himmel statt Fels',
+    draussen.tileLook(30, 4) === null && draussen.tileLook(30, 12) === null,
+    `${draussen.tileLook(30, 4)} / ${draussen.tileLook(30, 12)}`);
+  check('Freiluft: Wiese als Boden', draussen.tileLook(30, 25) === 'gras', String(draussen.tileLook(30, 25)));
+  check('Freiluft: Buehnenboden ist Planke, nicht Wiese',
+    draussen.tileLook(80, 21) === 'buehne', String(draussen.tileLook(80, 21)));
+  check('Freiluft: Vordach ist ueberdacht', draussen.tileLook(35, 20) === 'vordach', String(draussen.tileLook(35, 20)));
+  check('Freiluft: Treppe ist Planke', draussen.tileLook(69, 23) === 'buehne', String(draussen.tileLook(69, 23)));
+}
+
 // ------------------------------------------------------ Pause & Langzeitlauf --
 {
   const { game } = fresh('schwarz', { stands: false });

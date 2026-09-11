@@ -1030,6 +1030,7 @@ export class Game {
   }
 
   drawBackground(ctx, camX, camY) {
+    if (this.level.setting === 'openair') { this.drawSky(ctx, camX, camY); return; }
     ctx.fillStyle = '#141021';
     ctx.fillRect(0, 0, this.vw, this.vh);
     // ferne Bogenreihen
@@ -1091,6 +1092,95 @@ export class Game {
     }
   }
 
+  /**
+   * Wie eine Kachel aussieht: 'stein' | 'gras' | 'erde' | 'holz' | 'morsch'
+   * oder null (nichts zeichnen). Im Freien wird inneres Gestein übersprungen,
+   * damit der Himmel durchscheint — sonst sieht Open Air aus wie ein Keller.
+   */
+  tileLook(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= this.level.w || ty >= this.level.h) return null;
+    const v = this.grid[ty][tx];
+    if (!v) return null;
+    const freiluft = this.level.setting === 'openair';
+    if (v === 1) {
+      if (freiluft) {
+        const pxT = tx * TILE, pyT = ty * TILE;
+        for (const sh of this.level.shelters || []) {
+          if (pyT >= sh.y && pyT < sh.y + TILE && pxT >= sh.x && pxT < sh.x + sh.w) return 'vordach';
+        }
+        const innen = this.tileVal(tx - 1, ty) === 1 && this.tileVal(tx + 1, ty) === 1
+          && this.tileVal(tx, ty - 1) === 1 && this.tileVal(tx, ty + 1) === 1;
+        if (innen) return null;
+        if (this.tileVal(tx, ty - 1) === 1) return 'erde';
+        // freiliegende einzelne Platte: Bühne, Treppe oder Steg
+        if (this.tileVal(tx, ty + 1) !== 1) return 'buehne';
+        return 'gras';
+      }
+      return 'stein';
+    }
+    if (v === 2) return 'holz';
+    if (v === 3) return 'morsch';
+    return null;
+  }
+
+  /** Freiluft-Himmel: Farbe je Wetterlage, Sonne, Hügel, ziehende Wolken. */
+  drawSky(ctx, camX, camY) {
+    const palette = {
+      sonne: ['#243a6b', '#d97b45', '#f2c98a'],
+      wind: ['#2a3a52', '#6d7c94', '#bcc5d2'],
+      regen: ['#121826', '#232c3d', '#3d4759'],
+      kaelte: ['#0e1830', '#27406a', '#82a6cb'],
+    }[this.wetterKind] || ['#221d38', '#3a3454', '#6b5f80'];
+    const g = ctx.createLinearGradient(0, 0, 0, this.vh * 0.8);
+    g.addColorStop(0, palette[0]);
+    g.addColorStop(0.6, palette[1]);
+    g.addColorStop(1, palette[2]);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, this.vw, this.vh);
+    const horiz = Math.round(this.vh * 0.66 - camY * 0.18);
+    // Sonne bzw. Abendsonne
+    if (this.wetterKind === 'sonne' || this.wetterKind === 'kaelte') {
+      const sx = Math.round(this.vw * 0.72 - camX * 0.05 + (this.wetterKind === 'kaelte' ? -40 : 0));
+      const sy = horiz - 46;
+      ctx.fillStyle = this.wetterKind === 'sonne' ? 'rgba(255,214,140,0.30)' : 'rgba(200,224,255,0.22)';
+      ctx.fillRect(sx - 12, sy - 12, 24, 24);
+      ctx.fillStyle = this.wetterKind === 'sonne' ? '#ffe9b0' : '#e8f1ff';
+      ctx.fillRect(sx - 5, sy - 5, 10, 10);
+    }
+    // zwei Hügelketten mit Parallaxe
+    const reihen = [
+      { sp: 0.22, h: 26, farbe: 'rgba(20,30,44,0.75)', breite: 150 },
+      { sp: 0.42, h: 16, farbe: 'rgba(28,44,52,0.85)', breite: 96 },
+    ];
+    for (const r of reihen) {
+      ctx.fillStyle = r.farbe;
+      const off = (camX * r.sp) % r.breite;
+      for (let i = -1; i < this.vw / r.breite + 2; i++) {
+        const bx = Math.round(i * r.breite - off);
+        const bh = r.h + Math.round(Math.sin((i * 1.7 + camX * 0.001)) * 6);
+        for (let k = 0; k < bh; k++) {
+          const w = Math.round(30 * (1 - k / (bh + 8)));
+          ctx.fillRect(bx + Math.round((r.breite - w) / 2), horiz - bh + k, w, 1);
+        }
+      }
+    }
+    // Wolken ziehen mit dem Wind
+    const driftTempo = this.wetterKind === 'wind' ? 22 : 5;
+    const wolken = this.wetterKind === 'regen' ? '#525c70' : this.wetterKind === 'sonne' ? '#f6d9ae' : '#c6cede';
+    ctx.fillStyle = wolken;
+    const off2 = ((camX * 0.12) + this.time * driftTempo) % 220;
+    for (let i = -1; i < this.vw / 220 + 2; i++) {
+      const cx0 = Math.round(i * 220 - off2);
+      const cy0 = Math.round(horiz * 0.36 + (i % 3) * 12);
+      ctx.fillRect(cx0 + 10, cy0, 34, 3);
+      ctx.fillRect(cx0 + 18, cy0 - 3, 22, 3);
+      ctx.fillRect(cx0 + 6, cy0 + 3, 46, 2);
+    }
+    // Dunst am Horizont
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(0, horiz - 2, this.vw, 4);
+  }
+
   drawTiles(ctx, camX, camY) {
     const x0 = Math.max(0, Math.floor(camX / TILE));
     const x1 = Math.min(this.level.w - 1, Math.ceil((camX + this.vw) / TILE));
@@ -1098,10 +1188,54 @@ export class Game {
     const y1 = Math.min(this.level.h - 1, Math.ceil((camY + this.vh) / TILE));
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
-        const v = this.grid[ty][tx];
-        if (!v) continue;
+        const stil = this.tileLook(tx, ty);
+        if (!stil) continue;
         const px = Math.round(tx * TILE - camX), py = Math.round(ty * TILE - camY);
-        if (v === 1) {
+        if (stil === 'gras') {
+          ctx.fillStyle = '#4a3a28';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#3f6b3a';
+          ctx.fillRect(px, py, TILE, 7);
+          ctx.fillStyle = '#51823f';
+          ctx.fillRect(px, py, TILE, 3);
+          ctx.fillStyle = '#61944a';
+          const halme = 1 + Math.floor(hash2(tx, ty, 3) * 3);
+          for (let i = 0; i < halme; i++) {
+            ctx.fillRect(px + Math.floor(hash2(tx, ty, i + 4) * 15), py - 1, 1, 2);
+          }
+          ctx.fillStyle = '#2e4f2b';
+          ctx.fillRect(px, py + 7, TILE, 1);
+        } else if (stil === 'buehne') {
+          ctx.fillStyle = '#6b4a26';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#7d5a30';
+          ctx.fillRect(px, py, TILE, 5);
+          ctx.fillStyle = '#94693a';
+          ctx.fillRect(px, py, TILE, 2);
+          ctx.fillStyle = '#523717';
+          for (let k = 0; k < 4; k++) ctx.fillRect(px, py + 5 + k * 3, TILE, 1);
+          ctx.fillStyle = '#3a2712';
+          ctx.fillRect(px, py + TILE - 2, TILE, 2);
+        } else if (stil === 'vordach') {
+          ctx.fillStyle = '#2f2a34';
+          ctx.fillRect(px, py, TILE, TILE);
+          for (let k = 0; k < 4; k++) {
+            ctx.fillStyle = k % 2 === 0 ? '#dcd3c0' : '#a8433a';
+            ctx.fillRect(px + k * 4, py, 4, 8);
+          }
+          ctx.fillStyle = '#8e8578';
+          ctx.fillRect(px, py, TILE, 2);
+          ctx.fillStyle = '#1d1a24';
+          ctx.fillRect(px, py + 8, TILE, 2);
+        } else if (stil === 'erde') {
+          ctx.fillStyle = '#4a3a28';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#57452f';
+          const n = 2 + Math.floor(hash2(tx, ty, 1) * 3);
+          for (let i = 0; i < n; i++) {
+            ctx.fillRect(px + Math.floor(hash2(tx, ty, i + 2) * 13), py + Math.floor(hash2(tx, ty, i + 9) * 13), 3, 2);
+          }
+        } else if (stil === 'stein') {
           ctx.fillStyle = '#2b2438';
           ctx.fillRect(px, py, TILE, TILE);
           ctx.fillStyle = '#332b44';
@@ -1117,7 +1251,7 @@ export class Game {
             ctx.fillStyle = '#5d4f78';
             ctx.fillRect(px, py, TILE, 1);
           }
-        } else if (v === 2) {
+        } else if (stil === 'holz') {
           ctx.fillStyle = '#4d3a22';
           ctx.fillRect(px, py, TILE, 6);
           ctx.fillStyle = '#6b5330';
@@ -1125,7 +1259,7 @@ export class Game {
           ctx.fillStyle = '#3a2b18';
           ctx.fillRect(px + 5, py + 2, 2, 4);
           ctx.fillRect(px + 11, py + 2, 2, 4);
-        } else if (v === 3) {
+        } else if (stil === 'morsch') {
           const wob = Math.sin(this.time * 1.6 + tx) * 0.3;
           ctx.fillStyle = '#d9d3bd';
           ctx.fillRect(px, py + 1 + wob, TILE, 5);

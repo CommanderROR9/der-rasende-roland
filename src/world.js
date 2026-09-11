@@ -154,6 +154,7 @@ export function buildAkt1() {
   return {
     id: 'akt1',
     name: 'AKT 1 — DIE KATAKOMBEN',
+    setting: 'keller',
     subtitle: '2. Untergeschoss. Es riecht nach Staub und Notenpapier.',
     w: W, h: H,
     grid, spawns, gates, lights, alcoves, hints, goal,
@@ -279,6 +280,7 @@ export function buildAkt2() {
   return {
     id: 'akt2',
     name: 'AKT 2 — DIE PROBE',
+    setting: 'saal',
     subtitle: 'Probenraum. Es riecht nach Kolophonium und Nervosität.',
     w: W2, h: H2,
     grid, spawns, gates, lights, alcoves, hints, takts, goal,
@@ -387,8 +389,12 @@ export function buildAkt3() {
   carve(21, 18, 44, 7);       // Wiese x21..64
   carve(65, 8, 40, 17);       // Bühne und Gerüst x65..104
   carve(105, 21, 20, 4);      // Hinter der Bühne x105..124
+  // Freiluft: über dem Gelände ist Himmel, kein Fels — muss VOR den Aufbauten
+  // geschehen, sonst schneidet es Gerüst und Lichtbrücke weg.
+  carve(1, 0, 123, 19);
 
   // ------------------------------------------------------- Bühne, Treppe, Turm --
+  rect(30, 20, 15, 1);        // Vordach über der Wiese (Dach der Schutzzone)
   rect(65, 24, 3, 1);         // Treppenstufen zur Bühne (je 16 px)
   rect(68, 23, 3, 1);
   rect(71, 22, 3, 1);
@@ -466,6 +472,7 @@ export function buildAkt3() {
     id: 'akt3',
     mode: 'sidescroller',
     name: 'AKT 3 — OPEN AIR',
+    setting: 'openair',
     subtitle: 'Freilichtbühne im Park. Das Wetter spielt mit — leider.',
     w: W3, h: H3,
     grid, spawns, gates, lights, alcoves, hints, shelters, weather: wetter,

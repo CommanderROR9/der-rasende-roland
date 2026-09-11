@@ -530,6 +530,27 @@ try {
     errors: window.__errors
   })`));
   check('Wetteranzeige steht auf WIND', windProbe.dom === 'WIND', JSON.stringify(windProbe));
+
+  // Himmel statt Höhlenwand: obere Bildhälfte von Akt 3 gegen Akt 1 messen
+  const bildOben = `(() => {
+    const c = document.getElementById('game');
+    const h = Math.max(1, Math.floor(c.height * 0.35));
+    const d = c.getContext('2d').getImageData(0, 0, c.width, h).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 16) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    return JSON.stringify({ r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) });
+  })()`;
+  const obenAkt3 = JSON.parse(await evaluate(bildOben));
+  await evaluate("window.__roland.loadAct(0)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(900);
+  const obenAkt1 = JSON.parse(await evaluate(bildOben));
+  const hell3 = obenAkt3.r + obenAkt3.g + obenAkt3.b;
+  const hell1 = obenAkt1.r + obenAkt1.g + obenAkt1.b;
+  check('Open Air zeigt Himmel statt Hoehlenwand', hell3 > hell1 + 60,
+    `Akt3 ${JSON.stringify(obenAkt3)} vs Akt1 ${JSON.stringify(obenAkt1)}`);
   check('keine Fehler in Akt 3', windProbe.errors.length === 0, JSON.stringify(windProbe.errors));
   await evaluate("window.__roland.loadAct(0)");
 

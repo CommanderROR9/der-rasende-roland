@@ -117,6 +117,10 @@ Sammelobjekte, für einen davon muss man auf die morsche Kante steigen.
   dort also deutlich näher dran, damit die Figur nicht zur Briefmarke wird
 - Spielfigur 16×24 px (Trefferfläche 12×22), Kleidung über Palettenvarianten desselben Körpers
 - Grafik komplett code-nativ (Sprite-Matrizen), keine Binärassets
+- Jeder Akt hat ein `setting`: `keller`/`saal` zeichnen Fels und Höhlenhintergrund,
+  `openair` zeichnet Himmel (Farbe je Wetterlage), Hügelketten, ziehende Wolken und
+  Gras-/Erde-/Bretter-Kacheln — inneres Gestein wird übersprungen, damit der Himmel
+  durchscheint
 - Sound per WebAudio-Synth (Chiptune), keine Audiodateien
 - Fortschritt nur lokal in `localStorage`, kein Server, kein Tracking
 
