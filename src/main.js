@@ -6,6 +6,7 @@ import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { LEVELS } from './world.js';
 import { Game } from './game.js';
+import { Grill } from './grill.js';
 import { Racer } from './racer.js';
 
 const $ = (s) => document.querySelector(s);
@@ -24,6 +25,8 @@ const ui = {
   jumpActBtn: $('#jumpActBtn'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
   walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
+  grillReadout: $('#grillReadout'), gPunkte: $('#gPunkte'), gServiert: $('#gServiert'),
+  gVerbrannt: $('#gVerbrannt'), gTakt: $('#gTakt'), gBpm: $('#gBpm'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
@@ -63,6 +66,16 @@ const REWARDS = {
     text: 'Lauwarm, mit Kondenswasser am Becherrand. Der Applaus hallt noch im Park, '
       + 'und für einen Moment ist der Frack gar nicht mehr so schlimm.',
   },
+  akt5: {
+    title: 'STEHENDE OVATIONEN',
+    text: 'Der Vorhang ist gefallen und das Haus steht. Einundvierzig Jahre lang war das '
+      + 'Bühnenlicht unangenehm hell — heute Abend nicht mehr.',
+  },
+  epilog: {
+    title: 'FEIERABEND',
+    text: 'Ramona hat das Bier schon aufgemacht, der Grill ist an, und der Frack hängt im '
+      + 'Schrank der Laube. 41 Jahre. Und jetzt: Feierabend.',
+  },
   akt4: {
     title: 'BELOHNUNG: DER TAKTSTOCK',
     text: 'Der Dirigent hat ihn liegen lassen. Ab jetzt liegt er im Handschuhfach, '
@@ -86,13 +99,14 @@ function updateActLabels() {
   ui.rewardTitle.textContent = r.title;
   ui.rewardText.textContent = r.text;
   ui.rewardNote.textContent = istLetzterAkt()
-    ? 'Akt 3 ist noch in Arbeit — bis hierher, und danke fürs Durchhalten.'
+    ? 'Das war das Ende der Reise. Danke fürs Spielen — und viel Spaß im Ruhestand.'
     : `Weiter mit ${LEVELS[aktIndex + 1].name}.`;
   ui.rewardBtn.textContent = istLetzterAkt() ? 'NOCHMAL \u2192' : 'WEITER \u2192';
 }
 let game = null;      // Seitenscroller-Simulation
 let racer = null;     // Fahr-Interludium
-const aktiv = () => racer || game;
+let grill = null;     // Bratwurst-Minispiel im Epilog
+const aktiv = () => grill || racer || game;
 let gardeMode = 'start';
 let pendingOutfit = null;
 
@@ -153,6 +167,22 @@ function renderGarde(mode) {
 }
 
 // ------------------------------------------------------------------- Spiel --
+function startGrill() {
+  grill = new Grill({ level: LEVEL, input, audio, events: onGrillEvent, view: VIEW, difficulty: diffKey });
+  hideAll();
+  audio.resume();
+  last = performance.now();
+}
+function onGrillEvent(e) {
+  if (e.type !== 'complete') return;
+  ui.rewardEyebrow.textContent = 'DER GRILL';
+  ui.rewardTitle.textContent = 'GRILL-ERGEBNIS';
+  ui.rewardText.textContent = 'Ramona hat zugesehen und nickt. Das ist mehr wert als jede Punktzahl.';
+  zeigeZeilen(e.rows);
+  ui.rewardBtn.textContent = 'WEITER \u2192';
+  ui.rewardBtn.dataset.modus = 'grill';
+  show('reward');
+}
 function newGame(outfitId) {
   for (const h of LEVEL.hints || []) h.shown = false;
   if (LEVEL.mode === 'racer') {
@@ -173,6 +203,7 @@ function newGame(outfitId) {
 }
 function onGameEvent(e) {
   if (e.type === 'stand') renderGarde('wechseln');
+  else if (e.type === 'grill') startGrill();
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
     const s = e.stats || {};
@@ -185,19 +216,12 @@ function onGameEvent(e) {
       [`${LEVEL.id}`]: true,
     });
     updateActLabels();
-    ui.rewardBody.innerHTML = '';
-    const stats = e.rows || [
+    zeigeZeilen(e.rows || [
       ['ZEIT', fmtTime(s.time)],
       ['BESTE ZEIT', fmtTime(best)],
       ['BIERDECKEL', `${s.deckel} / ${LEVEL.deckelTotal}`],
       ['IM TAKT GETROFFEN', String(s.taktHits)],
-    ];
-    for (const [k, v] of stats) {
-      const d = document.createElement('div');
-      d.className = 'stat';
-      d.innerHTML = `<span>${k}</span><b>${v}</b>`;
-      ui.rewardBody.appendChild(d);
-    }
+    ]);
     const icon = document.createElement('canvas');
     icon.className = 'rewardIcon';
     icon.width = 40; icon.height = 52;
@@ -210,6 +234,15 @@ function onGameEvent(e) {
     g.drawImage(spr.canvas, 0, 0, spr.w, spr.h, 0, 0, 40, iz);
     ui.rewardBody.prepend(icon);
     show('reward');
+  }
+}
+function zeigeZeilen(stats) {
+  ui.rewardBody.innerHTML = '';
+  for (const [k, v] of stats) {
+    const d = document.createElement('div');
+    d.className = 'stat';
+    d.innerHTML = `<span>${k}</span><b>${v}</b>`;
+    ui.rewardBody.appendChild(d);
   }
 }
 function fmtTime(t) {
@@ -236,6 +269,23 @@ function refreshHud() {
   const a = aktiv();
   if (!a) return;
   const h = a.hud;
+  if (h.modus === 'grill') {
+    ui.walkReadout.classList.add('hidden');
+    ui.racerReadout.classList.add('hidden');
+    ui.grillReadout.classList.remove('hidden');
+    const sigG = [h.punkte, h.serviert, h.verbrannt, h.takt, h.hint].join('|');
+    if (sigG === hudPrev) return;
+    hudPrev = sigG;
+    ui.gPunkte.textContent = String(h.punkte);
+    ui.gServiert.textContent = `${h.serviert}/${h.serviert + h.offen}`;
+    ui.gVerbrannt.textContent = String(h.verbrannt);
+    ui.gTakt.textContent = String(h.sauber || 0);
+    ui.gBpm.textContent = String(h.takt);
+    if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
+    else ui.hintbar.classList.add('hidden');
+    return;
+  }
+  ui.grillReadout.classList.add('hidden');
   if (h.modus === 'racer') {
     // Fahr-Interludium: eigenes HUD
     ui.walkReadout.classList.add('hidden');
@@ -349,6 +399,14 @@ ui.resumeBtn.onclick = () => { game.resume(); hideAll(); };
 ui.quitBtn.onclick = () => { game = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
 ui.collapseBtn.onclick = () => { game.respawnFromCheckpoint(); hideAll(); };
 ui.rewardBtn.onclick = () => {
+  if (ui.rewardBtn.dataset.modus === 'grill') {
+    delete ui.rewardBtn.dataset.modus;
+    grill = null;
+    if (game) game.resume();
+    hideAll();
+    last = performance.now();
+    return;
+  }
   const outfit = game.outfit.id;
   if (istLetzterAkt()) { newGame(outfit); return; }
   loadAct(aktIndex + 1);          // nächster Akt: wieder über die Garderobe
@@ -425,7 +483,8 @@ updateJumpButton();
 fit();
 requestAnimationFrame(frame);
 window.__roland = {
-  get game() { return game; }, get racer() { return racer; }, get aktiv() { return racer || game; },
+  get game() { return game; }, get racer() { return racer; }, get grill() { return grill; },
+  get aktiv() { return grill || racer || game; },
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
   loadAct, input, get scale() { return scaleNow; },
 };

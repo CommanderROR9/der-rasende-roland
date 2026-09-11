@@ -85,6 +85,9 @@ export class Game {
     this.taktChanges = (this.level.takts || []).map((t) => ({ ...t, done: false }));
     // Wetter (Akt 3): Sonne, Wind, Regen, Kälte im Wechsel
     this.dunkel = this.level.dark ? (this.difficulty === 'gemuetlich' ? 0.80 : 0.90) : 0;
+    this.applaus = 0;
+    this.movingLights = (this.level.movingLights || []).map((l) => ({ ...l }));
+    this.grillFrei = 0;
     this.spuk = (this.level.spooks || []).map((sp) => ({ ...sp, done: false }));
     this.wetter = (this.level.weather || []).map((w) => ({ ...w }));
     this.wetterIdx = -1;
@@ -150,6 +153,10 @@ export class Game {
         return { kind: 'tenor', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 14, h: 16, patrol: s.patrol, dir: s.dir ?? -1, alive: true, stun: 0, flash: 0, bob: Math.random() * 6.28 };
       case 'dirigent':
         return { kind: 'dirigent', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22, dir: s.dir ?? 1, alive: true, stun: 0, flash: 0, bob: 0, aim: 0 };
+      case 'ramona':
+        return { kind: 'ramona', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22, alive: true, bob: 0, near: false };
+      case 'grill':
+        return { kind: 'grill', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 20, h: 12, alive: true, near: false };
       case 'koffer':
         return { kind: 'koffer', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 16, h: 12, patrol: s.patrol, dir: 1, alive: true, stun: 0, flash: 0, bob: 0, wait: 0 };
       default:
@@ -189,10 +196,12 @@ export class Game {
    *  @returns true, wenn die Meldung jetzt angezeigt wird */
   /** Ist die Anforderung des Ziels erfüllt? 'mappe' oder eine Kluft. */
   goalErfuellt() {
-    const need = this.level.goal.need;
-    if (!need) return true;
-    if (need === 'mappe') return !!this.hasMappe;
-    return this.outfit.id === need;
+    const g = this.level.goal;
+    if (g.applaus && this.applaus < g.applaus) return false;
+    if (g.frackOff && !this.frackOffUsed) return false;
+    if (!g.need) return true;
+    if (g.need === 'mappe') return !!this.hasMappe;
+    return this.outfit.id === g.need;
   }
 
   message(text, dur = 4.5, prio = 1) {
@@ -222,6 +231,14 @@ export class Game {
     }
     if (this.state !== 'play') return;
     this.time += dt;
+    // Verfolgerscheinwerfer wandern ueber die Buehne
+    for (const l of this.movingLights) {
+      l.x += l.speed * dt;
+      if (l.x < l.x0) { l.x = l.x0; l.speed = Math.abs(l.speed); }
+      if (l.x > l.x1) { l.x = l.x1; l.speed = -Math.abs(l.speed); }
+    }
+    if (this.level.applaus) this.applaus = Math.max(0, this.applaus - 3.5 * dt);
+    if (this.grillFrei > 0) this.grillFrei -= dt;
     this.updateLifts(dt);
     this.updatePlayer(dt);
     this.updateTakt(dt);
@@ -269,6 +286,10 @@ export class Game {
     if (this.level.setting === 'graben') {
       return { bg: '#120a10', far: '#1d1016', mid: '#251319',
         stein: '#2a1a20', stein2: '#341f27', kante: '#4a2730', kante2: '#63333c' };
+    }
+    if (this.level.setting === 'buehne') {
+      return { bg: '#150a0c', far: '#241216', mid: '#2c1518',
+        stein: '#3a1c1c', stein2: '#4a2422', kante: '#7a3a2c', kante2: '#a8523a' };
     }
     return { bg: '#141021', far: '#1b1630', mid: '#191428',
       stein: '#2b2438', stein2: '#332b44', kante: '#453a5c', kante2: '#5d4f78' };
@@ -643,6 +664,7 @@ export class Game {
         if (inTakt) { en.stun = TUNE.trittStun; en.flash = 0.3; hits++; }
       }
     }
+    if (inTakt && hits > 0 && this.level.applaus) this.applaus = Math.min(100, this.applaus + 12);
     if (inTakt && hits > 0) {
       this.taktHits += hits;
       this.heat = Math.max(0, this.heat - 4);
@@ -822,7 +844,10 @@ export class Game {
   }
 
   inLight(p) {
-    for (const l of this.level.lights) {
+    const zonen = this.level.lights.concat(this.movingLights.map((l) => ({
+      x: l.x * TILE, y: l.y * TILE, w: l.w * TILE, h: l.h * TILE,
+    })));
+    for (const l of zonen) {
       if (p.x + p.w > l.x && p.x < l.x + l.w && p.y + p.h > l.y && p.y < l.y + l.h) return true;
     }
     return false;
@@ -879,6 +904,25 @@ export class Game {
       }
     }
     this.entities = this.entities.filter((en) => en.alive);
+    // Ramona und der Grill: nichts Gefaehrliches, nur Nachbarschaft
+    for (const en of this.entities) {
+      if (en.kind !== 'ramona' && en.kind !== 'grill') continue;
+      const slot = { x: en.x - 24, y: en.y - 20, w: en.w + 48, h: en.h + 30 };
+      const nah = overlap(p, slot);
+      if (nah && !en.near) {
+        en.near = true;
+        if (en.kind === 'ramona') this.message('RAMONA: \u201eSETZ DICH. DAS BIER STEHT SCHON.\u201c', 6, 2);
+        else this.message('DER GRILL IST AN. BRATWUERSTE WENDEN SICH NICHT VON ALLEIN.', 6, 2);
+      }
+      if (!nah) en.near = false;
+      if (en.kind === 'grill' && nah && this.wantInteract && this.grillFrei <= 0) {
+        this.grillFrei = 1.5;
+        this.wantInteract = false;
+        this.pause('grill');
+        this.events({ type: 'grill' });
+      }
+    }
+
     // Souffleurkasten: wer zu nahe kommt, hört plötzlich den Text mit
     for (const sp of this.spuk) {
       if (sp.done) continue;
@@ -971,6 +1015,8 @@ export class Game {
     }
     const stand = this.nearStand();
     if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
+    const griller = this.entities.find((en) => en.kind === 'grill' && en.near);
+    if (griller) best = { text: 'GRILLEN', action: true, key: 'E', x: griller.x + 10, y: griller.y - 18 };
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
     const zielFrei = this.goalErfuellt();
@@ -1032,6 +1078,12 @@ export class Game {
   }
 
   complete() {
+    this.rows = [
+      ['ZEIT', `${Math.floor(this.time / 60)}:${String(Math.floor(this.time % 60)).padStart(2, '0')}`],
+      ['BIERDECKEL', `${this.deckel} / ${this.level.deckelTotal}`],
+      ['IM TAKT GETROFFEN', String(this.taktHits)],
+      ['NERVEN', String(this.nerves)],
+    ];
     if (this.state !== 'play') return;
     this.state = 'complete';
     this.audio.play('fanfare');
@@ -1100,6 +1152,8 @@ export class Game {
       hint: this.hint ? this.hint.text : null,
       state: this.state,
       hasMappe: this.hasMappe,
+      applaus: this.level.applaus ? Math.round(this.applaus) : null,
+      applausZiel: this.level.applaus ? this.level.goal.applaus : null,
       label: this.nearestLabel(),
       standNear: !!this.nearStand(),
       wetter: this.wetterKind,
@@ -1223,7 +1277,7 @@ export class Game {
     if (tx < 0 || ty < 0 || tx >= this.level.w || ty >= this.level.h) return null;
     const v = this.grid[ty][tx];
     if (!v) return null;
-    const freiluft = this.level.setting === 'openair';
+    const freiluft = this.level.setting === 'openair' || this.level.setting === 'garten';
     if (v === 1) {
       if (freiluft) {
         const pxT = tx * TILE, pyT = ty * TILE;
@@ -1247,7 +1301,7 @@ export class Game {
 
   /** Freiluft-Himmel: Farbe je Wetterlage, Sonne, Hügel, ziehende Wolken. */
   drawSky(ctx, camX, camY) {
-    const palette = {
+    const palette = this.level.setting === 'garten' ? ['#2a3a6e', '#e08a52', '#f6d79a'] : {
       sonne: ['#243a6b', '#d97b45', '#f2c98a'],
       wind: ['#2a3a52', '#6d7c94', '#bcc5d2'],
       regen: ['#121826', '#232c3d', '#3d4759'],
@@ -1531,6 +1585,20 @@ export class Game {
             ctx.fillRect(x + 6, y - 4, 2, 2);
           }
           if (en.stun > 0) this.drawStun(ctx, x + 7, y - 6);
+          break;
+        }
+        case 'ramona': {
+          const spr = this.spr('ramona');
+          blit(ctx, spr, x - 1, y + en.h - spr.h, false, 0);
+          break;
+        }
+        case 'grill': {
+          const spr = this.spr('grill');
+          blit(ctx, spr, x - 2, y + en.h - spr.h, false, 0);
+          if (Math.sin(this.time * 2) > 0) {
+            ctx.fillStyle = 'rgba(255,170,90,0.20)';
+            ctx.fillRect(x - 2, y - 10, 24, 8);
+          }
           break;
         }
         case 'koffer': {

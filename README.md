@@ -162,6 +162,15 @@ node tests/diag.mjs <url> <akt>  # Einzelabfrage: Zustand, Bewegung, Helligkeit
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
+**Akt 5 — Die Bühne (Finale).** Verfolgerscheinwerfer wandern über die Bühne und heizen den Frack
+auf, der Applaus ist eine eigene Anzeige: im Takt auftreten füllt sie. Der Vorhang öffnet sich nur
+mit genug Applaus — und der **Frack-Off** ist hier keine Notbremse mehr, sondern der Auftritt selbst.
+
+**Epilog — Kleingarten.** Der Pachtgarten: Laube, Bank, Bier, und **Ramona** steht am Grill. Am
+Grill startet das **Bratwurst-Minispiel**: drei Roste, acht Würste, wenden und servieren mit der
+Aktionstaste. Genau im Takt gewendet gibt Bonus, ohne Takt geht es auch — nur rauchen die Würste
+dann. Bewertung von GRILLMEISTER bis RAUCHZEICHEN.
+
 `tests/smoke.test.mjs` fährt dieselbe Simulation wie das Spiel, nur ohne Browser.
 Geprüft werden Physik, Takt, alle Gegnertypen, Kleiderwechsel und Türen, Hitze und
 Frack-Off, Items, Speicherpunkte, Aktabschluss und Langzeitstabilität — und mit einem

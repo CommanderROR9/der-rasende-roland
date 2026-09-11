@@ -678,6 +678,71 @@ try {
     nachtBild.max > 120, JSON.stringify(nachtBild));
   check('keine Fehler in der Nachtfahrt', moto.errors.length === 0, JSON.stringify(moto.errors));
 
+  // --- Akt 5 (Finale) ------------------------------------------------------
+  await evaluate("window.__roland.loadAct(6)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(900);
+  const finale = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.level.name,
+    spots: (window.__roland.level.movingLights || []).length,
+    bedarf: window.__roland.level.goal.applaus,
+    state: window.__roland.aktiv.hud.state
+  })`));
+  check('Finale laedt', finale.state === 'play', JSON.stringify(finale));
+  check('Finale: Verfolgerspots und Applaus-Schwelle', finale.spots >= 2 && finale.bedarf >= 50, JSON.stringify(finale));
+  const spotA = await evaluate('window.__roland.game.movingLights[0].x');
+  await sleep(900);
+  const spotB = await evaluate('window.__roland.game.movingLights[0].x');
+  check('Verfolgerspots wandern', spotA !== spotB, `${spotA} -> ${spotB}`);
+
+  // --- Epilog: Kleingarten mit Ramona und Grill ----------------------------
+  await evaluate("window.__roland.loadAct(7)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(900);
+  const epi = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.level.name,
+    ramona: window.__roland.game.entities.filter((e) => e.kind === 'ramona').length,
+    grill: window.__roland.game.entities.filter((e) => e.kind === 'grill').length,
+    feinde: window.__roland.game.entities.filter((e) => ['piccolo','sopran','tenor','koffer','dirigent'].includes(e.kind)).length,
+    state: window.__roland.aktiv.hud.state
+  })`));
+  check('Epilog laedt', epi.state === 'play', JSON.stringify(epi));
+  check('Epilog: Ramona und der Grill sind da', epi.ramona === 1 && epi.grill === 1, JSON.stringify(epi));
+  check('Epilog: keine Gefahren mehr', epi.feinde === 0, JSON.stringify(epi));
+
+  // --- Grill-Minispiel -----------------------------------------------------
+  await evaluate("(() => { const g = window.__roland.game; const gr = g.entities.find((e) => e.kind === 'grill'); g.player.x = gr.x - 16; g.player.y = gr.y + gr.h - 22; })()");
+  await sleep(500);
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(200);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  await sleep(500);
+  const grillModus = JSON.parse(await evaluate(`JSON.stringify({
+    modus: window.__roland.aktiv.hud.modus,
+    readout: !document.getElementById('grillReadout').classList.contains('hidden'),
+    walkWeg: document.getElementById('walkReadout').classList.contains('hidden')
+  })`));
+  check('Grill startet am Grill', grillModus.modus === 'grill', JSON.stringify(grillModus));
+  check('Grill-HUD ersetzt das Lauf-HUD', grillModus.readout === true && grillModus.walkWeg === true, JSON.stringify(grillModus));
+  // Auswahl auf eine frische Wurst legen und dort wenden
+  await evaluate("window.__roland.input.setKey('left', true)");
+  await sleep(200);
+  await evaluate("window.__roland.input.setKey('left', false)");
+  await sleep(200);
+  const grillVorher = await evaluate('window.__roland.grill.wuerserste.filter((w) => w.seite > 0).length');
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(200);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  await sleep(600);
+  const grillNachher = await evaluate('window.__roland.grill.wuerserste.filter((w) => w.seite > 0).length');
+  check('Grill reagiert auf die Aktion', grillNachher > grillVorher, `${grillVorher} -> ${grillNachher}`);
+  check('keine Fehler in Finale und Epilog',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------

@@ -168,7 +168,51 @@ const LAUB = [
   '             ',
 ];
 
+// Epilog: Ramona am Grill
+const RAMONA = [
+  '    rrrrrr    ',
+  '   rrrrrrrr   ',
+  '   rrrrrrrr   ',
+  '   rssssssr   ',
+  '    s.ss.s    ',
+  '    ssssss    ',
+  '    ssssss    ',
+  '     SSSS     ',
+  '   pppppppp   ',
+  '  spppppppps  ',
+  '  saaaaaaaas  ',
+  '  saaaaaaaas  ',
+  '  saaaaaaaam  ',
+  '  saaaaaaaam  ',
+  '    pppppp m  ',
+  '    pppppp mm ',
+  '    pppppp    ',
+  '    pp  pp    ',
+  '    pp  pp    ',
+  '    pp  pp    ',
+  '    pp  pp    ',
+  '   ddd  ddd   ',
+];
+
+// Epilog: der Grill (Glut, Wuerste)
+const GRILL = [
+  '                    ',
+  '                    ',
+  '                    ',
+  '                    ',
+  '  mmmbbmbbbmmbbmmm  ',
+  '  mkkoookooookooom  ',
+  '  mkkkkkkkkkkkkkkm  ',
+  '  mmmmmmmmmmmmmmmm  ',
+  '    m          m    ',
+  '    m  mmmmmm  m    ',
+  '    m          m    ',
+  '    m          m    ',
+];
+
 export const SPRITES = {
+  ramona: RAMONA,
+  grill: GRILL,
   laub: LAUB,
   motorrad: MOTORRAD,
   roland_idle: ROLAND_FRAMES.idle,

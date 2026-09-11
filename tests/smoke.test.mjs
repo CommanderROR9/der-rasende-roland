@@ -1,6 +1,7 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildCabrio, buildMotorrad, LEVELS } from '../src/world.js';
+import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildAkt5, buildEpilog, buildCabrio, buildMotorrad, LEVELS } from '../src/world.js';
+import { Grill } from '../src/grill.js';
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
@@ -1334,6 +1335,252 @@ function place(game, px, py) {
   check('Motorrad: Abschluss nennt Fahrzeit und Kontakte',
     rb.rows.some(([k]) => k === 'FAHRZEIT') && rb.rows.some(([k]) => k === 'KONTAKTE'),
     JSON.stringify(rb.rows));
+}
+
+// ============================================================ AKT 5: BÜHNE ===
+{
+  const lv = buildAkt5();
+  check('Akt 5: Buehne im Theaterschwarz', lv.setting === 'buehne', String(lv.setting));
+  check('Akt 5: drei Verfolgerscheinwerfer', (lv.movingLights || []).length === 3);
+  check('Akt 5: Ziel verlangt Applaus, Frack und Frack-Off',
+    lv.goal.applaus === 60 && lv.goal.need === 'frack' && lv.goal.frackOff === true,
+    JSON.stringify({ applaus: lv.goal.applaus, need: lv.goal.need, frackOff: lv.goal.frackOff }));
+  check('Akt 5: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
+
+  const mk5 = (difficulty = 'gemuetlich') => {
+    const g = new Game({
+      level: buildAkt5(), input: createInput(null),
+      audio: { play() {}, engine() {}, engineOff() {} },
+      events: () => {}, view: VIEW_DESKTOP, difficulty,
+    });
+    g.reset('schwarz');
+    return g;
+  };
+
+  // Verfolgerlicht wandert wirklich
+  const { game: g5 } = { game: mk5() };
+  const x0 = g5.movingLights[0].x;
+  step(g5, 2);
+  check('Akt 5: Verfolgerlicht wandert', Math.abs(g5.movingLights[0].x - x0) > 3,
+    `${x0.toFixed(1)} -> ${g5.movingLights[0].x.toFixed(1)}`);
+
+  // Applaus waechst nur im Takt und faellt sonst
+  const { game: gA, input: iA } = { game: mk5(), input: null };
+  check('Akt 5: Applaus startet bei null', gA.applaus === 0);
+  step(gA, 2);
+  check('Akt 5: Applaus bleibt ohne Auftritt bei null', gA.applaus === 0, String(gA.applaus));
+
+  const { game: gB } = { game: mk5() };
+  const pic = gB.entities.find((e) => e.kind === 'piccolo');
+  place(gB, pic.x - 40, pic.y);
+  gB.beatPhase = 0.02;
+  gB.tryTritt();
+  check('Akt 5: Treffer im Takt gibt Applaus', gB.applaus > 0, String(gB.applaus));
+  const vorher = gB.applaus;
+  step(gB, 3);
+  check('Akt 5: Applaus faellt ohne weiteren Auftritt', gB.applaus < vorher, `${vorher.toFixed(1)} -> ${gB.applaus.toFixed(1)}`);
+
+  // Ziel gating
+  const { game: gZ } = { game: mk5() };
+  gZ.setOutfit('frack');
+  gZ.applaus = 70;
+  check('Akt 5: ohne Frack-Off geht der Vorhang nicht', gZ.goalErfuellt() === false);
+  gZ.applaus = 10;
+  gZ.frackOffUsed = true;
+  check('Akt 5: ohne Applaus geht der Vorhang nicht', gZ.goalErfuellt() === false);
+  gZ.applaus = 70;
+  check('Akt 5: Applaus plus Frack-Off oeffnet den Vorhang', gZ.goalErfuellt() === true);
+
+  // Durchspiel-Route
+  const iR = createInput(null);
+  const gR = new Game({
+    level: buildAkt5(), input: iR,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gR.reset('schwarz');
+  gR.maxNerves = 99;
+  gR.nerves = 99;
+  const route5 = [
+    { wp: [10, 25] }, { wp: [27, 25] }, { wp: [25, 23] }, { wp: [29, 21] },
+    { wp: [33, 20] }, { wp: [37, 19] }, { wp: [42, 17] }, { wp: [48, 16] },
+    { wp: [56, 16] }, { wp: [64, 21] }, { wp: [70, 21] },
+    { wp: [80, 21] }, { wp: [92, 21] }, { wp: [104, 21] },
+    { wp: [108, 21] },
+  ];
+  const fehler5 = [];
+  let jh = 0, jr = 0, lr = 1;
+  for (const schritt of route5) {
+    if (schritt.outfit) { gR.setOutfit(schritt.outfit); continue; }
+    const [wx, row] = schritt.wp;
+    const tx = wx * TILE + 8, feetY = row * TILE;
+    let ok = false, best = Infinity, still = 0;
+    for (let i = 0; i < 16 * 60; i++) {
+      const p = gR.player;
+      const d = tx - (p.x + p.w / 2);
+      const zielTiefer = feetY > p.y + p.h + 6;
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      if (Math.abs(d) < 12 && zielTiefer) richtung = lr;
+      else if (richtung !== 0) lr = richtung;
+      iR.setKey('right', richtung > 0);
+      iR.setKey('left', richtung < 0);
+      const footRow = Math.floor((p.y + p.h + 1) / TILE);
+      const holeAhead = gR.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0 && feetY <= p.y + p.h + 4;
+      if (Math.abs(d) < best - 4) { best = Math.abs(d); still = 0; } else still++;
+      const need = (feetY < p.y + p.h - 8 && d < 56) || holeAhead || still > 20;
+      if (jh > 0) { iR.setKey('jump', true); jh -= 1; if (jh === 0) jr = 3; }
+      else if (jr > 0) { iR.setKey('jump', false); jr -= 1; }
+      else if (p.onGround && need) { jh = 16; iR.setKey('jump', true); jh -= 1; }
+      else iR.setKey('jump', false);
+      gR.update(1 / 60);
+      if (gR.state === 'paused') gR.resume();
+      if (gR.state === 'collapse') gR.respawnFromCheckpoint();
+      if (Math.abs(d) < 8 && Math.abs((p.y + p.h) - feetY) < 18 && p.onGround) { ok = true; break; }
+    }
+    if (!ok) {
+      const p = gR.player;
+      fehler5.push(`${wx}/${row} (x=${p.x.toFixed(0)} fuß=${(p.y + p.h).toFixed(0)})`);
+    }
+  }
+  check('Akt 5: Bot laeuft Gassen, Schnuerboden und Buehne', fehler5.length === 0, fehler5.join(' | '));
+  check('Akt 5: Bot sammelt Bierdeckel', gR.deckel >= 3, `deckel=${gR.deckel}`);
+}
+
+// ============================================================ EPILOG ========
+{
+  const lv = buildEpilog();
+  check('Epilog: Garten im Freien', lv.setting === 'garten' && lv.ruhig === true, String(lv.setting));
+  check('Epilog: Ramona und der Grill stehen bereit',
+    lv.spawns.some((s) => s.kind === 'ramona') && lv.spawns.some((s) => s.kind === 'grill'));
+  check('Epilog: keine Gegner', !lv.spawns.some((s) => ['piccolo', 'sopran', 'tenor', 'dirigent', 'koffer'].includes(s.kind)));
+  check('Epilog: fuenf Bierdeckel und ein Bier',
+    lv.deckelTotal === 5 && lv.spawns.some((s) => s.item === 'bier'));
+
+  const iE = createInput(null);
+  const gE = new Game({
+    level: buildEpilog(), input: iE,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gE.reset('schwarz');
+  // Ramona gruesst beim Naeherkommen
+  const rom = gE.entities.find((e) => e.kind === 'ramona');
+  place(gE, rom.x - 10, 25 * TILE - PHYS.playerH);
+  gE.update(1 / 60);
+  check('Epilog: Ramona meldet sich', !!gE.hud.hint && /RAMONA/.test(gE.hud.hint), String(gE.hud.hint));
+
+  // Der Grill laedt zum Minispiel
+  const grl = gE.entities.find((e) => e.kind === 'grill');
+  place(gE, grl.x - 6, 25 * TILE - PHYS.playerH);
+  gE.update(1 / 60);
+  check('Epilog: Grill meldet sich als Aktion',
+    !!gE.hud.label && gE.hud.label.text === 'GRILLEN' && gE.hud.label.action === true,
+    JSON.stringify(gE.hud.label));
+  iE.setKey('action', true);
+  gE.update(1 / 60);
+  check('Epilog: Aktion am Grill oeffnet das Minispiel',
+    gE.state === 'paused' && gE.pauseReason === 'grill', `${gE.state}/${gE.pauseReason}`);
+
+  // Ziel: die Bank
+  const gZ = new Game({
+    level: buildEpilog(), input: createInput(null),
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gZ.reset('schwarz');
+  const ziel = gZ.level.goal;
+  place(gZ, ziel.x + 8, 25 * TILE - PHYS.playerH);
+  gZ.update(1 / 60);
+  check('Epilog: die Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
+  check('Epilog: Abschluss nennt Deckel und Zeit',
+    !!gZ.rows && gZ.rows.length > 0, JSON.stringify(gZ.rows));
+}
+
+// ============================================================ GRILL ==========
+{
+  const iG = createInput(null);
+  const mkG = () => {
+    const g = new Grill({
+      level: { bpm: 76 }, input: iG,
+      audio: { play() {}, engine() {}, engineOff() {} },
+      events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+    });
+    g.reset();
+    return g;
+  };
+  const g1 = mkG();
+  check('Grill: acht Wuerste, drei auf dem Rost', g1.wuerserste.length === 8 && g1.grill.length === 3);
+
+  // Im Takt wenden
+  const g2 = mkG();
+  g2.auswahl = 0;
+  g2.beatPhase = 0.02;
+  iG.setKey('action', true);
+  g2.update(1 / 60);
+  iG.setKey('action', false);
+  check('Grill: im Takt gewendet gibt Bonus', g2.sauber === 1 && g2.wuerserste[0].seite === 1,
+    `sauber=${g2.sauber} seite=${g2.wuerserste[0].seite}`);
+
+  // Ausserhalb des Takts wenden: kein Bonus, aber es geht
+  const g3 = mkG();
+  g3.auswahl = 0;
+  g3.beatPhase = 0.5;
+  iG.setKey('action', true);
+  g3.update(1 / 60);
+  iG.setKey('action', false);
+  check('Grill: ohne Takt geht es auch, nur ohne Bonus',
+    g3.sauber === 0 && g3.wuerserste[0].seite === 1);
+
+  // Servieren liefert Punkte
+  const g4 = mkG();
+  g4.auswahl = 0;
+  const w = g4.wuerserste[0];
+  w.seite = 1;
+  w.gar = 76;
+  g4.beatPhase = 0.02;
+  iG.setKey('action', true);
+  g4.update(1 / 60);
+  iG.setKey('action', false);
+  check('Grill: gut gegart serviert gibt Punkte', g4.punktestand >= 100 && g4.serviert === 1,
+    `punkte=${g4.punktestand}`);
+
+  // Vernachlaessigen verbrennt
+  const g5 = mkG();
+  stepAny(g5, 20);
+  check('Grill: unbeachtete Wuerste verbrennen', g5.verbrannt >= 1, String(g5.verbrannt));
+
+  // Ein Bot, der alles im Takt wendet und serviert
+  const g6 = mkG();
+  let serviert = 0;
+  for (let i = 0; i < 60 * 240 && g6.state === 'play'; i++) {
+    // Fruehester Termin zuerst: wie lange bis zum Verbrennen, geteilt durch die
+    // noch noetigen Handgriffe (ungewendet = zwei, gewendet = einer)
+    const aufRost = g6.wuerserste.filter((x) => x.zustand === 'rost');
+    if (aufRost.length) {
+      const dringlichkeit = (w) => (100 - w.gar) / (w.seite === 0 ? 9 : 12) / (w.seite === 0 ? 2 : 1);
+      aufRost.sort((a, b) => dringlichkeit(a) - dringlichkeit(b));
+      const naechste = aufRost[0];
+      // Wichtig: die Auswahl zaehlt nur die Würste AUF dem Rost, nicht alle
+      const idx = aufRost.indexOf(naechste);
+      const achse = idx - g6.auswahl;
+      // Auswahl rueckt pro Tastendruck eine Stufe: Druck und Loslassen wechseln
+      const tipp = i % 4 < 2;
+      iG.setKey('left', achse < 0 && tipp);
+      iG.setKey('right', achse > 0 && tipp);
+      const genau = g6.beatGenauigkeit() <= 0.12;
+      // Nur handeln, wenn die Auswahl wirklich auf der Wurst steht
+      const soll = naechste.seite === 0 || naechste.gar >= 62;
+      iG.setKey('action', achse === 0 && genau && soll);
+    } else {
+      iG.setKey('left', false); iG.setKey('right', false); iG.setKey('action', false);
+    }
+    g6.update(1 / 60);
+    serviert = g6.serviert;
+  }
+  check('Grill: Bot bekommt alle Wuerste durch', serviert === 8, `serviert=${serviert} state=${g6.state}`);
+  check('Grill: Bewertung steht am Ende', g6.state === 'complete' && g6.rows.some(([k]) => k === 'BEWERTUNG'),
+    JSON.stringify(g6.rows));
+  check('Grill: viele im Takt gewendet', g6.sauber >= 5, String(g6.sauber));
 }
 
 // -------------------------------------------------- Schauplatz (Keller/Freiluft) --
