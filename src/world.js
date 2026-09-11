@@ -338,6 +338,7 @@ export function buildCabrio() {
   return {
     id: 'cabrio',
     mode: 'racer',
+    fahrzeug: 'mx5',
     name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR',
     subtitle: 'Landstraße, Abendsonne, Notenständer auf dem Beifahrersitz.',
     bpm: 104,

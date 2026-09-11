@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const URL_TO_TEST = process.argv[2] || 'http://127.0.0.1:8123/';
-const PORT = 9333;
+// Zufallsport: ein alter, haengengebliebener Browser darf den Lauf nicht kapern
+const PORT = 9400 + Math.floor(Math.random() * 400);
 const results = [];
 let failed = 0;
 const check = (name, ok, extra = '') => {
@@ -108,11 +109,15 @@ try {
   await sleep(2200);
 
   check('Seite geladen', (await evaluate('document.readyState')) === 'complete');
+  // Gegenprobe: eine veraltete Browserinstanz zeigt eine andere Seite
+  check('Browser zeigt die aktuelle Seite (keine veraltete Instanz)',
+    (await evaluate("!!document.getElementById('actRow')")) === true,
+    'actRow fehlt — vermutlich haengengebliebener Chromium auf dem Debugport');
   check('Titel gesetzt', (await evaluate('document.title')) === 'Der Rasende Roland');
   check('Fehlersammler installiert', Array.isArray(await evaluate('window.__errors')));
   check('Spielmodul geladen', (await evaluate('typeof window.__roland')) === 'object');
-  check('Kurzweg zu Akt 2 ist zu Beginn verborgen',
-    (await evaluate("document.getElementById('jumpActBtn').classList.contains('hidden')")) === true);
+  check('Stationswahl ist zu Beginn verborgen',
+    (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === true);
   const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
   check('Standard-Schwierigkeit ist gemütlich', diffStart.includes('GEMÜTLICH'), diffStart);
   check('Startübersicht sichtbar',
@@ -364,13 +369,13 @@ try {
     await sleep(250);
     const istFahr = await evaluate("window.__roland.level.mode === 'racer'");
     if (!istFahr) { await evaluate("document.querySelectorAll('#gardeCards button')[0].click()"); await sleep(350); }
-    await evaluate("(() => { const a = window.__roland.aktiv(); a.complete ? a.complete() : a.ende(); })()");
+    await evaluate("(() => { const a = window.__roland.aktiv; a.complete ? a.complete() : a.ende(); })()");
     await sleep(250);
     await evaluate("document.getElementById('rewardBtn').click()");
     await sleep(900);
     const zustand = JSON.parse(await evaluate(`JSON.stringify({
       akt: window.__roland.aktIndex,
-      modus: window.__roland.aktiv() ? window.__roland.aktiv().hud.modus : null,
+      modus: window.__roland.aktiv ? window.__roland.aktiv.hud.modus : null,
       fehler: window.__errors.length,
       panelOffen: !document.getElementById('reward').classList.contains('hidden')
     })`));
@@ -389,12 +394,12 @@ try {
     JSON.stringify(wahl.knoepfe));
   const fahrProbe = [];
   for (const idx of [2, 5]) {
-    await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
-    await sleep(1000);
-    fahrProbe.push(await evaluate(`(() => { const r = window.__roland.racer; return r ? r.fahrzeug + ':' + r.state : 'KEIN FAHRZEUG'; })()`));
+    await evaluate(`window.__roland.loadAct(${idx})`);
+    await sleep(250);
+    fahrProbe.push(await evaluate(`window.__roland.level.id + ':' + (window.__roland.level.fahrzeug || 'ohne')`));
   }
-  check('Interludien sind ueber die Stationswahl erreichbar',
-    fahrProbe[0] === 'mx5:play' && fahrProbe[1] === 'motorrad:play', fahrProbe.join(' | '));
+  check('Stationen 3 und 6 sind die Fahr-Interludien',
+    fahrProbe[0] === 'cabrio:mx5' && fahrProbe[1] === 'motorrad:motorrad', fahrProbe.join(' | '));
 
   // --- Akt 2 im echten Browser --------------------------------------------
   // Nach Akt 1 erscheint der Kurzweg (hier über den Spielstand simuliert)
@@ -404,13 +409,14 @@ try {
   await evaluate("window.__roland.loadAct(0)");
   await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
   await sleep(1600);
-  check('Mit Fortschritt erscheint der Akt-Wechsler',
-    (await evaluate("document.getElementById('jumpActBtn').classList.contains('hidden')")) === false);
+  check('Mit Fortschritt erscheint die Stationswahl',
+    (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === false
+      && (await evaluate("document.querySelectorAll('#actRow button').length")) >= 8);
   check('Mit Fortschritt startet das Spiel direkt in Akt 2',
     (await evaluate('window.__roland.aktIndex')) === 1);
-  await evaluate("document.getElementById('jumpActBtn').click()");
+  await evaluate("document.querySelectorAll('#actRow button')[0].click()");
   await sleep(400);
-  check('Wechsler führt zurück zu Akt 1 und öffnet die Kleiderwahl',
+  check('Stationswahl führt zu Akt 1 und öffnet die Kleiderwahl',
     (await evaluate("document.getElementById('garde').classList.contains('hidden')")) === false
     && (await evaluate("window.__roland.aktIndex")) === 0);
   await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
