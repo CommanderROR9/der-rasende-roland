@@ -15,7 +15,7 @@
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;color:var(--ink);
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;touch-action:none;
-  -webkit-user-select:none;user-select:none}
+  overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #stage{position:fixed;inset:0;display:grid;place-items:center}
 #game{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#141021;touch-action:none}
 
@@ -40,16 +40,23 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
   background:rgba(9,6,16,.86);border:1px solid rgba(93,224,207,.28);padding:6px 10px;pointer-events:none}
 .hintbar.hidden{display:none}
 
-/* Touch-Steuerung */
-.pad{position:absolute;z-index:7;left:calc(14px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));
-  right:calc(14px + env(safe-area-inset-right));display:none;justify-content:space-between;align-items:flex-end}
+/* Objektname in der Welt */
+.worldlabel{position:absolute;z-index:6;transform:translate(-50%,-100%);pointer-events:none;
+  font-size:10px;letter-spacing:.06em;color:#0b0810;background:rgba(240,238,228,.92);
+  padding:2px 5px;white-space:nowrap;border:1px solid rgba(11,8,16,.5)}
+.worldlabel.action{color:#0b0810;background:rgba(232,196,106,.95);font-weight:700}
+.worldlabel.hidden{display:none}
+
+/* Touch-Steuerung — bewusst höher gesetzt, weg von der Systemgestenzone */
+.pad{position:absolute;z-index:7;left:calc(16px + env(safe-area-inset-left));bottom:calc(38px + env(safe-area-inset-bottom));
+  right:calc(16px + env(safe-area-inset-right));display:none;justify-content:space-between;align-items:flex-end}
 .pad.show{display:flex}
-.stick{position:relative;width:104px;height:104px;border:1px solid rgba(160,236,225,.3);border-radius:50%;background:rgba(9,6,16,.5)}
-.nub{position:absolute;left:32px;top:32px;width:40px;height:40px;border-radius:50%;background:rgba(93,224,207,.3);border:1px solid var(--cyan)}
-.btns{display:flex;gap:12px;align-items:flex-end}
-.btns button{min-width:74px;min-height:56px;border:1px solid var(--cyan);background:rgba(11,57,68,.8);color:var(--ink);
-  font:700 11px ui-monospace,monospace;letter-spacing:.08em;border-radius:4px}
-.btns button.act{border-color:var(--amber);background:rgba(70,45,12,.8);color:var(--amber)}
+.stick{position:relative;width:112px;height:112px;border:1px solid rgba(160,236,225,.3);border-radius:50%;background:rgba(9,6,16,.5)}
+.nub{position:absolute;left:35px;top:35px;width:42px;height:42px;border-radius:50%;background:rgba(93,224,207,.3);border:1px solid var(--cyan)}
+.btns{display:flex;gap:14px;align-items:flex-end}
+.btns button{min-width:88px;min-height:70px;border:1px solid var(--cyan);background:rgba(11,57,68,.85);color:var(--ink);
+  font:700 12px ui-monospace,monospace;letter-spacing:.08em;border-radius:5px}
+.btns button.act{border-color:var(--amber);background:rgba(70,45,12,.85);color:var(--amber)}
 .btns button:active{transform:translateY(1px)}
 
 /* Panels */
@@ -102,6 +109,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
   </div>
 
   <div class="hintbar hidden" id="hintbar"></div>
+  <div class="worldlabel hidden" id="worldlabel"></div>
 
   <div class="pad" id="pad">
     <div class="stick" id="stick"><div class="nub" id="nub"></div></div>
@@ -129,6 +137,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
         <b>P / ESC</b><span>Pause</span>
       </div>
       <button id="startBtn">START&nbsp;→</button>
+      <button id="soundBtn" class="ghost" type="button">TON: AN</button>
       <button id="resetBtn" class="ghost" type="button">Fortschritt zurücksetzen</button>
     </div>
   </section>
@@ -174,6 +183,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       <h2>BELOHNUNG: FEIERABENDBIER</h2>
       <p>Der Aufzug fährt nach oben. Erster Stock, Probe. Und in der Hand: ein Bier, das niemand mehr
         wegnehmen kann.</p>
+      <p style="color:#9b93b0">Akt 2 („Die Probe") ist noch in Arbeit — bis dahin endet die Reise hier oben.
+        Für Akt 1: danke fürs Durchhalten.</p>
       <div id="rewardBody"></div>
       <button id="rewardBtn">NOCHMAL&nbsp;→</button>
       <button id="rewardQuit" class="ghost" type="button">Zum Titel</button>

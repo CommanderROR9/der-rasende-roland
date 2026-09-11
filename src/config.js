@@ -37,7 +37,7 @@ export const OUTFITS = {
     label: 'SCHWARZES HEMD',
     short: 'SCHWARZ',
     speed: 118,
-    jump: -176,
+    jump: -182,
     detect: 0.75,
     heatBase: 0,
     lightHeat: 2.0,
@@ -50,7 +50,7 @@ export const OUTFITS = {
     label: 'ANZUG + KRAWATTE',
     short: 'ANZUG',
     speed: 104,
-    jump: -172,
+    jump: -180,
     detect: 1.0,
     heatBase: 0.8,
     lightHeat: 4.5,
@@ -63,7 +63,7 @@ export const OUTFITS = {
     label: 'FRACK',
     short: 'FRACK',
     speed: 92,
-    jump: -166,
+    jump: -176,
     detect: 1.4,
     heatBase: 3.0,
     lightHeat: 7.0,
@@ -81,21 +81,29 @@ export const PHYS = {
   coyote: 0.10,
   buffer: 0.12,
   invuln: 1.2,
-  playerW: 10,
-  playerH: 15,
-  duckH: 10,
+  playerW: 12,
+  playerH: 22,
+  duckH: 14,
 };
+
+// Sichtbereich: am Rechner großzügig, auf Touchgeräten enger, damit die Figur
+// dort wirklich zu sehen ist (Zoom statt Briefmarke).
+export const VIEW_DESKTOP = { w: 384, h: 216 };
+export const VIEW_TOUCH = { w: 256, h: 144 };
+
+export function pickView(coarsePointer) {
+  return coarsePointer ? VIEW_TOUCH : VIEW_DESKTOP;
+}
 
 export const BPM_BASE = 100;
 export const BPM_TENOR = 68;
 
 export const TUNE = {
   trittWindow: 0.15, // Sekunden Abweichung, die noch als "im Takt" gilt
-  trittRange: 82,
+  trittRange: 96,
   trittStun: 1.3,
   ohropaxTime: 14,
   heatMax: 120,
-  heatLight: 7,
   heatShade: -1.5,
   heatRun: 2.5,
   kreislaufAt: 100,
@@ -103,6 +111,9 @@ export const TUNE = {
   frackOffBoost: 4,
   morschTime: 0.38,
   morschRespawn: 3.0,
+  interactRange: 26,   // Umziehen nur auf Tastendruck, nicht beim Berühren
+  labelRange: 54,      // ab hier wird ein Objekt benannt
+  beatEarshot: 240,    // nur in Gefahrennähe tickt es überhaupt
 };
 
 export const AKT1_NAME = 'AKT 1 — DIE KATAKOMBEN';

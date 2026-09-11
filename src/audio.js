@@ -53,7 +53,7 @@ export function createAudio() {
     setEnabled(on) { enabled = on; },
     play(name) {
       switch (name) {
-        case 'beat': tone({ freq: 880, dur: 0.03, type: 'square', gain: 0.12 }); break;
+        case 'beat': tone({ freq: 880, dur: 0.025, type: 'square', gain: 0.06 }); break;
         case 'jump': tone({ freq: 330, dur: 0.09, type: 'square', gain: 0.3, slide: 220 }); break;
         case 'pickup': tone({ freq: 660, dur: 0.07, gain: 0.3 }); tone({ freq: 990, dur: 0.09, gain: 0.3, delay: 0.07 }); break;
         case 'tritt': tone({ freq: 180, dur: 0.1, type: 'triangle', gain: 0.45, slide: -80 }); noise({ dur: 0.08, gain: 0.2, freq: 400 }); break;

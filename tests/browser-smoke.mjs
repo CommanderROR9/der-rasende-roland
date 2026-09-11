@@ -151,20 +151,35 @@ try {
   check('Springen reagiert auf die Tastatur', vy < 0, `vy=${vy}`);
   await sleep(700);
 
-  // Kleiderständer: beim Betreten öffnet sich die Umkleide
+  // Kleiderständer: hinlaufen, dann Aktion drücken — bloßes Berühren öffnet nichts
   await key('KeyD', 'keyDown');
-  let wardrobe = false;
-  for (let i = 0; i < 40 && !wardrobe; i++) {
+  let near = false;
+  for (let i = 0; i < 45 && !near; i++) {
     await sleep(100);
-    wardrobe = (await evaluate('window.__roland.game.state')) === 'paused';
+    near = (await evaluate('window.__roland.game.hud.standNear')) === true;
   }
-  await key('KeyD', 'keyUp');
+  const withoutPress = JSON.parse(await evaluate(`JSON.stringify({
+    state: window.__roland.game.state,
+    label: (window.__roland.game.hud.label || {}).text || null,
+    labelSichtbar: !document.getElementById('worldlabel').classList.contains('hidden')
+  })`));
+  check('Berühren allein öffnet die Umkleide nicht', withoutPress.state === 'play', withoutPress.state);
+  check('Aufforderung UMZIEHEN erscheint am Ständer', withoutPress.label === 'UMZIEHEN',
+    JSON.stringify(withoutPress));
+  check('Schild wird im Bild angezeigt', withoutPress.labelSichtbar === true);
+  await key('KeyD', 'keyUp'); await sleep(120);
+
+  await key('KeyE', 'keyDown');
+  await sleep(220);
+  await key('KeyE', 'keyUp');
+  await sleep(250);
   const wardrobeState = JSON.parse(await evaluate(`JSON.stringify({
+    state: window.__roland.game.state,
     reason: window.__roland.game.pauseReason,
     overlay: !document.getElementById('garde').classList.contains('hidden'),
     options: [...document.querySelectorAll('#gardeCards button .title')].map(e=>e.textContent)
   })`));
-  check('Kleiderständer öffnet die Umkleide', wardrobe && wardrobeState.reason === 'stand',
+  check('Aktionstaste öffnet die Umkleide', wardrobeState.state === 'paused' && wardrobeState.reason === 'stand',
     JSON.stringify(wardrobeState));
   check('Umkleide zeigt die Klüfte zur Wahl', wardrobeState.options.length === 3,
     JSON.stringify(wardrobeState.options));
@@ -196,11 +211,12 @@ try {
   const sigExpr = `(() => {
     const c = document.getElementById('game');
     const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    const rw = Math.floor(c.width/8), rh = Math.floor(c.height/8);
     const out = [];
     for (let by=0; by<8; by++) for (let bx=0; bx<8; bx++) {
-      let s = 0; const x0 = bx*48, y0 = by*27;
-      for (let y=y0; y<y0+27; y++) for (let x=x0; x<x0+48; x+=2) {
-        const i = (y*384+x)*4;
+      let s = 0; const x0 = bx*rw, y0 = by*rh;
+      for (let y=y0; y<y0+rh; y++) for (let x=x0; x<x0+rw; x+=2) {
+        const i = (y*c.width+x)*4;
         s = (s*31 + d[i] + d[i+1]*3 + d[i+2]*7) >>> 0;
       }
       out.push(s);
@@ -228,23 +244,31 @@ try {
   const look = JSON.parse(await evaluate(`(() => {
     const g = window.__roland.game;
     const p = g.player;
-    const ctx = document.getElementById('game').getContext('2d');
+    const cv = document.getElementById('game');
+    const ctx = cv.getContext('2d');
     const wx = Math.round(p.x - g.cam.x), wy = Math.round(p.y - g.cam.y);
-    const d = ctx.getImageData(0,0,384,216).data;
-    const at = (x,y) => { const i=(y*384+x)*4; return [d[i],d[i+1],d[i+2]]; };
+    const d = ctx.getImageData(0,0,cv.width,cv.height).data;
+    const at = (x,y) => { const i=(y*cv.width+x)*4; return [d[i],d[i+1],d[i+2]]; };
     // Hautpixel in der Figurbox zählen
     let haut = 0;
-    for (let y=wy;y<wy+16;y++) for (let x=wx-2;x<wx+14;x++) {
-      if (x<0||y<0||x>=384||y>=216) continue;
+    for (let y=wy;y<wy+p.h+1;y++) for (let x=wx-2;x<wx+16;x++) {
+      if (x<0||y<0||x>=cv.width||y>=cv.height) continue;
       const [r,gg,bb] = at(x,y);
       if (Math.abs(r-0xe8)<=20 && Math.abs(gg-0xb9)<=20 && Math.abs(bb-0x8a)<=20) haut++;
     }
     // Bodenkachel unter den Füßen
     const ftx = Math.floor((p.x + p.w/2)/16), fty = Math.floor((p.y + p.h + 2)/16);
     const bx = ftx*16 - Math.round(g.cam.x) + 8, by = fty*16 - Math.round(g.cam.y) + 8;
-    const boden = (bx>=0 && by>=0 && bx<384 && by<216) ? at(bx,by) : null;
+    const boden = (bx>=0 && by>=0 && bx<cv.width && by<cv.height) ? at(bx,by) : null;
     return JSON.stringify({haut, boden, wx, wy, ftx, fty, tile: g.grid[fty][ftx]});
   })()`));
+  const sizeCheck = JSON.parse(await evaluate(`JSON.stringify({
+    w: window.__roland.game.player.w, h: window.__roland.game.player.h,
+    vw: window.__roland.game.vw, vh: window.__roland.game.vh,
+    sprite: 24
+  })`));
+  check('Spielfigur ist deutlich größer als früher (12x22 statt 10x15)',
+    sizeCheck.w >= 12 && sizeCheck.h >= 22, JSON.stringify(sizeCheck));
   check('Spielfigur ist im Framebuffer sichtbar', look.haut >= 6, JSON.stringify(look));
   const bodenOk = look.boden && look.boden[0] <= 0x50 && look.boden[1] <= 0x48 && look.boden[2] <= 0x70;
   check('Bodenkachel unter der Figur ist gezeichnet', look.tile === 1 && bodenOk,
@@ -324,6 +348,9 @@ try {
     });
   })()`));
   check('Touch-Pad erscheint auf dem Smartphone', mobile.padSichtbar === true, JSON.stringify(mobile));
+  const zoom = JSON.parse(await evaluate(`JSON.stringify({ vw: window.__roland.game.vw, vh: window.__roland.game.vh })`));
+  check('Am Handy ist die Kamera enger (Zoom statt Briefmarke)', zoom.vw <= 288 && zoom.vh <= 162,
+    JSON.stringify(zoom));
   check('Spielfeld passt ins Hochformat', mobile.canvasPasst === true,
     `${mobile.canvasBreite}px in ${mobile.fensterBreite}px`);
   check('Stick ist groß genug zum Treffen', mobile.stickGroesse >= 88, `${mobile.stickGroesse}px`);
@@ -361,9 +388,15 @@ try {
   })()`));
   check('Querformat nutzt die Höhe aus', land.h >= 340 && land.h <= land.fensterH,
     `${land.w}x${land.h} in ${land.fensterW}x${land.fensterH}`);
-  check('Spielfeld wird im Querformat größer als im Hochformat',
-    land.h / land.fensterH > mobile.canvasBreite / mobile.fensterBreite,
-    `quer ${(land.h / land.fensterH).toFixed(2)} vs hoch ${(mobile.canvasBreite / mobile.fensterBreite).toFixed(2)}`);
+  const gross = JSON.parse(await evaluate(`JSON.stringify({
+    hoch: Math.round(window.__roland.game.player.h * ${mobile.canvasBreite} / window.__roland.game.vw),
+    quer: Math.round(window.__roland.game.player.h * ${land.w} / window.__roland.game.vw),
+    scale: window.__roland.scale
+  })`));
+  check('Figur ist am Handy groß genug zum Erkennen', gross.quer >= 40 && gross.hoch >= 26,
+    `Figur quer ${gross.quer}px, hoch ${gross.hoch}px (Maßstab ${gross.scale})`);
+  check('Im Querformat ist die Figur größer als im Hochformat', gross.quer > gross.hoch,
+    `${gross.quer}px vs ${gross.hoch}px`);
   check('Dreh-Hinweis verschwindet im Querformat', land.drehHinweis === false);
   results.push(`QUER ${land.w}x${land.h} in ${land.fensterW}x${land.fensterH}`);
 } catch (e) {

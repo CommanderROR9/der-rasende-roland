@@ -1,6 +1,6 @@
 // game.js — Simulation. Bewusst DOM-frei: main.js liefert Input und zeichnet,
 // die Tests in Node fahren dieselbe Logik ohne Browser.
-import { TILE, VIEW_W, VIEW_H, OUTFITS, PHYS, TUNE, BPM_BASE, BPM_TENOR } from './config.js';
+import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, BPM_BASE, BPM_TENOR } from './config.js';
 import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
 import { spriteCanvas, blit, hash2 } from './render.js';
 
@@ -21,8 +21,10 @@ const overlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 export class Game {
-  constructor({ level, input, audio, events = () => {} }) {
+  constructor({ level, input, audio, events = () => {}, view = VIEW_DESKTOP }) {
     this.level = level;
+    this.vw = view.w;
+    this.vh = view.h;
     this.input = input;
     this.audio = audio || { play() {}, resume() {} };
     this.events = events;
@@ -83,8 +85,8 @@ export class Game {
       standingMorsch: null, morschT: 0,
     };
     this.lastCheckpointId = 'spawn';
-    this.cam.x = clamp(this.player.x - VIEW_W / 2, 0, this.level.w * TILE - VIEW_W);
-    this.cam.y = clamp(this.player.y - VIEW_H / 2, 0, this.level.h * TILE - VIEW_H);
+    this.cam.x = clamp(this.player.x - this.vw / 2, 0, this.level.w * TILE - this.vw);
+    this.cam.y = clamp(this.player.y - this.vh / 2, 0, this.level.h * TILE - this.vh);
     this.hud = this.buildHud();
   }
 
@@ -218,7 +220,10 @@ export class Game {
 
     // Aktion: Frack-Off hat Vorrang, sonst Beton-Tritt
     const actNow = inp.action() && !frozen;
-    if (actNow && !this.prevAction) {
+    const actPressed = actNow && !this.prevAction;
+    this.wantInteract = actPressed;
+    // Am Kleiderständer ist der Druck zum Umziehen gedacht, nicht zum Tritt.
+    if (actPressed && !this.nearStand()) {
       if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
       else this.tryTritt();
     }
@@ -347,7 +352,10 @@ export class Game {
   }
   beatAccuracy() { return Math.min(this.beatPhase, 1 - this.beatPhase) * (60 / this.bpm); }
   onBeat() {
-    this.audio.play('beat');
+    const p = this.player;
+    const nah = this.entities.some((en) => en.alive && ENEMY_KINDS.has(en.kind)
+      && Math.hypot((en.x + en.w / 2) - (p.x + p.w / 2), (en.y + en.h / 2) - (p.y + p.h / 2)) < TUNE.beatEarshot);
+    if (nah && this.beats % 2 === 0) this.audio.play('beat');
     for (const en of this.entities) {
       if (en.kind !== 'piccolo' || !en.alive || en.stun > 0) continue;
       const cx = en.x + en.w / 2, cy = en.y + en.h / 2;
@@ -583,12 +591,13 @@ export class Game {
         continue;
       }
       if (en.kind === 'stand') {
-        // nur beim Betreten auslösen, nicht während man davorsteht
-        const now = overlap(p, en);
-        const was = !!en.touching;
-        en.touching = now;
-        if (now && !was && this.standCooldown <= 0) {
-          this.standCooldown = 2.0;
+        // Umziehen nur auf Tastendruck (Aktion) — nie durch bloßes Berühren,
+        // sonst landet man beim Springen im Umkleidebildschirm.
+        const slot = this.standSlot(en);
+        en.near = overlap(p, slot);
+        if (en.near && this.wantInteract && this.standCooldown <= 0) {
+          this.standCooldown = 1.2;
+          this.wantInteract = false;
           this.pause('stand');
           this.events({ type: 'stand' });
         }
@@ -626,6 +635,48 @@ export class Game {
     for (const h of this.level.hints) {
       if (!h.shown && p.x + p.w > h.x) { h.shown = true; this.message(h.text, 6, 0); }
     }
+  }
+
+  standSlot(en) {
+    return {
+      x: en.x - TUNE.interactRange, y: en.y - 26,
+      w: en.w + TUNE.interactRange * 2, h: en.h + 32,
+    };
+  }
+  nearStand() {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'stand') continue;
+      if (overlap(p, this.standSlot(en))) return en;
+    }
+    return null;
+  }
+
+  /** Name des nächsten Objekts (für das Schild über dem Fundstück). */
+  nearestLabel() {
+    const p = this.player;
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    let best = null, bestD = TUNE.labelRange;
+    for (const en of this.entities) {
+      if (!en.alive) continue;
+      if (en.kind === 'item') {
+        const d = Math.hypot((en.x + en.w / 2) - cx, (en.y + en.h / 2) - cy);
+        if (d < bestD) { bestD = d; best = { text: (ITEM_DEFS[en.item] || {}).label || 'FUNDSTÜCK', x: en.x + en.w / 2, y: en.y - 2 }; }
+      } else if (en.kind === 'checkpoint' && !en.taken) {
+        const d = Math.hypot((en.x + 8) - cx, (en.y + 8) - cy);
+        if (d < bestD - 8) { bestD = d; best = { text: 'SPEICHERPUNKT', x: en.x + 8, y: en.y - 4 }; }
+      }
+    }
+    const stand = this.nearStand();
+    if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
+    const g = this.level.goal;
+    const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
+    if (dg < 96) best = { text: this.hasMappe ? 'AUFZUG: EINSTEIGEN' : 'AUFZUG: NOTENMAPPE FEHLT', x: g.x + 8, y: g.y - 2 };
+    if (!best) return null;
+    return {
+      text: best.text, action: !!best.action, key: best.key,
+      sx: Math.round(best.x - this.cam.x), sy: Math.round(best.y - this.cam.y),
+    };
   }
 
   collect(en) {
@@ -707,8 +758,8 @@ export class Game {
 
   updateCamera(dt) {
     const p = this.player;
-    const tx = clamp(p.x + p.w / 2 - VIEW_W / 2, 0, this.level.w * TILE - VIEW_W);
-    const ty = clamp(p.y + p.h / 2 - VIEW_H / 2 + 10, 0, this.level.h * TILE - VIEW_H);
+    const tx = clamp(p.x + p.w / 2 - this.vw / 2, 0, this.level.w * TILE - this.vw);
+    const ty = clamp(p.y + p.h / 2 - this.vh / 2 + 10, 0, this.level.h * TILE - this.vh);
     const k = Math.min(1, dt * 7);
     this.cam.x += (tx - this.cam.x) * k;
     this.cam.y += (ty - this.cam.y) * k;
@@ -738,13 +789,16 @@ export class Game {
       hint: this.hint ? this.hint.text : null,
       state: this.state,
       hasMappe: this.hasMappe,
+      label: this.nearestLabel(),
+      standNear: !!this.nearStand(),
     };
   }
 
   // -------------------------------------------------------------- Zeichnen --
   draw(ctx) {
     const sh = this.shake > 0 ? this.shake / 2 : 0;
-    const offX = sh ? (Math.random() - 0.5) * sh : 0;
+    const sway = this.stunTimer > 0 ? Math.sin(this.time * 3.2) * 2.2 : 0;
+    const offX = (sh ? (Math.random() - 0.5) * sh : 0) + sway;
     const offY = sh ? (Math.random() - 0.5) * sh : 0;
     const camX = Math.round(this.cam.x + offX);
     const camY = Math.round(this.cam.y + offY);
@@ -765,11 +819,11 @@ export class Game {
 
   drawBackground(ctx, camX, camY) {
     ctx.fillStyle = '#141021';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillRect(0, 0, this.vw, this.vh);
     // ferne Bogenreihen
     ctx.fillStyle = '#1b1630';
     const farOff = (camX * 0.25) % 96;
-    for (let i = -1; i < VIEW_W / 96 + 2; i++) {
+    for (let i = -1; i < this.vw / 96 + 2; i++) {
       const x = Math.round(i * 96 - farOff);
       for (let j = 0; j < 3; j++) {
         const y = Math.round(24 + j * 68 - camY * 0.12);
@@ -779,14 +833,14 @@ export class Game {
     // Rohre und Pfeiler
     ctx.fillStyle = '#191428';
     const midOff = (camX * 0.5) % 128;
-    for (let i = -1; i < VIEW_W / 128 + 2; i++) {
+    for (let i = -1; i < this.vw / 128 + 2; i++) {
       const x = Math.round(i * 128 - midOff);
       ctx.fillRect(x, Math.round(120 - camY * 0.22), 6, 120);
       ctx.fillRect(x + 92, Math.round(96 - camY * 0.22), 4, 140);
     }
     // Staub
     ctx.fillStyle = 'rgba(220,214,190,0.22)';
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < 16; i++) {
       const h1 = hash2(i, 7, 3);
       const h2 = hash2(i, 13, 5);
       const x = Math.round((h1 * 800 - camX * 0.7 + 800) % 800) - 8;
@@ -795,16 +849,15 @@ export class Game {
     }
     // Bodennebel
     ctx.fillStyle = 'rgba(30,24,48,0.55)';
-    ctx.fillRect(0, VIEW_H - 26, VIEW_W, 26);
+    ctx.fillRect(0, this.vh - 26, this.vw, 26);
   }
 
   drawLights(ctx, camX, camY) {
     for (const l of this.level.lights) {
       const x = Math.round(l.x - camX), y = Math.round(l.y - camY);
-      const flick = 0.82 + Math.sin(this.time * 5 + l.x) * 0.05;
-      ctx.fillStyle = `rgba(255,206,120,${0.05 * flick})`;
+      ctx.fillStyle = 'rgba(255,206,120,0.05)';
       ctx.fillRect(x - 6, y - 4, l.w + 12, l.h + 8);
-      ctx.fillStyle = `rgba(255,196,104,${0.09 * flick})`;
+      ctx.fillStyle = 'rgba(255,196,104,0.08)';
       ctx.fillRect(x, y, l.w, l.h);
       // Leuchtkörper
       ctx.fillStyle = '#ffd08a';
@@ -828,9 +881,9 @@ export class Game {
 
   drawTiles(ctx, camX, camY) {
     const x0 = Math.max(0, Math.floor(camX / TILE));
-    const x1 = Math.min(this.level.w - 1, Math.ceil((camX + VIEW_W) / TILE));
+    const x1 = Math.min(this.level.w - 1, Math.ceil((camX + this.vw) / TILE));
     const y0 = Math.max(0, Math.floor(camY / TILE));
-    const y1 = Math.min(this.level.h - 1, Math.ceil((camY + VIEW_H) / TILE));
+    const y1 = Math.min(this.level.h - 1, Math.ceil((camY + this.vh) / TILE));
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const v = this.grid[ty][tx];
@@ -861,7 +914,7 @@ export class Game {
           ctx.fillRect(px + 5, py + 2, 2, 4);
           ctx.fillRect(px + 11, py + 2, 2, 4);
         } else if (v === 3) {
-          const wob = Math.sin(this.time * 3 + tx) * 0.6;
+          const wob = Math.sin(this.time * 1.6 + tx) * 0.3;
           ctx.fillStyle = '#d9d3bd';
           ctx.fillRect(px, py + 1 + wob, TILE, 5);
           ctx.fillStyle = '#b8b19a';
@@ -1026,7 +1079,7 @@ export class Game {
     else if (!p.onGround) frame = 'roland_jump';
     else if (Math.abs(p.vx) > 12) frame = Math.floor(p.animT * 7) % 2 === 0 ? 'roland_walk1' : 'roland_walk2';
     const spr = this.spr(frame, OUTFIT_PALETTES[this.outfit.id]);
-    const x = Math.round(p.x - camX - 1);
+    const x = Math.round(p.x - camX - 2);
     const y = Math.round(p.y - camY + p.h - spr.h);
     const blink = p.invuln > 0 && Math.floor(this.time * 20) % 2 === 0;
     if (!blink) blit(ctx, spr, x, y, p.dir < 0, p.flash);
@@ -1057,40 +1110,31 @@ export class Game {
   }
 
   drawScreenFx(ctx) {
-    // Taktpuls am Bildrand
-    const pulse = Math.max(0, 1 - this.beatPhase * 3.2);
+    // Takt: ein weicher Impuls am unteren Rand statt Blitzen im ganzen Bild.
+    const pulse = Math.max(0, 1 - this.beatPhase * 2.6);
     if (pulse > 0) {
-      ctx.fillStyle = `rgba(93,224,207,${0.18 * pulse})`;
-      ctx.fillRect(0, 0, VIEW_W, 2);
-      ctx.fillRect(0, VIEW_H - 2, VIEW_W, 2);
-      ctx.fillRect(0, 0, 2, VIEW_H);
-      ctx.fillRect(VIEW_W - 2, 0, 2, VIEW_H);
+      ctx.fillStyle = `rgba(93,224,207,${0.1 * pulse})`;
+      ctx.fillRect(0, this.vh - 3, this.vw, 3);
     }
-    // Hitze
+    // Hitze: gleichmäßig warm, kein Flimmern
     if (this.heat > 45) {
-      const a = Math.min(0.5, (this.heat - 45) / 110);
-      ctx.fillStyle = `rgba(239,143,58,${a * 0.5})`;
-      ctx.fillRect(0, 0, VIEW_W, 10);
-      ctx.fillRect(0, VIEW_H - 10, VIEW_W, 10);
-      if (this.heat > 70) {
-        ctx.fillStyle = `rgba(239,143,58,${a * 0.35 * (0.5 + Math.sin(this.time * 9) * 0.5)})`;
-        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      }
+      const a = Math.min(0.4, (this.heat - 45) / 280);
+      ctx.fillStyle = `rgba(239,143,58,${a})`;
+      ctx.fillRect(0, 0, this.vw, 7);
+      ctx.fillRect(0, this.vh - 7, this.vw, 7);
     }
     // Tempo-Verschleppung
     if (this.slowField > 0.05) {
-      ctx.fillStyle = `rgba(40,30,80,${0.3 * this.slowField})`;
-      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.fillStyle = `rgba(40,30,80,${0.24 * this.slowField})`;
+      ctx.fillRect(0, 0, this.vw, this.vh);
     }
-    // Kreislauf
+    // Kreislauf: ruhig warm, das Wackeln macht die Kamera
     if (this.stunTimer > 0) {
-      const a = 0.25 + Math.sin(this.time * 18) * 0.12;
-      ctx.fillStyle = `rgba(232,185,138,${a})`;
-      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.fillStyle = 'rgba(232,185,138,0.16)';
+      ctx.fillRect(0, 0, this.vw, this.vh);
     }
-    // Vignette
-    ctx.fillStyle = 'rgba(8,6,14,0.35)';
-    ctx.fillRect(0, 0, VIEW_W, 8);
-    ctx.fillRect(0, VIEW_H - 8, VIEW_W, 8);
+    ctx.fillStyle = 'rgba(8,6,14,0.3)';
+    ctx.fillRect(0, 0, this.vw, 6);
+    ctx.fillRect(0, this.vh - 6, this.vw, 6);
   }
 }

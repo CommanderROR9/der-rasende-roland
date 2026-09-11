@@ -356,16 +356,39 @@ function place(game, px, py) {
 {
   const { game, input } = fresh('schwarz');
   const stand = game.entities.find((e) => e.kind === 'stand');
-  place(game, stand.x - 22, stand.y + 1);
-  step(game, 0.2);
+  place(game, stand.x - 60, 25 * TILE - PHYS.playerH);
+  step(game, 0.3);
   input.setKey('right', true);
-  let opened = false;
-  for (let i = 0; i < 90 && !opened; i++) { game.update(1 / 60); if (game.state === 'paused') opened = true; }
-  check('walking into the stand opens the wardrobe', opened && game.pauseReason === 'stand');
+  step(game, 0.7);
+  input.setKey('right', false);
+  check('bloßes Berühren öffnet die Umkleide NICHT', game.state === 'play', game.state);
+  check('Kleiderständer meldet Nähe', game.hud.standNear === true);
+  check('Schild benennt die Aktion',
+    !!game.hud.label && game.hud.label.action === true && game.hud.label.text === 'UMZIEHEN',
+    JSON.stringify(game.hud.label));
+  input.setKey('action', true);
+  game.update(1 / 60);
+  check('Aktionstaste öffnet die Umkleide', game.state === 'paused' && game.pauseReason === 'stand',
+    `${game.state}/${game.pauseReason}`);
   game.setOutfit('anzug');
   game.resume();
   check('choosing an outfit resumes play', game.state === 'play' && game.outfit.id === 'anzug');
-  input.setKey('right', false);
+}
+
+// ------------------------------------------------- Objektbeschriftung -------
+{
+  const { game } = fresh('schwarz', { stands: false });
+  step(game, 0.3);
+  const deck = game.entities.find((e) => e.kind === 'item' && e.item === 'bierdeckel');
+  place(game, deck.x - 34, deck.y - 6);   // in Reichweite, aber ohne aufzusammeln
+  game.update(1 / 60);
+  check('Fundstück wird benannt', !!game.hud.label && game.hud.label.text === 'BIERDECKEL',
+    JSON.stringify(game.hud.label));
+  check('Schild hat Bildschirmkoordinaten',
+    game.hud.label && Number.isFinite(game.hud.label.sx) && Number.isFinite(game.hud.label.sy));
+  place(game, 40, 25 * TILE - PHYS.playerH);
+  game.update(1 / 60);
+  check('kein Schild ohne Objekt in Reichweite', game.hud.label === null || game.hud.label.text !== 'BIERDECKEL');
 }
 
 // ---------------------------------------------------- Zusammenbruch/Respawn --
@@ -411,7 +434,7 @@ function place(game, px, py) {
     { outfit: 'anzug' },
     { wp: [89, 23] }, { wp: [91, 21] }, { wp: [89, 19] }, { wp: [95, 19] }, { wp: [99, 19] },
     { outfit: 'frack' },
-    { wp: [103, 19] }, { wp: [108, 17] }, { wp: [112, 15] }, { wp: [120, 13] }, { wp: [127, 13] },
+    { wp: [103, 19] }, { wp: [105, 17] }, { wp: [109, 15] }, { wp: [113, 14] }, { wp: [120, 13] }, { wp: [127, 13] },
   ];
 
   const failures = [];

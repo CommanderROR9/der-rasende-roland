@@ -53,13 +53,13 @@ export function buildAkt1() {
   // ---------------------------------------------------------------- Hohlräume --
   carve(1, 20, 10, 5);        // Garderobe x1..10, Boden 25
   carve(11, 15, 12, 10);      // Stufenschacht x11..22
-  carve(18, 14, 27, 3);       // oberer Gang x18..44
-  carve(45, 16, 5, 9);        // Luke x45..49 — Mund bis Körperhöhe der Kante
+  carve(18, 13, 27, 4);       // oberer Gang x18..44 (4 Kacheln hoch für Sprünge)
+  carve(45, 15, 5, 10);       // Luke x45..49 — Mund bis Kopfhöhe der Kante
   carve(45, 21, 42, 4);       // unterer Gang x45..86
   carve(87, 21, 21, 4);       // unterer Gang nach der Tür x87..107
   carve(87, 17, 7, 8);        // Archivschacht x87..93
   carve(93, 15, 15, 4);       // Archiv x93..107
-  carve(106, 13, 9, 7);       // Endspurt-Schacht x106..114
+  carve(103, 10, 15, 10);     // Endspurt-Schacht x103..117, hoch genug für Sprünge
   carve(114, 10, 16, 4);      // Endgang x114..129
 
   // ------------------------------------------------------------ Stufen/ Böden --
@@ -71,12 +71,12 @@ export function buildAkt1() {
   rect(88, 23, 3, 1, '=');    // Archiv Stufe 1, Kante 368
   rect(90, 21, 3, 1, '=');    // Archiv Stufe 2, Kante 336
   rect(88, 19, 3, 1, '=');    // Archiv Stufe 3, Kante 304
-  rect(93, 19, 14, 1);        // Archivboden x93..106, Kante 304
+  rect(93, 19, 25, 1);        // Archivboden x93..117, Kante 304 (durchgehend)
 
-  rect(107, 17, 4, 1, '=');   // Endspurt 1, Kante 272
-  rect(110, 15, 4, 1, '=');   // Endspurt 2, Kante 240
-  rect(114, 14, 3, 1);        // Zwischenstufe, Kante 224
-  rect(117, 13, 13, 1);       // Endboden x117..129, Kante 208
+  rect(104, 17, 4, 1, '=');   // Endspurt 1, Kante 272 (32 px über dem Boden)
+  rect(108, 15, 4, 1, '=');   // Endspurt 2, Kante 240
+  rect(112, 14, 4, 1, '=');   // Zwischenstufe, Kante 224 (16 px)
+  rect(116, 13, 14, 1);       // Endboden x116..129, Kante 208 (16 px)
 
   // ------------------------------------------------------------- Besetzung --
   // A: Garderobe
@@ -135,7 +135,7 @@ export function buildAkt1() {
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
   tip(1, 'A/D oder PFEILTASTEN GEHEN · SPACE SPRINGEN · E TRITT · P PAUSE');
   tip(4, 'BIERDECKEL SIND DIE SAMMELOBJEKTE');
-  tip(9, 'KLEIDERSTÄNDER: EINFACH BERÜHREN — DANN UMZIEHEN');
+  tip(9, 'KLEIDERSTÄNDER: DAVORSTELLEN UND E DRÜCKEN (HANDY: TRITT-KNOPF)');
   tip(12, 'JEDE STUFE IST SPRUNGHÖHE. NACH OBEN GEHT ES NUR HIER');
   tip(24, 'PICCOLO: SCHRILL UND GEMEIN. IM TAKT GETROFFEN WIRD ES STILL');
   tip(45, 'LUKE. ACHTUNG: ABSTIEG IST EINWEG — SPEICHERPUNKT UNTEN');

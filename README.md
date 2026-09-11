@@ -17,16 +17,23 @@ wieder hinunter, an Piccolo und Sopran vorbei, durch die Diensttür ins Archiv,
 |---|---|
 | `A` / `D` bzw. `←` `→` | gehen |
 | `SPACE` / `W` / `↑` | springen (`↓` + springen = durch Plattform fallen) |
-| `E` / `J` | Tritt — im Takt getroffen wird jeder Gegner still |
+| `E` / `J` | Tritt — im Takt getroffen wird jeder Gegner still. Am Kleiderständer: umziehen |
 | `S` / `↓` | ducken (und in Nischen verschwinden) |
 | `P` / `ESC` | Pause |
 
-Auf dem Smartphone: Stick unten links, `SPRUNG` und `TRITT` unten rechts.
-Für mehr Übersicht quer halten.
+Auf dem Smartphone: Stick unten links, `SPRUNG` und `TRITT` unten rechts — bewusst
+nicht in der unteren Bildschirmkante, damit man nicht versehentlich die Systemgeste
+auslöst. Für mehr Übersicht quer halten.
+
+**Umziehen** passiert nicht mehr beim bloßen Berühren: davorstellen und `E` drücken
+(am Handy den `TRITT`-Knopf). Ein Schild über dem Ständer sagt es an, und Fundstücke
+tragen in Reichweite ihren Namen („BIERDECKEL", „OHROPAX"), damit man nicht raten muss.
+Ton lässt sich im Titelbild abschalten; das Metronom tickt ohnehin nur, wenn eine
+Gefahr in Hörweite ist.
 
 ## Mechaniken
 
-**Kleiderordnung ist Werkzeug.** Umgezogen wird am Kleiderständer (einfach berühren):
+**Kleiderordnung ist Werkzeug.** Umgezogen wird am Kleiderständer:
 
 | Kluft | Tempo | Wirkung |
 |---|---|---|
@@ -52,8 +59,10 @@ Sammelobjekte, für einen davon muss man auf die morsche Kante steigen.
 ## Technik
 
 - Vanilla ES-Module + Canvas 2D, **kein Bundler, kein Framework, keine externen Requests**
-- interne Auflösung 384×216, ganzzahlige Skalierung, `image-rendering: pixelated`
-- Grafik komplett code-nativ (Sprite-Matrizen + Palettenvarianten je Kluft), keine Binärassets
+- Sichtbereich 384×216 am Rechner (ganzzahlige Skalierung), 256×144 auf Touchgeräten —
+  dort also deutlich näher dran, damit die Figur nicht zur Briefmarke wird
+- Spielfigur 16×24 px (Trefferfläche 12×22), Kleidung über Palettenvarianten desselben Körpers
+- Grafik komplett code-nativ (Sprite-Matrizen), keine Binärassets
 - Sound per WebAudio-Synth (Chiptune), keine Audiodateien
 - Fortschritt nur lokal in `localStorage`, kein Server, kein Tracking
 
@@ -67,15 +76,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 106 headless Checks
+tests/smoke.test.mjs 112 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 106 headless Checks: node tests/smoke.test.mjs
+npm test                        # 112 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 44 Checks in echtem Chromium
+npm run browser                 # 50 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -87,10 +96,10 @@ dass jede Stufe innerhalb der Sprunghöhe liegt und es keinen Abkürzungsweg am 
 
 `tests/browser-smoke.mjs` startet Chromium, steuert ihn über das DevTools-Protokoll und
 prüft das echte Spiel: Laden ohne JavaScript-Fehler, Start, Kleiderwahl, Tastatur,
-Umkleide am Kleiderständer, Zeichnung im Framebuffer (Figur, Bodenkachel, kein
-Standbild), HUD, Pause — und in Geräteemulation das Smartphone: Touch-Pad sichtbar,
-Spielfeld füllt den Bildschirm, Stick bewegt den Spieler. Beide Suiten laufen gegen
-die Live-URL.
+Umkleide erst auf Tastendruck, Objektbeschriftung, Zeichnung im Framebuffer (Figur,
+Bodenkachel, kein Standbild), HUD, Pause — und in Geräteemulation das Smartphone:
+Touch-Pad sichtbar, Kamera enger, Figur groß genug, Stick bewegt den Spieler. Beide
+Suiten laufen gegen die Live-URL.
 
 ## Nächste Akte (geplant)
 

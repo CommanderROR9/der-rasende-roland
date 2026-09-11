@@ -36,9 +36,18 @@ export function createInput(target) {
       const name = KEYS[e.code];
       if (name) { state[name] = true; e.preventDefault(); }
     });
+    // Ein Druck, der kürzer ist als ein Frame (schnelles Tippen), darf nicht
+    // verloren gehen: Sprung und Aktion werden erst einen Frame später gelöst.
+    const release = (name) => {
+      if ((name === 'jump' || name === 'action') && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => { state[name] = false; });
+      } else {
+        state[name] = false;
+      }
+    };
     target.addEventListener('keyup', (e) => {
       const name = KEYS[e.code];
-      if (name) { state[name] = false; e.preventDefault(); }
+      if (name) { release(name); e.preventDefault(); }
     });
     target.addEventListener('blur', () => input.clear());
   }

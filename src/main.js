@@ -1,5 +1,5 @@
 // main.js — Verkabelung: DOM, Canvas-Skalierung, Overlays, Speicherung.
-import { VIEW_W, VIEW_H, OUTFITS } from './config.js';
+import { OUTFITS, pickView } from './config.js';
 import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
@@ -18,10 +18,19 @@ const ui = {
   pause: $('#pause'), resumeBtn: $('#resumeBtn'), quitBtn: $('#quitBtn'),
   collapse: $('#collapse'), collapseBtn: $('#collapseBtn'),
   reward: $('#reward'), rewardBody: $('#rewardBody'), rewardBtn: $('#rewardBtn'), rewardQuit: $('#rewardQuit'),
+  worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
 const ctx = ui.canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
+
+// Gerät, Sichtbereich, Bedienart einmal feststellen.
+const COARSE = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
+const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || COARSE;
+const VIEW = pickView(COARSE);
+ui.canvas.width = VIEW.w;
+ui.canvas.height = VIEW.h;
+let scaleNow = 1;
 
 const input = createInput(window);
 const audio = createAudio();
@@ -35,13 +44,13 @@ let pendingOutfit = null;
 // Touchgeräten darf der Faktor krumm sein, damit das Spielfeld den Bildschirm
 // wirklich ausnutzt — Größe ist dort wichtiger als perfekte Pixelraster.
 function fit() {
-  const raw = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-  const coarse = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
-  const scale = coarse
+  const raw = Math.min(window.innerWidth / VIEW.w, window.innerHeight / VIEW.h);
+  const scale = COARSE
     ? Math.max(0.5, Math.min(3, Math.round(raw * 100) / 100))
     : Math.max(1, Math.floor(raw * 2) / 2);
-  ui.canvas.style.width = Math.floor(VIEW_W * scale) + 'px';
-  ui.canvas.style.height = Math.floor(VIEW_H * scale) + 'px';
+  scaleNow = scale;
+  ui.canvas.style.width = Math.floor(VIEW.w * scale) + 'px';
+  ui.canvas.style.height = Math.floor(VIEW.h * scale) + 'px';
 }
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => setTimeout(fit, 120));
@@ -89,7 +98,7 @@ function renderGarde(mode) {
 // ------------------------------------------------------------------- Spiel --
 function newGame(outfitId) {
   for (const h of LEVEL.hints) h.shown = false;
-  game = new Game({ level: LEVEL, input, audio, events: onGameEvent });
+  game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW });
   game.reset(outfitId);
   hideAll();
   audio.resume();
@@ -141,6 +150,7 @@ function frame(now) {
   if (game) {
     game.update(dt);
     game.draw(ctx);
+    updateWorldLabel();
     hudAcc += dt;
     if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
   }
@@ -162,10 +172,42 @@ function refreshHud() {
   else ui.hintbar.classList.add('hidden');
 }
 
+// ------------------------------------------------- Objektnamen in der Welt --
+let labelPrev = '';
+function updateWorldLabel() {
+  const l = game && game.hud ? game.hud.label : null;
+  if (!l) {
+    if (labelPrev !== '') { labelPrev = ''; ui.worldlabel.classList.add('hidden'); }
+    return;
+  }
+  const text = l.action ? `${l.text} · ${IS_TOUCH ? 'TRITT-KNOPF' : l.key || 'E'}` : l.text;
+  const r = ui.canvas.getBoundingClientRect();
+  const base = ui.stage.getBoundingClientRect();
+  const x = Math.round((r.left - base.left) + l.sx * scaleNow);
+  const y = Math.round((r.top - base.top) + l.sy * scaleNow);
+  const sig = `${text}|${x}|${y}|${l.action ? 1 : 0}`;
+  if (sig === labelPrev) return;
+  labelPrev = sig;
+  ui.worldlabel.textContent = text;
+  ui.worldlabel.classList.toggle('action', !!l.action);
+  ui.worldlabel.style.left = x + 'px';
+  ui.worldlabel.style.top = y + 'px';
+  ui.worldlabel.classList.remove('hidden');
+}
+
 // ------------------------------------------------------------------- Input --
 ui.startBtn.onclick = () => { audio.resume(); renderGarde('start'); };
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
 ui.resetBtn.onclick = () => { try { localStorage.removeItem(SAVE_KEY); } catch {} ui.resetBtn.textContent = 'Zurückgesetzt ✓'; };
+
+// Ton lässt sich abschalten (das Ticken war zu viel des Guten).
+let soundOn = loadSave().sound !== false;
+function applySound() {
+  audio.setEnabled(soundOn);
+  ui.soundBtn.textContent = 'TON: ' + (soundOn ? 'AN' : 'AUS');
+}
+ui.soundBtn.onclick = () => { soundOn = !soundOn; writeSave({ sound: soundOn }); applySound(); };
+applySound();
 ui.resumeBtn.onclick = () => { game.resume(); hideAll(); };
 ui.quitBtn.onclick = () => { game = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
 ui.collapseBtn.onclick = () => { game.respawnFromCheckpoint(); hideAll(); };
@@ -212,10 +254,9 @@ holdButton(ui.btnJump, 'jump');
 holdButton(ui.btnAction, 'action');
 
 // Touch-Gerät erkennt sich selbst
-const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-if (isTouch) ui.pad.classList.add('show');
+if (IS_TOUCH) ui.pad.classList.add('show');
 window.addEventListener('touchstart', () => { ui.pad.classList.add('show'); audio.resume(); }, { once: true });
 
 fit();
 requestAnimationFrame(frame);
-window.__roland = { get game() { return game; }, level: LEVEL, input };
+window.__roland = { get game() { return game; }, level: LEVEL, input, get scale() { return scaleNow; } };
