@@ -356,6 +356,23 @@ try {
   results.push(`SCREENSHOT ${shotPath}`);
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
 
+  // --- Stationswahl: alle Akte und Interludien erreichbar ------------------
+  const wahl = JSON.parse(await evaluate(`JSON.stringify({
+    sichtbar: !document.getElementById('actRow').classList.contains('hidden'),
+    knoepfe: [...document.querySelectorAll('#actRow button')].map((b) => b.textContent.trim())
+  })`));
+  check('Stationswahl listet alle Stationen',
+    wahl.sichtbar && wahl.knoepfe.length >= 8 && wahl.knoepfe.some((k) => k.includes('CABRIO')),
+    JSON.stringify(wahl.knoepfe));
+  const fahrProbe = [];
+  for (const idx of [2, 5]) {
+    await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
+    await sleep(1000);
+    fahrProbe.push(await evaluate(`(() => { const r = window.__roland.racer; return r ? r.fahrzeug + ':' + r.state : 'KEIN FAHRZEUG'; })()`));
+  }
+  check('Interludien sind ueber die Stationswahl erreichbar',
+    fahrProbe[0] === 'mx5:play' && fahrProbe[1] === 'motorrad:play', fahrProbe.join(' | '));
+
   // --- Akt 2 im echten Browser --------------------------------------------
   // Nach Akt 1 erscheint der Kurzweg (hier über den Spielstand simuliert)
   await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 1 }))");

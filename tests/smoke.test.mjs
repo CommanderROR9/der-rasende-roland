@@ -1607,6 +1607,34 @@ function place(game, px, py) {
   check('Freiluft: Treppe ist Planke', draussen.tileLook(69, 23) === 'buehne', String(draussen.tileLook(69, 23)));
 }
 
+// ------------------------------------------------- Schauplatz und Himmel ----
+{
+  const erwartet = {
+    akt1: false, akt2: false, akt3: true, akt4: false, akt5: false, epilog: true,
+  };
+  const falsch = [];
+  for (const l of LEVELS) {
+    if (l.mode === 'racer') continue;                 // Fahr-Interludien haben ihren eigenen Himmel
+    const g = new Game({
+      level: l.build(), input: createInput(null),
+      audio: { play() {}, engine() {}, engineOff() {} },
+      events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+    });
+    g.reset('schwarz');
+    if (g.usesSky() !== erwartet[l.id]) falsch.push(`${l.id}: ${g.usesSky()}`);
+  }
+  check('Hintergrund passt zum Schauplatz (Freiluft mit Himmel)', falsch.length === 0, falsch.join(', '));
+  const garten = new Game({
+    level: buildEpilog(), input: createInput(null),
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  garten.reset('schwarz');
+  check('Garten zeichnet Wiese und nicht Fels',
+    garten.usesSky() === true && garten.tileLook(20, 25) === 'gras',
+    `sky=${garten.usesSky()} look=${garten.tileLook(20, 25)}`);
+}
+
 // ------------------------------------------------------ Pause & Langzeitlauf --
 {
   const { game } = fresh('schwarz', { stands: false });

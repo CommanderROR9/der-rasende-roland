@@ -22,11 +22,12 @@ const ui = {
   collapse: $('#collapse'), collapseBtn: $('#collapseBtn'),
   reward: $('#reward'), rewardBody: $('#rewardBody'), rewardBtn: $('#rewardBtn'), rewardQuit: $('#rewardQuit'),
   rewardEyebrow: $('#rewardEyebrow'), rewardTitle: $('#rewardTitle'), rewardText: $('#rewardText'), rewardNote: $('#rewardNote'),
-  jumpActBtn: $('#jumpActBtn'),
+  actRow: $('#actRow'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
   walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
   grillReadout: $('#grillReadout'), gPunkte: $('#gPunkte'), gServiert: $('#gServiert'),
   gVerbrannt: $('#gVerbrannt'), gTakt: $('#gTakt'), gBpm: $('#gBpm'),
+  applaus: $('#applaus'), applausWrap: $('#applausWrap'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
@@ -93,7 +94,7 @@ const REWARDS = {
 };
 function istLetzterAkt() { return aktIndex >= LEVELS.length - 1; }
 function updateActLabels() {
-  if (ui.jumpActBtn) updateJumpButton();
+  if (ui.actRow) baueStationswahl();
   const r = REWARDS[LEVEL.id] || { title: 'AKT GESCHAFFT', text: 'Weiter geht es.' };
   ui.rewardEyebrow.textContent = `${LEVEL.name} GESCHAFFT`;
   ui.rewardTitle.textContent = r.title;
@@ -316,6 +317,12 @@ function refreshHud() {
   ui.hitze.parentElement.classList.toggle('hot', h.heat > 60);
   ui.nerven.textContent = '●'.repeat(h.nerves) + '○'.repeat(Math.max(0, h.maxNerves - h.nerves));
   ui.bpm.textContent = String(h.bpm);
+  // Applaus nur im Finale zeigen, sonst ausblenden
+  if (ui.applausWrap) {
+    const hatApplaus = h.applaus !== null && h.applaus !== undefined;
+    ui.applausWrap.classList.toggle('hidden', !hatApplaus);
+    if (hatApplaus) ui.applaus.textContent = `${h.applaus}%`;
+  }
   const WETTER_NAMEN = { sonne: 'SONNE', wind: 'WIND', regen: 'REGEN', kaelte: 'KÄLTE' };
   if (ui.wetter) ui.wetter.textContent = WETTER_NAMEN[h.wetter] || '—';
   if (ui.nass) {
@@ -355,11 +362,7 @@ function updateWorldLabel() {
 }
 
 // ------------------------------------------------------------------- Input --
-ui.startBtn.onclick = () => {
-  audio.resume();
-  if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }   // im Auto egal
-  renderGarde('start');
-};
+ui.startBtn.onclick = () => startLevel();
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
 ui.resetBtn.onclick = () => {
   try { localStorage.removeItem(SAVE_KEY); } catch {}
@@ -463,21 +466,35 @@ loadAct(Number(loadSave().act) || 0);
 
 // Kurzweg: wer Akt 1 geschafft hat, kann Akt 2 direkt anwählen (zum Ausprobieren
 // und Weitergeben, ohne jedes Mal die Katakomben zu spielen).
-ui.jumpActBtn.onclick = () => {
-  loadAct(aktIndex === 0 ? 1 : 0);
-  for (const h of LEVEL.hints) h.shown = false;
-  updateJumpButton();
+// Die Stationsknöpfe tragen ihre eigene Auswahl (siehe baueStationswahl).
+/** Startet die aktuell geladene Station — Racer sofort, Seitenscroller über die Garderobe. */
+function startLevel() {
+  audio.resume();
+  if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }
   renderGarde('start');
-};
-function updateJumpButton() {
+}
+
+/** Stationswahl: alle Akte und Interludien, damit nichts unerreichbar bleibt. */
+function baueStationswahl() {
   const save = loadSave();
-  const kannWechseln = LEVELS.length > 1 && (save.akt1 === true || (save.act || 0) >= 1);
-  ui.jumpActBtn.classList.toggle('hidden', !kannWechseln);
-  if (kannWechseln) {
-    ui.jumpActBtn.textContent = aktIndex === 0
-      ? 'AKT 2 DIREKT SPIELEN\u00a0\u2192'
-      : 'AKT 1 NOCHMAL SPIELEN\u00a0\u2192';
-  }
+  const darf = save.akt1 === true || (save.act || 0) >= 1;
+  ui.actRow.classList.toggle('hidden', !darf);
+  if (!darf || ui.actRow.childElementCount) return;
+  LEVELS.forEach((l, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost';
+    b.textContent = `${i + 1}. ${l.name}`;
+    b.dataset.akt = String(i);
+    b.onclick = () => {
+      loadAct(i);
+      for (const h of LEVEL.hints) h.shown = false;
+      baueStationswahl();
+      startLevel();
+    };
+    ui.actRow.appendChild(b);
+  });
+  updateActLabels();
 }
 updateJumpButton();
 fit();

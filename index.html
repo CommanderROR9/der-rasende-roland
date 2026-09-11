@@ -17,6 +17,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;touch-action:none;
   overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #stage{position:fixed;inset:0;display:grid;place-items:center}
+.actrow{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 2px}
+.actrow button{flex:1 1 46%;min-width:0;font-size:10px;padding:7px 6px}
 #game{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#141021;touch-action:none}
 
 /* HUD */
@@ -104,6 +106,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       <span>OHROPAX<b id="ohro">—</b></span>
       <span>KLUFT<b id="kluft">SCHWARZ</b></span>
       <span>HITZE<b id="hitze"><span class="bar"><i></i></span></b></span>
+      <span id="applausWrap" class="hidden">APPLAUS<b id="applaus">0</b></span>
       <span>WETTER<b id="wetter">—</b></span>
       <span>NASS<b id="nass"><span class="bar"><i></i></span></b></span>
       <span>TAKT<b id="takt"><span class="beat"></span><em id="bpm" style="font-style:normal;margin-left:4px">100</em></b></span>
@@ -155,7 +158,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       </div>
       <button id="startBtn">START&nbsp;→</button>
       <button id="soundBtn" class="ghost" type="button">TON: AN</button>
-      <button id="jumpActBtn" class="ghost hidden" type="button">AKT 2 DIREKT SPIELEN&nbsp;→</button>
+      <div id="actRow" class="actrow hidden"></div>
       <button id="diffBtn" class="ghost" type="button">SCHWIERIGKEIT: GEMÜTLICH</button>
       <button id="resetBtn" class="ghost" type="button">Fortschritt zurücksetzen</button>
     </div>

@@ -1191,8 +1191,13 @@ export class Game {
     this.drawScreenFx(ctx);
   }
 
+  /** Schauplätze unter freiem Himmel — Grundlage für Hintergrund und Kacheln. */
+  usesSky() {
+    return this.level.setting === 'openair' || this.level.setting === 'garten';
+  }
+
   drawBackground(ctx, camX, camY) {
-    if (this.level.setting === 'openair') { this.drawSky(ctx, camX, camY); return; }
+    if (this.usesSky()) { this.drawSky(ctx, camX, camY); return; }
     const pal = this.pal();
     ctx.fillStyle = pal.bg;
     ctx.fillRect(0, 0, this.vw, this.vh);
@@ -1277,7 +1282,7 @@ export class Game {
     if (tx < 0 || ty < 0 || tx >= this.level.w || ty >= this.level.h) return null;
     const v = this.grid[ty][tx];
     if (!v) return null;
-    const freiluft = this.level.setting === 'openair' || this.level.setting === 'garten';
+    const freiluft = this.usesSky();
     if (v === 1) {
       if (freiluft) {
         const pxT = tx * TILE, pyT = ty * TILE;

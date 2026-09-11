@@ -290,15 +290,17 @@ export function buildAkt2() {
 }
 
 /** Alle Akte an einer Stelle — die Level sind reine Daten. */
+// Stationen in Spielreihenfolge. `mode` gehört hierher, damit Werkzeuge und
+// Oberfläche eine Station einordnen können, ohne sie erst zu bauen.
 export const LEVELS = [
-  { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', build: buildAkt1 },
-  { id: 'akt2', name: 'AKT 2 — DIE PROBE', build: buildAkt2 },
-  { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', build: buildCabrio },
-  { id: 'akt3', name: 'AKT 3 — OPEN AIR', build: buildAkt3 },
-  { id: 'akt4', name: 'AKT 4 — DER ORCHESTERGRABEN', build: buildAkt4 },
-  { id: 'motorrad', name: 'INTERLUDIUM — MOTORRAD NACH HAUSE', build: buildMotorrad },
-  { id: 'akt5', name: 'AKT 5 — DIE BÜHNE', build: buildAkt5 },
-  { id: 'epilog', name: 'EPILOG — DER KLEINGARTEN', build: buildEpilog },
+  { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', mode: 'sidescroller', build: buildAkt1 },
+  { id: 'akt2', name: 'AKT 2 — DIE PROBE', mode: 'sidescroller', build: buildAkt2 },
+  { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', mode: 'racer', build: buildCabrio },
+  { id: 'akt3', name: 'AKT 3 — OPEN AIR', mode: 'sidescroller', build: buildAkt3 },
+  { id: 'akt4', name: 'AKT 4 — DER ORCHESTERGRABEN', mode: 'sidescroller', build: buildAkt4 },
+  { id: 'motorrad', name: 'INTERLUDIUM — MOTORRAD NACH HAUSE', mode: 'racer', build: buildMotorrad },
+  { id: 'akt5', name: 'AKT 5 — DIE BÜHNE', mode: 'sidescroller', build: buildAkt5 },
+  { id: 'epilog', name: 'EPILOG — DER KLEINGARTEN', mode: 'sidescroller', build: buildEpilog },
 ];
 
 // ============================================================================
