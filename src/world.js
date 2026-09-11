@@ -806,8 +806,8 @@ export function buildAkt5() {
 
   const goal = {
     x: 112 * TILE, y: 19 * TILE, w: TILE, h: 3 * TILE,
-    name: 'VORHANG', need: 'frack', applaus: 60, frackOff: true,
-    locked: 'ZU WENIG APPLAUS. UND DER FRACK IST NOCH ZU.',
+    name: 'VORHANG', need: 'ablegen', applaus: 60,
+    locked: 'ZU WENIG APPLAUS. UND DER FRACK IST NOCH AN.',
   };
 
   const takts = [
@@ -821,7 +821,7 @@ export function buildAkt5() {
   tip(44, 'SCHNÜRBODEN. VON HIER SIEHT MAN DIE GANZE BÜHNE');
   tip(60, 'VERFOLGERSCHEINWERFER: IM LICHT WIRD DER FRACK ZUR HEIZUNG');
   tip(84, 'APPLAUS: IM TAKT GETROFFEN WÄCHST ER. DAS IST DEIN AUFTRITT');
-  tip(110, 'DER VORHANG GEHT NUR AUF, WENN DER FRACK FÄLLT');
+  tip(110, 'DER VORHANG GEHT AUF, WENN DU DEN FRACK ABLEGST (E)');
 
   return {
     id: 'akt5',
@@ -861,13 +861,15 @@ export function buildEpilog() {
 
   carve(1, 0, 118, 25);      // Himmel und Garten
 
-  // Laube mit Stufe
+  // Laube mit Stufe und Bank: hier endet der Weg.
   solid(70, 19, 16, 1);      // Laubendach, Kante 304
   solid(70, 19, 2, 2);       // Pfosten links (Durchgang in Bodenhöhe frei)
   solid(84, 19, 2, 2);       // Pfosten rechts
-  plank(74, 22, 4);          // Stufe zur Laube, Kante 352
-  // Bank und Grill
-  solid(40, 23, 6, 2);       // Bank, Kante 368
+  // Bank unter der Laube — und genau hier steht auch das Ziel (Befund D5:
+  // vorher lag die Bank bei Kachel 40, das Ziel „DIE BANK" aber bei Kachel 78).
+  // Eine Kachel hoch: im Garten darf der Schluss keine Sprungprüfung sein.
+  solid(75, 24, 5, 1);       // Bank, Kante 384
+  // Grill
   solid(52, 23, 4, 2);       // Grill, Kante 368
   // Hecke als Begrenzung der Wiese
   solid(30, 23, 2, 2);       // Hecke: 32 px, springbar (vorher 48 px = Sackgasse)
@@ -877,25 +879,27 @@ export function buildEpilog() {
   e('spawn', 4, 25, { isSpawn: true });
   e('item', 12, 25, { item: 'bierdeckel' });
   e('item', 26, 25, { item: 'bierdeckel' });
-  e('item', 44, 23, { item: 'bier' });
+  e('item', 62, 25, { item: 'bierdeckel' });
   e('grill', 54, 23);
-  e('ramona', 58, 25);
-  e('item', 74, 22, { item: 'bierdeckel' });
+  e('ramona', 66, 25);
+  e('item', 80, 23, { item: 'bier' });      // steht schon auf der Bank
+  e('schrank', 82, 25);                     // hier hängt der Frack, für immer
   e('item', 88, 25, { item: 'bierdeckel' });
   e('item', 102, 22, { item: 'bierdeckel' });
   e('stand', 20, 25);
 
   const goal = {
-    x: 78 * TILE, y: 22 * TILE, w: TILE * 2, h: TILE * 2,
-    name: 'DIE BANK', need: null,
-    locked: '',
+    x: 73 * TILE, y: 23 * TILE, w: TILE * 6, h: TILE * 2,
+    name: 'DIE BANK', need: 'setzen', bench: true,
+    locked: 'ERST HINSETZEN: HIER STEHT DIE BANK (E).',
   };
 
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
-  tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEIN FRACK, KEIN WEG MEHR NÖTIG');
-  tip(38, 'DIE BANK UNTER DEM APFELBAUM. UND EIN BIER STEHT SCHON DA');
-  tip(50, 'DER GRILL: BRATWÜRSTE IM TAKT WENDEN. ES GEHT AUCH OHNE TAKT');
+  tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEINE HITZE, KEIN WEG MEHR NÖTIG');
+  tip(46, 'DER GRILL: BRATWÜRSTE WENDEN. ES GEHT AUCH OHNE TAKT');
   tip(56, 'RAMONA WARTET SCHON. SIE HAT DAS BESSERE MESSER');
+  tip(78, 'DIE BANK UNTER DER LAUBE. UND EIN BIER STEHT SCHON DA');
+  tip(81, 'DER SCHRANK DER LAUBE: HIER HÄNGT DER FRACK. FÜR IMMER (E)');
 
   return {
     id: 'epilog',

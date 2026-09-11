@@ -46,8 +46,8 @@ export const OUTFITS = {
     detect: 0.75,
     heatBase: 0,
     lightHeat: 2.0,
-    blurb: 'Leise und schnell. Der Sicherheitsdienst sieht dich nicht.',
-    pros: ['schnellstes Tempo', 'wird übersehen'],
+    blurb: 'Leise und schnell. Im Dunkeln fällt Schwarz am wenigsten auf.',
+    pros: ['schnellstes Tempo', 'keine Hitze von selbst'],
     cons: ['öffnet keine Diensttür'],
   },
   anzug: {

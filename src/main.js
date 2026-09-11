@@ -28,6 +28,8 @@ const ui = {
   grillReadout: $('#grillReadout'), gPunkte: $('#gPunkte'), gServiert: $('#gServiert'),
   gVerbrannt: $('#gVerbrannt'), gTakt: $('#gTakt'), gBpm: $('#gBpm'),
   applaus: $('#applaus'), applausWrap: $('#applausWrap'),
+  uOhro: $('#uOhro'), uKluft: $('#uKluft'), uHitze: $('#uHitze'),
+  uWetter: $('#uWetter'), uNass: $('#uNass'), uTakt: $('#uTakt'), uNerven: $('#uNerven'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
@@ -319,9 +321,14 @@ function refreshHud() {
   ui.walkReadout.classList.remove('hidden');
   ui.racerReadout.classList.add('hidden');
   const sig = [h.nerves, h.heat, Math.round(h.ohropax), h.outfit.id, h.deckel, h.bpm,
-    h.glanz > 0.5, h.hint, h.hidden, h.wetter, h.nass, h.gustDir, h.friert].join('|');
+    h.glanz > 0.5, h.hint, h.hidden, h.wetter, h.nass, h.gustDir, h.friert, h.ruhig, h.ziel].join('|');
   if (sig === hudPrev) return;
   hudPrev = sig;
+  // Der Kleingarten hat kein Gedächtnis für Hitze, Takt und Nerven (Befund D5):
+  // dort bleibt vom HUD nur, was noch zählt.
+  for (const key of ['uOhro', 'uKluft', 'uHitze', 'uWetter', 'uNass', 'uTakt', 'uNerven']) {
+    if (ui[key]) ui[key].classList.toggle('hidden', !!h.ruhig);
+  }
   ui.deckel.textContent = `${h.deckel}/${h.deckelTotal}`;
   ui.ohro.textContent = h.ohropax > 0 ? `${Math.ceil(h.ohropax)}s` : '—';
   ui.kluft.textContent = h.outfit.short + (h.glanz > 0.5 ? ' ⚡' : '');
@@ -505,7 +512,9 @@ function baueStationswahl() {
     b.dataset.akt = String(i);
     b.onclick = () => {
       loadAct(i);
-      for (const h of LEVEL.hints) h.shown = false;
+      // Fahr-Interludien liefern keine Hints — ohne Guard startete der Klick
+      // dort nie, weil die Schleife vor startLevel() geworfen hat (Befund D1).
+      for (const h of LEVEL.hints || []) h.shown = false;
       baueStationswahl();
       startLevel();
     };

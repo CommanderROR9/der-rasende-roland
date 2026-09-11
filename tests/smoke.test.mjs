@@ -1342,9 +1342,9 @@ function place(game, px, py) {
   const lv = buildAkt5();
   check('Akt 5: Buehne im Theaterschwarz', lv.setting === 'buehne', String(lv.setting));
   check('Akt 5: drei Verfolgerscheinwerfer', (lv.movingLights || []).length === 3);
-  check('Akt 5: Ziel verlangt Applaus, Frack und Frack-Off',
-    lv.goal.applaus === 60 && lv.goal.need === 'frack' && lv.goal.frackOff === true,
-    JSON.stringify({ applaus: lv.goal.applaus, need: lv.goal.need, frackOff: lv.goal.frackOff }));
+  check('Akt 5: Ziel verlangt Applaus und den abgelegten Frack',
+    lv.goal.applaus === 60 && lv.goal.need === 'ablegen' && lv.goal.frackOff === undefined,
+    JSON.stringify(lv.goal));
   check('Akt 5: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
 
   const mk5 = (difficulty = 'gemuetlich') => {
@@ -1376,6 +1376,11 @@ function place(game, px, py) {
   gB.beatPhase = 0.02;
   gB.tryTritt();
   check('Akt 5: Treffer im Takt gibt Applaus', gB.applaus > 0, String(gB.applaus));
+  // Befund D3: derselbe, noch betaeubte Gegner darf nicht erneut zaehlen.
+  const vorDoppel = gB.applaus;
+  gB.tryTritt();
+  check('Akt 5: kein zweiter Applaus fuer denselben betaeubten Gegner',
+    gB.applaus === vorDoppel, `${vorDoppel} -> ${gB.applaus}`);
   const vorher = gB.applaus;
   step(gB, 3);
   check('Akt 5: Applaus faellt ohne weiteren Auftritt', gB.applaus < vorher, `${vorher.toFixed(1)} -> ${gB.applaus.toFixed(1)}`);
@@ -1384,12 +1389,22 @@ function place(game, px, py) {
   const { game: gZ } = { game: mk5() };
   gZ.setOutfit('frack');
   gZ.applaus = 70;
-  check('Akt 5: ohne Frack-Off geht der Vorhang nicht', gZ.goalErfuellt() === false);
+  check('Akt 5: ohne abgelegten Frack geht der Vorhang nicht', gZ.goalErfuellt() === false);
   gZ.applaus = 10;
-  gZ.frackOffUsed = true;
+  gZ.frackAbgelegt = true;
   check('Akt 5: ohne Applaus geht der Vorhang nicht', gZ.goalErfuellt() === false);
   gZ.applaus = 70;
-  check('Akt 5: Applaus plus Frack-Off oeffnet den Vorhang', gZ.goalErfuellt() === true);
+  check('Akt 5: Applaus plus abgelegter Frack oeffnen den Vorhang', gZ.goalErfuellt() === true);
+
+  // Befund D4: Frack-Off laesst den Frack an, Ablegen wirkt sichtbar.
+  const gF = mk5();
+  gF.setOutfit('frack');
+  gF.frackOff();
+  check('Akt 5: Frack-Off laesst den Frack an', gF.outfit.id === 'frack' && gF.frackOffUsed === true);
+  gF.frackAblegen();
+  check('Akt 5: Frack ablegen ist sichtbar (Hemd statt Frack)',
+    gF.frackAbgelegt === true && gF.outfit.id === 'schwarz', gF.outfit.id);
+  check('Akt 5: Frack ablegen geht nur einmal', gF.frackAblegen() === false);
 
   // Durchspiel-Route
   const iR = createInput(null);
@@ -1481,19 +1496,71 @@ function place(game, px, py) {
   check('Epilog: Aktion am Grill oeffnet das Minispiel',
     gE.state === 'paused' && gE.pauseReason === 'grill', `${gE.state}/${gE.pauseReason}`);
 
-  // Ziel: die Bank
+  // Ziel: die Bank. Seit Befund D5 liegt sie unter der Laube — und Platz nimmt
+  // man bewusst (E), statt sie nur zu berühren.
+  const iZ = createInput(null);
   const gZ = new Game({
-    level: buildEpilog(), input: createInput(null),
+    level: buildEpilog(), input: iZ,
     audio: { play() {}, engine() {}, engineOff() {} },
     events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
   });
   gZ.reset('schwarz');
   const ziel = gZ.level.goal;
+  const bx = Math.round(ziel.x / TILE), bw = Math.round(ziel.w / TILE), by = Math.round(ziel.y / TILE);
+  const bankUnterZiel = [];
+  for (let i = bx; i < bx + bw; i++) if (gZ.level.grid[by + 1][i] === 1) bankUnterZiel.push(i);
+  check('Epilog: unter dem Ziel steht wirklich die Bank',
+    bankUnterZiel.length >= 4 && ziel.name === 'DIE BANK' && ziel.need === 'setzen',
+    `Bankkacheln=${bankUnterZiel.join(',')}`);
   place(gZ, ziel.x + 8, 25 * TILE - PHYS.playerH);
   gZ.update(1 / 60);
-  check('Epilog: die Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
+  check('Epilog: vor der Bank steht das Angebot zum Hinsetzen',
+    gZ.state === 'play' && !!gZ.hud.label && /HINSETZEN/.test(gZ.hud.label.text) && gZ.hud.label.action === true,
+    JSON.stringify(gZ.hud.label));
+  iZ.setKey('right', false);
+  iZ.setKey('action', true);
+  gZ.update(1 / 60);
+  check('Epilog: Hinsetzen auf der Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
   check('Epilog: Abschluss nennt Deckel und Zeit',
     !!gZ.rows && gZ.rows.length > 0, JSON.stringify(gZ.rows));
+
+  // Befund D5: kein Takt, keine Hitze — auch nicht im Frack.
+  const iR2 = createInput(null);
+  const gR2 = new Game({
+    level: buildEpilog(), input: iR2,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gR2.reset('frack');
+  place(gR2, 20 * TILE, 25 * TILE - PHYS.playerH);
+  iR2.setKey('right', true);
+  stepAny(gR2, 1.5);
+  stepAny(gR2, 3);
+  check('Epilog: im Frack steigt keine Hitze mehr', gR2.heat === 0, String(gR2.heat));
+  check('Epilog: kein Takt mehr', gR2.beatPhase === 0 && gR2.beats === 0,
+    `phase=${gR2.beatPhase} beats=${gR2.beats}`);
+  check('Epilog: HUD meldet den ruhigen Modus', gR2.hud.ruhig === true);
+  iR2.setKey('right', false);
+
+  // Der Frack kommt in den Schrank der Laube.
+  const iS = createInput(null);
+  const gS = new Game({
+    level: buildEpilog(), input: iS,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gS.reset('frack');
+  const schrank = gS.entities.find((e) => e.kind === 'schrank');
+  check('Epilog: der Schrank der Laube existiert', !!schrank);
+  place(gS, schrank.x + 8, 25 * TILE - PHYS.playerH);
+  gS.update(1 / 60);
+  check('Epilog: der Schrank bietet das Aufhängen an',
+    !!gS.hud.label && /SCHRANK/.test(gS.hud.label.text) && gS.hud.label.action === true,
+    JSON.stringify(gS.hud.label));
+  iS.setKey('action', true);
+  gS.update(1 / 60);
+  check('Epilog: der Frack hängt im Schrank, das Hemd bleibt',
+    gS.frackAbgelegt === true && gS.outfit.id === 'schwarz', gS.outfit.id);
 }
 
 // ============================================================ GRILL ==========
@@ -1645,7 +1712,7 @@ function place(game, px, py) {
     events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
   });
   epi.reset('schwarz');
-  const wegEpilog = [[10, 25], [27, 25], [30, 23], [34, 25], [42, 23], [50, 25], [56, 25], [70, 25], [78, 25]];
+  const wegEpilog = [[10, 25], [27, 25], [30, 23], [34, 25], [42, 25], [56, 25], [66, 25], [74, 25], [88, 25]];
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1, hoch = 0;
   const fehlwege = [];
   for (const [wx, row] of wegEpilog) {
@@ -1676,6 +1743,12 @@ function place(game, px, py) {
     }
     if (!ok) fehlwege.push(`${wx}/${row} (x=${epi.player.x.toFixed(0)})`);
   }
+  // Der Schluss ist seit Befund D5 eine bewusste Aktion (E) — die Bank wird
+  // nicht mehr beim Berühren gewertet.
+  iE.setKey('right', false);
+  place(epi, epi.level.goal.x + 8, 25 * TILE - PHYS.playerH);
+  iE.setKey('action', true);
+  epi.update(1 / 60);
   check('Epilog ist zu Fuß erreichbar (Hecke springbar)',
     fehlwege.length === 0 && epi.state === 'complete',
     fehlwege.length ? fehlwege.join(' | ') : `Zustand ${epi.state}`);
