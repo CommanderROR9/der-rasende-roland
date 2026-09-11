@@ -460,6 +460,34 @@ try {
   check('Fahrt bewegt sich im Bild',
     sigA2.filter((v, i) => v !== sigB2[i]).length >= 3, 'Standbild?');
 
+  // Andere Fahrzeuge und Straßenrand müssen auch wirklich im Bild sein
+  const probe = `(() => {
+    const r = window.__roland.racer;
+    const f = r.buildFrame();
+    return JSON.stringify({
+      objekte: f.drawList.length,
+      fahrzeuge: f.drawList.filter((o) => o.kind === 'auto' || o.kind === 'lkw').length,
+      arten: [...new Set(f.drawList.map((o) => o.kind))],
+      verkehr: r.traffic.length, rand: r.roadside.length, loecher: r.potholes.length
+    });
+  })()`;
+  let maxObjekte = 0, maxFahrzeuge = 0;
+  const gesehen = new Set();
+  for (let i = 0; i < 8; i++) {
+    const s = JSON.parse(await evaluate(probe));
+    maxObjekte = Math.max(maxObjekte, s.objekte);
+    maxFahrzeuge = Math.max(maxFahrzeuge, s.fahrzeuge);
+    for (const k of s.arten) gesehen.add(k);
+    if (i === 0) {
+      check('Strecke ist bestückt (Browser)',
+        s.verkehr >= 10 && s.rand > 120 && s.loecher >= 8, JSON.stringify(s));
+    }
+    await sleep(260);
+  }
+  check('Verkehr und Straßenrand sind im Bild',
+    maxObjekte >= 2 && maxFahrzeuge >= 1,
+    `max ${maxObjekte} Objekte, ${maxFahrzeuge} Fahrzeuge, Arten: ${[...gesehen].join(',')}`);
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------

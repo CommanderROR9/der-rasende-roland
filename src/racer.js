@@ -15,7 +15,7 @@ export const CAM_DEPTH = 1 / Math.tan(((FOV / 2) * Math.PI) / 180);
 const FOG = '#241b33';
 
 // Breite der Objekte als Anteil der projizierten halben Straßenbreite.
-const SPRITE_F = { auto: 0.30, lkw: 0.40, mx5: 0.34, baum: 0.22, schild: 0.13, blitzer: 0.15, notenstaender: 0.09 };
+const SPRITE_F = { auto: 0.30, lkw: 0.40, mx5: 0.34, baum: 0.22, schild: 0.13, blitzer: 0.15, notenstaender: 0.09, schlagloch: 0.17 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -120,29 +120,56 @@ export class Racer {
     this.beatPhase = 0;
 
     this.traffic = [];
-    const cars = Math.round((this.level.traffic || 12) * (this.difficulty === 'gemuetlich' ? 0.55 : 1));
+    const segmente = this.trackLength / SEG_LEN;
+    // Einer etwa alle 55 Segmente — sonst fährt man allein durch die Gegend.
+    const cars = Math.max(10, Math.round((segmente / 42) * (this.difficulty === 'gemuetlich' ? 0.75 : 1)));
     for (let i = 0; i < cars; i++) {
       const oncoming = i % 3 === 0;
       const base = oncoming ? -0.55 : 0.18 + (i % 2) * 0.4;
+      const z0 = 2500 + (i / cars) * (this.trackLength - 5000) + hash2(i, 3, 7) * 400;
       this.traffic.push({
-        z: 3000 + (i / cars) * (this.trackLength - 5000) + hash2(i, 3, 7) * 500,
+        z: z0,
         lane: clamp(base + (hash2(i, 9, 4) - 0.5) * 0.16, -0.9, 0.9),
         speed: oncoming ? -SEG_LEN * 13 : SEG_LEN * (7 + hash2(i, 5, 2) * 6),
-        kind: i % 5 === 4 ? 'lkw' : 'auto',
+        kind: i % 6 === 5 ? 'lkw' : 'auto',
         passed: false,
       });
+      // Kolonnen: gelegentlich hängt noch einer direkt dahinter
+      if (!oncoming && hash2(i, 17, 8) > 0.62) {
+        this.traffic.push({
+          z: z0 + SEG_LEN * (5 + hash2(i, 19, 9) * 6),
+          lane: clamp(base + 0.06, -0.9, 0.9),
+          speed: SEG_LEN * 9,
+          kind: 'auto',
+          passed: false,
+        });
+      }
     }
     this.roadside = [];
-    const rs = 130;
+    const rs = Math.round(segmente / 6);
     for (let i = 0; i < rs; i++) {
       const pct = (i + 0.5) / rs;
       const side = i % 2 === 0 ? -1 : 1;
+      const kind = i % 17 === 0 ? 'blitzer'
+        : (i % 11 === 0 ? 'lkw' : (i % 4 === 0 ? 'schild' : 'baum'));
       this.roadside.push({
         z: pct * this.trackLength,
-        x: side * (1.3 + hash2(i, 1, 1) * 0.7),
-        kind: i % 13 === 0 ? 'blitzer' : (i % 5 === 0 ? 'schild' : 'baum'),
+        x: side * (kind === 'lkw' ? 1.5 : 1.25 + hash2(i, 1, 1) * 0.8),
+        kind, done: false,
       });
     }
+    // Schlaglöcher auf der Fahrbahn
+    this.potholes = [];
+    const holes = Math.max(8, Math.round(segmente / 44));
+    for (let i = 0; i < holes; i++) {
+      this.potholes.push({
+        z: 6000 + (i / holes) * (this.trackLength - 9000),
+        lane: (hash2(i, 21, 6) - 0.5) * 1.25,
+        done: false,
+      });
+    }
+    this.bumps = 0;
+    this.blitze = 0;
     this.hud = this.buildHud();
   }
 
@@ -204,10 +231,11 @@ export class Racer {
     this.position = (this.position + this.speed * dt) % this.trackLength;
     // Streckenende erreicht = angekommen (die Strecke ist eine Route, kein Rundkurs)
     if (this.position < vorher && this.time > 3) { this.complete(); return; }
-    this.updateTraffic(dt);
+    this.updateObjects(dt);
     this.updateStrecke();
     this.updateTakt(dt);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 22);
+    if (this.blitze > 0) this.blitze = Math.max(0, this.blitze - dt * 1.6);
     if (this.hint && this.time > this.hint.until) {
       this.hint = null;
       const next = this.hintQueue.shift();
@@ -244,6 +272,36 @@ export class Racer {
         this.message(`${t.label} · ${t.bpm} BPM`, 5, 2);
       }
     }
+  }
+
+  updateObjects(dt) {
+    // Schlaglöcher
+    for (const h of this.potholes) {
+      if (h.done) continue;
+      const dz = h.z - (this.position + this.playerZ);
+      if (Math.abs(dz) < SEG_LEN * 0.8 && Math.abs(h.lane - this.playerX) < 0.2) {
+        h.done = true;
+        this.bumps += 1;
+        this.speed *= 0.7;
+        this.shake = 5;
+        this.audio.play('morsch');
+        this.message('SCHLAGLOCH. DIE FELGE DANKT.', 4, 2);
+      }
+    }
+    // Radarfallen blitzen, wenn man zu schnell vorbeikommt
+    for (const r of this.roadside) {
+      if (r.kind !== 'blitzer' || r.done) continue;
+      const dz = r.z - (this.position + this.playerZ);
+      if (Math.abs(dz) < SEG_LEN && this.speed > this.maxSpeed * 0.45) {
+        r.done = true;
+        this.speed *= 0.85;
+        this.shake = 4;
+        this.blitze = 0.45;
+        this.audio.play('hurt');
+        this.message('GEBLITZT. DAS KOSTET EIN KNÖLLCHEN.', 5, 2);
+      }
+    }
+    this.updateTraffic(dt);
   }
 
   updateTraffic(dt) {
@@ -292,6 +350,7 @@ export class Racer {
         ['FAHRZEIT', fmt(this.time)],
         ['HÖCHSTGESCHWINDIGKEIT', `${Math.round(kmh(this.topSpeed))} km/h`],
         ['KONTAKTE', String(this.hits)],
+        ['SCHLAGLÖCHER', String(this.bumps)],
         ['REGEN', this.rain ? 'ja, leider' : 'nein, alles trocken'],
       ],
     });
@@ -320,7 +379,8 @@ export class Racer {
   }
 
   // --------------------------------------------------------------- Zeichnen --
-  draw(ctx) {
+  /** Projektion eines Frames: sichtbare Segmente und Objekte, auch ohne Zeichnen prüfbar. */
+  buildFrame() {
     const vw = this.vw, vh = this.vh;
     const baseSeg = this.segmentAt(this.position);
     const basePct = (this.position % SEG_LEN) / SEG_LEN;
@@ -328,12 +388,10 @@ export class Racer {
     const pPct = ((this.position + this.playerZ) % SEG_LEN) / SEG_LEN;
     const playerY = lerp(pSeg.p1.world.y, pSeg.p2.world.y, pPct);
 
-    this.drawSky(ctx);
     let maxy = vh;
     let x = 0;
     let dx = -(baseSeg.curve * basePct);
     const visible = [];
-    const projektionen = [];
     for (let n = 0; n < DRAW_DIST; n++) {
       const seg = this.segments[(baseSeg.index + n) % this.segments.length];
       seg.looped = seg.index < baseSeg.index;
@@ -345,37 +403,37 @@ export class Racer {
       x += dx;
       dx += seg.curve;
       if (seg.p1.camera.z <= CAM_DEPTH || seg.p2.screen.y >= seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
-      this.drawSegment(ctx, vw, seg);
       visible.push(seg);
       maxy = seg.p1.screen.y;
     }
-    // Objekte von hinten nach vorn zeichnen
-    const objekte = [];
-    for (const r of this.roadside) {
-      const zi = ((r.z % this.trackLength) + this.trackLength) % this.trackLength;
-      const seg = this.segmentAt(zi);
-      if (seg.clip === undefined) continue;
-      objekte.push({ z: zi, kind: r.kind, seg, xf: r.x, pct: (zi % SEG_LEN) / SEG_LEN });
-    }
-    for (const c of this.traffic) {
-      const zi = ((c.z % this.trackLength) + this.trackLength) % this.trackLength;
-      const seg = this.segmentAt(zi);
-      if (seg.clip === undefined) continue;
-      objekte.push({ z: zi, kind: c.kind, seg, xf: c.lane, pct: (zi % SEG_LEN) / SEG_LEN, breit: true });
-    }
-    const vorne = this.position + this.playerZ;
-    objekte.sort((a, b) => b.z - a.z);
-    for (const o of objekte) {
+
+    const drawList = [];
+    const alle = [];
+    for (const r of this.roadside) alle.push({ z: r.z, kind: r.kind, xf: r.x, breite: SPRITE_F[r.kind] || 0.2 });
+    for (const c of this.traffic) alle.push({ z: c.z, kind: c.kind, xf: c.lane, breite: SPRITE_F[c.kind] || 0.3 });
+    for (const h of this.potholes) alle.push({ z: h.z, kind: 'schlagloch', xf: h.lane, breite: SPRITE_F.schlagloch });
+    for (const o of alle) {
       const rel = o.z - this.position;
       if (rel < 0 || rel > DRAW_DIST * SEG_LEN) continue;
-      const n = Math.floor(rel / SEG_LEN);
-      const sicht = visible.find((v) => v.index === o.seg.index && v.looped === (o.seg.index < baseSeg.index));
-      if (!sicht) continue;
-      const half = lerp(sicht.p1.screen.w, sicht.p2.screen.w, o.pct);
-      const sx = lerp(sicht.p1.screen.x, sicht.p2.screen.x, o.pct) + o.xf * half;
-      const sy = lerp(sicht.p1.screen.y, sicht.p2.screen.y, o.pct);
-      this.drawSpriteAt(ctx, o.kind, SPRITE_F[o.kind] || 0.2, sx, sy, half, sicht.fog, sicht.clip);
-      void n;
+      const seg = this.segments[(baseSeg.index + Math.floor(rel / SEG_LEN)) % this.segments.length];
+      if (!visible.includes(seg)) continue;
+      const pct = (rel % SEG_LEN) / SEG_LEN;
+      const half = lerp(seg.p1.screen.w, seg.p2.screen.w, pct);
+      const sx = lerp(seg.p1.screen.x, seg.p2.screen.x, pct) + o.xf * half;
+      const sy = lerp(seg.p1.screen.y, seg.p2.screen.y, pct);
+      drawList.push({ kind: o.kind, sx, sy, half, fog: seg.fog, clip: seg.clip, breite: o.breite });
+    }
+    // weit zuerst zeichnen
+    drawList.sort((a, b) => a.half - b.half);
+    return { visible, drawList, playerY, baseSeg };
+  }
+
+  draw(ctx) {
+    const frame = this.buildFrame();
+    this.drawSky(ctx);
+    for (const seg of frame.visible) this.drawSegment(ctx, this.vw, seg);
+    for (const o of frame.drawList) {
+      this.drawSpriteAt(ctx, o.kind, o.breite, o.sx, o.sy, o.half, o.fog, o.clip);
     }
     this.drawCar(ctx);
     if (this.rain) this.drawRain(ctx);
@@ -440,10 +498,15 @@ export class Racer {
     const h = Math.round(w * (spr.h / spr.w));
     if (w < 1 || h < 1) return;
     const x = Math.round(screenX - w / 2);
-    const y = Math.round(screenY - h);
-    if (y + h <= (clipY || 0)) return;
+    const y = Math.round(screenY - h);          // Oberkante
+    const clip = clipY || 0;
+    // Nur weglassen, wenn das Objekt komplett hinter dem Gelände steht.
+    if (y >= clip) return;
+    const verdeckt = Math.max(0, y + h - clip);
+    const hh = h - verdeckt;
+    if (hh < 1) return;
     ctx.globalAlpha = clamp(fog, 0, 1);
-    ctx.drawImage(spr.canvas, 0, 0, spr.w, spr.h, x, y, w, h);
+    ctx.drawImage(spr.canvas, 0, 0, spr.w, spr.h - (spr.h * verdeckt) / h, x, y, w, hh);
     ctx.globalAlpha = 1;
   }
 
@@ -492,6 +555,10 @@ export class Racer {
     if (pulse > 0) {
       ctx.fillStyle = `rgba(93,224,207,${0.1 * pulse})`;
       ctx.fillRect(0, this.vh - 3, this.vw, 3);
+    }
+    if (this.blitze > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${0.35 * this.blitze})`;
+      ctx.fillRect(0, 0, this.vw, this.vh);
     }
     if (Math.abs(this.playerX) > 1) {
       ctx.fillStyle = 'rgba(200,120,60,0.16)';

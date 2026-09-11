@@ -469,6 +469,19 @@ export const SPRITES = {
     '  mmmmmmmm  ',
   ],
 
+  // Schlagloch auf der Fahrbahn
+  schlagloch: [
+    '                ',
+    '                ',
+    '  mmmmmmmmmmmm  ',
+    ' mm..........mm ',
+    ' mm.KKKKKKKK.mm ',
+    ' mm.KKKKKKKK.mm ',
+    ' mm..........mm ',
+    '  mmmmmmmmmmmm  ',
+    '                ',
+  ],
+
   tuer: [
     'aaaaaaaaaaaaaaaa',
     'ammmmmmmmmmmmmmo',

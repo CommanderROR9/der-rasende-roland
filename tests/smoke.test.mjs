@@ -831,7 +831,67 @@ function place(game, px, py) {
     ev4.length === 1 && Array.isArray(ev4[0].rows) && ev4[0].rows.length >= 3,
     JSON.stringify(ev4[0] && ev4[0].rows));
 
-  // Gemütlich ist gnädiger als zügig
+  // Sichtbare Mitspieler: genau der Befund "keine anderen Autos"
+  const { input: i7, r: r7 } = mkRacer();
+  const objZaehl = [];
+  const autoZaehl = [];
+  for (let i = 0; i < 60 * 40 && r7.state === 'play'; i++) {
+    i7.setKey('left', r7.playerX > 0.05);
+    i7.setKey('right', r7.playerX < -0.05);
+    r7.update(1 / 60);
+    const f = r7.buildFrame();
+    objZaehl.push(f.drawList.length);
+    autoZaehl.push(f.drawList.filter((o) => o.kind === 'auto' || o.kind === 'lkw').length);
+  }
+  const mittel = (arr) => arr.reduce((x, y) => x + y, 0) / arr.length;
+  const leereFrames = objZaehl.filter((z) => z === 0).length;
+  check('Strecke ist mit Objekten bestückt',
+    r7.roadside.length > 120 && r7.traffic.length >= 10 && r7.potholes.length >= 8,
+    `${r7.roadside.length} Randobjekte, ${r7.traffic.length} Fahrzeuge, ${r7.potholes.length} Schlaglöcher`);
+  check('Es sind fast immer Objekte im Bild', leereFrames < objZaehl.length * 0.05,
+    `${leereFrames} leere von ${objZaehl.length} Frames, Schnitt ${mittel(objZaehl).toFixed(1)}`);
+  check('Andere Fahrzeuge sind regelmäßig zu sehen', mittel(autoZaehl) > 0.5,
+    `Schnitt ${mittel(autoZaehl).toFixed(2)} Fahrzeuge je Frame, max ${Math.max(...autoZaehl)}`);
+  check('Objekte haben eine sichtbare Größe',
+    r7.buildFrame().drawList.every((o) => o.breite * o.half > 0.4));
+  check('Fahrzeuge bleiben auf der Fahrbahn',
+    r7.traffic.every((c) => Math.abs(c.lane) < 1));
+
+  // Schlagloch kostet Tempo
+  const { r: r8 } = mkRacer();
+  r8.traffic.length = 0;
+  for (let i = 0; i < 60 * 2; i++) { r8.playerX = 0; r8.update(1 / 60); }
+  const loch = r8.potholes[0];
+  loch.z = r8.position + r8.playerZ + 200;
+  loch.lane = 0;
+  loch.done = false;
+  // Tempo unmittelbar vor dem Treffer vergleichen (danach beschleunigt er wieder)
+  let gebremst = false;
+  for (let i = 0; i < 40; i++) {
+    r8.playerX = 0;
+    const vorher = r8.speed;
+    r8.update(1 / 60);
+    if (r8.bumps === 1) { gebremst = r8.speed < vorher * 0.85; break; }
+  }
+  check('Schlagloch bremst und wird gezählt', r8.bumps === 1 && gebremst,
+    `bumps=${r8.bumps} gebremst=${gebremst}`);
+
+  // Radarfalle blitzt
+  const { r: r9 } = mkRacer();
+  r9.traffic.length = 0;
+  for (let i = 0; i < 60 * 2; i++) { r9.playerX = 0; r9.update(1 / 60); }
+  const blitz = r9.roadside.find((o) => o.kind === 'blitzer');
+  blitz.z = r9.position + r9.playerZ + 200;
+  blitz.done = false;
+  let geblitzt = false;
+  for (let i = 0; i < 40; i++) {
+    r9.playerX = 0;
+    r9.update(1 / 60);
+    if (blitz.done) { geblitzt = true; break; }
+  }
+  check('Radarfalle blitzt bei Tempo', geblitzt === true);
+
+  // Gemütlich ist gnädigera als zügig
   const { r: g1 } = mkRacer('gemuetlich');
   const { r: g2 } = mkRacer('zuegig');
   check('gemütlich: weniger Verkehr', g1.traffic.length < g2.traffic.length,

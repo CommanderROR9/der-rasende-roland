@@ -23,7 +23,9 @@ Zwischendurch wechselt das Tempo: unterwegs gibt der Dirigent **Allegro** und sp
 **Andante** vor, sichtbar im HUD und angesagt als Meldung.
 
 **Interludium — Cabrio zum Open Air.** Pseudo-3D-Landstraße in der Abendsonne, Sicht
-von hinten aufs offene Cabrio. **Gas gibt es von allein**, man lenkt nur (`A`/`D`,
+von hinten aufs offene Cabrio. Unterwegs ist einiges los: Kolonnen und Gegenverkehr,
+parkende LKW, Radarfallen (wer zu schnell vorbeifährt, wird geblitzt), Schlaglöcher,
+Bäume und Schilder am Rand. **Gas gibt es von allein**, man lenkt nur (`A`/`D`,
 am Handy der Stick), `E` bzw. der `TRITT`-Knopf bremst. Unterwegs: Gegenverkehr,
 Baustellen-LKW, ein Regenguss mit weniger Grip, Radarfallen am Straßenrand — und der
 Notenständer auf dem Beifahrersitz, der in jeder engen Kurve umkippt. Angekommen ist,
