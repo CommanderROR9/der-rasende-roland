@@ -295,6 +295,77 @@ try {
   check('Screenshot geschrieben', existsSync(shotPath));
   results.push(`SCREENSHOT ${shotPath}`);
   results.push(`MODUS ${await evaluate("document.getElementById('pad').classList.contains('show') ? 'touch-pad sichtbar' : 'tastatur'")}`);
+
+  // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
+  });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await send('Page.navigate', { url: URL_TO_TEST });
+  await sleep(2000);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(600);
+
+  const mobile = JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game').getBoundingClientRect();
+    const pad = document.getElementById('pad');
+    const stick = document.getElementById('stick').getBoundingClientRect();
+    const btn = document.getElementById('btnJump').getBoundingClientRect();
+    return JSON.stringify({
+      padSichtbar: pad.classList.contains('show'),
+      canvasPasst: c.width <= window.innerWidth + 1 && c.height <= window.innerHeight + 1,
+      canvasBreite: Math.round(c.width),
+      fensterBreite: window.innerWidth,
+      stickGroesse: Math.round(stick.width),
+      knopfHoehe: Math.round(btn.height),
+      state: window.__roland.game.state
+    });
+  })()`));
+  check('Touch-Pad erscheint auf dem Smartphone', mobile.padSichtbar === true, JSON.stringify(mobile));
+  check('Spielfeld passt ins Hochformat', mobile.canvasPasst === true,
+    `${mobile.canvasBreite}px in ${mobile.fensterBreite}px`);
+  check('Stick ist groß genug zum Treffen', mobile.stickGroesse >= 88, `${mobile.stickGroesse}px`);
+  check('Sprungknopf hat Fingergröße', mobile.knopfHoehe >= 44, `${mobile.knopfHoehe}px`);
+
+  // Stick ziehen: Spieler muss laufen
+  const mRect = JSON.parse(await evaluate(`(() => { const r = document.getElementById('stick').getBoundingClientRect();
+    return JSON.stringify({x: r.left + r.width/2, y: r.top + r.height/2}); })()`));
+  const mx0 = await evaluate('window.__roland.game.player.x');
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: mRect.x, y: mRect.y, button: 'left', clickCount: 1, pointerType: 'touch' });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mRect.x + 34, y: mRect.y, button: 'left', buttons: 1, pointerType: 'touch' });
+  await sleep(700);
+  const stickAchse = await evaluate('window.__roland.input.state.stick.x');
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: mRect.x + 34, y: mRect.y, button: 'left', pointerType: 'touch' });
+  await sleep(150);
+  const mx1 = await evaluate('window.__roland.game.player.x');
+  check('Stick steuert die Achse', stickAchse > 0.3, `stick.x=${stickAchse}`);
+  check('Stick bewegt den Spieler', mx1 - mx0 > 30, `dx=${(mx1 - mx0).toFixed(0)}`);
+  check('keine Fehler im Smartphone-Modus',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
+  results.push(`MOBIL ${mobile.canvasBreite}px Spielfeld, Stick ${mobile.stickGroesse}px, Knopf ${mobile.knopfHoehe}px`);
+
+  // Querformat: muss den Platz deutlich besser ausnutzen
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 892, height: 412, deviceScaleFactor: 2.6, mobile: true,
+  });
+  await sleep(700);
+  const land = JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game').getBoundingClientRect();
+    return JSON.stringify({
+      w: Math.round(c.width), h: Math.round(c.height),
+      fensterW: window.innerWidth, fensterH: window.innerHeight,
+      drehHinweis: getComputedStyle(document.querySelector('.rotate')).display !== 'none'
+    });
+  })()`));
+  check('Querformat nutzt die Höhe aus', land.h >= 340 && land.h <= land.fensterH,
+    `${land.w}x${land.h} in ${land.fensterW}x${land.fensterH}`);
+  check('Spielfeld wird im Querformat größer als im Hochformat',
+    land.h / land.fensterH > mobile.canvasBreite / mobile.fensterBreite,
+    `quer ${(land.h / land.fensterH).toFixed(2)} vs hoch ${(mobile.canvasBreite / mobile.fensterBreite).toFixed(2)}`);
+  check('Dreh-Hinweis verschwindet im Querformat', land.drehHinweis === false);
+  results.push(`QUER ${land.w}x${land.h} in ${land.fensterW}x${land.fensterH}`);
 } catch (e) {
   check('Browserprüfung ohne Abbruch', false, e.message);
 } finally {

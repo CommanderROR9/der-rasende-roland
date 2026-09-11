@@ -31,11 +31,17 @@ let gardeMode = 'start';
 let pendingOutfit = null;
 
 // ------------------------------------------------------------------ Scaling --
+// Am Rechner wird auf ganze/halbe Stufen skaliert (knackige Pixel). Auf
+// Touchgeräten darf der Faktor krumm sein, damit das Spielfeld den Bildschirm
+// wirklich ausnutzt — Größe ist dort wichtiger als perfekte Pixelraster.
 function fit() {
   const raw = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-  const scale = Math.max(1, Math.floor(raw * 2) / 2);
-  ui.canvas.style.width = Math.round(VIEW_W * scale) + 'px';
-  ui.canvas.style.height = Math.round(VIEW_H * scale) + 'px';
+  const coarse = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
+  const scale = coarse
+    ? Math.max(0.5, Math.min(3, Math.round(raw * 100) / 100))
+    : Math.max(1, Math.floor(raw * 2) / 2);
+  ui.canvas.style.width = Math.floor(VIEW_W * scale) + 'px';
+  ui.canvas.style.height = Math.floor(VIEW_H * scale) + 'px';
 }
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => setTimeout(fit, 120));
