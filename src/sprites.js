@@ -482,6 +482,20 @@ export const SPRITES = {
     '                ',
   ],
 
+  // Notenblatt, vom Wind getragen
+  blatt: [
+    ' .......... ',
+    ' .wwwwwwww. ',
+    ' .wKKKKw.w. ',
+    ' .wwwwwwww. ',
+    ' .wKKKKwww. ',
+    ' .wwwwwwww. ',
+    ' .wKKKKKww. ',
+    ' .wwwwwwww. ',
+    ' .wwwwwwww. ',
+    ' .......... ',
+  ],
+
   tuer: [
     'aaaaaaaaaaaaaaaa',
     'ammmmmmmmmmmmmmo',

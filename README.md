@@ -22,6 +22,20 @@ nächsten Akt ein Nerv mehr.
 Zwischendurch wechselt das Tempo: unterwegs gibt der Dirigent **Allegro** und später
 **Andante** vor, sichtbar im HUD und angesagt als Meldung.
 
+**Akt 3 — Open Air.** Freilichtbühne im Park, und hier macht das **Wetter** die Musik:
+es wechselt im Zyklus und verändert das Spiel.
+
+| Wetter | Wirkung |
+|---|---|
+| **Sonne** | brät von oben — im Frack steigt die Hitze am schnellsten |
+| **Wind** | Böen mit Vorwarnung drücken zur Seite, Notenblätter fliegen quer und bleiben im Gesicht hängen |
+| **Regen** | man wird nass, der Boden wird rutschig (weniger Grip) — unter dem **Vordach** trocknet man wieder |
+| **Kälte** | die Finger werden steif: langsamer und niedrigerer Sprung |
+
+Der Weg führt über die Wiese, wahlweise die Treppe hinauf auf die Bühne oder hinten herum,
+dann das Gerüst hinauf auf die Lichtbrücke. Der Dirigent steht unten auf der Bühne, und der
+Auftritt am Podium geht nur im Frack — bei Sonne. Belohnung: **Kantinenkaffee**.
+
 **Interludium — Cabrio zum Open Air.** Pseudo-3D-Landstraße in der Abendsonne, Sicht
 von hinten aufs offene Cabrio. Unterwegs ist einiges los: Kolonnen und Gegenverkehr,
 parkende LKW, Radarfallen (wer zu schnell vorbeifährt, wird geblitzt), Schlaglöcher,
@@ -116,15 +130,15 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 175 headless Checks
+tests/smoke.test.mjs 210 headless Checks
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 175 headless Checks: node tests/smoke.test.mjs
+npm test                        # 210 headless Checks: node tests/smoke.test.mjs
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 72 Checks in echtem Chromium
+npm run browser                 # 80 Checks in echtem Chromium
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```
 
@@ -144,7 +158,7 @@ Suiten laufen gegen die Live-URL.
 
 ## Als Nächstes
 
-Akt 3 Open Air mit Wetter (Wind, Regen, Hitze) · Akt 4 Orchestergraben ·
-Motorrad-Interludium (Nacht, Tunnel) · Finale mit Frack-Off · Epilog Kleingarten
+Akt 4 Orchestergraben (Oper am Abend) · Motorrad-Interludium (Nacht, Tunnel,
+kühlt den Hitzebalken) · Finale auf der Bühne mit Frack-Off · Epilog Kleingarten
 mit **Bratwurst-Grill** als kleinem Bonusspiel. Konzept und Stand:
 [docs/KONZEPT.md](docs/KONZEPT.md)

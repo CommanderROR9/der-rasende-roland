@@ -81,6 +81,16 @@ export class Game {
     this.met = {};
     this.hintQueue = [];
     this.taktChanges = (this.level.takts || []).map((t) => ({ ...t, done: false }));
+    // Wetter (Akt 3): Sonne, Wind, Regen, Kälte im Wechsel
+    this.wetter = (this.level.weather || []).map((w) => ({ ...w }));
+    this.wetterIdx = -1;
+    this.wetterTimer = 0;
+    this.wetterKind = null;
+    this.nass = 0;
+    this.gustDir = 0;
+    this.gustTimer = 0;
+    this.gustWarn = 0;
+    this.blaetter = [];
     this.lastTritt = null;
     this.state = 'play';
     this.stats = { time: 0, deckel: 0, taktHits: 0, akt: 1 };
@@ -198,6 +208,7 @@ export class Game {
     this.updateProjectiles(dt);
     this.updateHeat(dt);
     this.updateMorsch(dt);
+    this.updateWetter(dt);
     this.updateTriggers(dt);
     this.updateParticles(dt);
     this.updateCamera(dt);
@@ -219,7 +230,9 @@ export class Game {
     const axis = frozen ? 0 : inp.axis();
     const slow = 1 - this.diff.tenorSlow * this.slowField;
     const boost = this.frackBoost > 0 ? 1.35 : 1;
-    const speed = this.outfit.speed * slow * boost;
+    // Wetter: Regen macht den Boden rutschig, Kälte macht langsam und steif
+    const wetterTempo = (this.nassFaktor ? 0.88 : 1) * (this.wetterKind === 'kaelte' ? 0.88 : 1);
+    const speed = this.outfit.speed * slow * boost * wetterTempo;
 
     // Ducken verändert die Trefferfläche
     const wantDuck = !frozen && inp.down() && p.onGround;
@@ -233,7 +246,8 @@ export class Game {
     }
 
     const target = axis * speed;
-    const rate = (axis !== 0 ? PHYS.accel : PHYS.friction) * dt;
+    const griff = this.nassFaktor ? 0.6 : 1;      // nass = weniger Grip
+    const rate = (axis !== 0 ? PHYS.accel : PHYS.friction) * griff * dt;
     p.vx += clamp(target - p.vx, -rate, rate);
     if (axis === 0 && Math.abs(p.vx) < 5) p.vx = 0;
     if (axis !== 0) p.dir = axis > 0 ? 1 : -1;
@@ -252,7 +266,7 @@ export class Game {
       p.jumpBuf = Math.max(0, p.jumpBuf - dt);
     }
     if (p.jumpBuf > 0 && p.coyote > 0 && !frozen) {
-      p.vy = this.outfit.jump;
+      p.vy = this.outfit.jump * (this.wetterKind === 'kaelte' ? 0.84 : 1);
       p.onGround = false; p.coyote = 0; p.jumpBuf = 0;
       this.audio.play('jump');
     }
@@ -360,6 +374,81 @@ export class Game {
       if ((v === 2 || v === 3) && p.y + p.h <= ty * TILE + 1) return { v, tx, ty };
     }
     return null;
+  }
+
+  /** Wetterzyklus samt Wirkung. */
+  updateWetter(dt) {
+    if (!this.wetter.length) return;
+    if (this.wetterIdx < 0 || this.wetterTimer <= 0) {
+      this.wetterIdx = (this.wetterIdx + 1) % this.wetter.length;
+      const w = this.wetter[this.wetterIdx];
+      this.wetterTimer = w.dur;
+      this.wetterKind = w.kind;
+      this.message(w.label, 6, 2);
+      this.audio.play('gate');
+    }
+    this.wetterTimer -= dt;
+    const p = this.player;
+
+    // Wind: Böen mit Vorwarnung, dazu fliegende Notenblätter
+    if (this.wetterKind === 'wind') {
+      if (this.gustTimer <= 0 && this.gustWarn <= 0 && Math.random() < dt * 0.35) {
+        this.gustWarn = 0.9;
+        this.gustDir = Math.random() < 0.5 ? -1 : 1;
+      }
+      if (this.gustWarn > 0) {
+        this.gustWarn -= dt;
+        if (this.gustWarn <= 0) { this.gustTimer = 1.1; this.audio.play('tenor'); }
+      }
+      if (this.gustTimer > 0) {
+        this.gustTimer -= dt;
+        p.vx += this.gustDir * 62 * dt;
+      }
+      if (Math.random() < dt * 2.2 && this.blaetter.length < 6) {
+        this.blaetter.push({
+          x: this.gustDir > 0 ? p.x - 120 : p.x + 120,
+          y: p.y - 10 - Math.random() * 26,
+          vx: (this.gustDir || 1) * (40 + Math.random() * 40),
+          vy: 12 + Math.random() * 14,
+          t: Math.random() * 6,
+          alive: true,
+        });
+      }
+    } else {
+      this.gustTimer = 0;
+      this.gustWarn = 0;
+    }
+
+    // Notenblätter treiben und stoßen den Spieler an
+    for (const b of this.blaetter) {
+      b.t += dt;
+      b.x += b.vx * dt;
+      b.y += (b.vy + Math.sin(b.t * 3) * 18) * dt;
+      if (b.y > 26 * TILE) b.alive = false;
+      const box = { x: b.x, y: b.y, w: 12, h: 10 };
+      if (overlap(p, box)) {
+        b.alive = false;
+        this.stunTimer = Math.max(this.stunTimer, 0.6);
+        this.message('NOTENBLATT IM GESICHT. SEHR WÜRDIG.', 4, 2);
+        this.audio.play('morsch');
+      }
+    }
+    this.blaetter = this.blaetter.filter((b) => b.alive);
+
+    // Regen: nass werden, unter dem Vordach trocknen
+    if (this.wetterKind === 'regen') {
+      this.nass = clamp(this.nass + (this.inShelter(p) ? -26 : 19) * dt, 0, 100);
+    } else {
+      this.nass = clamp(this.nass - 14 * dt, 0, 100);
+    }
+    this.nassFaktor = this.nass > 55 ? 1 : 0;
+  }
+
+  inShelter(p) {
+    for (const sh of this.level.shelters || []) {
+      if (p.x + p.w > sh.x && p.x < sh.x + sh.w && p.y + p.h > sh.y && p.y < sh.y + sh.h) return true;
+    }
+    return false;
   }
 
   updateMorsch(dt) {
@@ -623,6 +712,7 @@ export class Game {
     const moving = Math.abs(p.vx) > 25;
     let rate = this.outfit.heatBase;
     rate += light ? this.outfit.lightHeat : TUNE.heatShade;
+    if (this.wetterKind === 'sonne') rate += this.outfit.id === 'frack' ? 3.2 : 1.1;
     if (moving) rate += TUNE.heatRun;
     this.heat = clamp(this.heat + rate * dt, 0, TUNE.heatMax);
     this.inLightNow = light;
@@ -905,6 +995,12 @@ export class Game {
       hasMappe: this.hasMappe,
       label: this.nearestLabel(),
       standNear: !!this.nearStand(),
+      wetter: this.wetterKind,
+      nass: Math.round(this.nass),
+      gustDir: this.gustTimer > 0 ? this.gustDir : (this.gustWarn > 0 ? this.gustDir : 0),
+      gustWarn: this.gustWarn > 0,
+      blaetter: this.blaetter.length,
+      friert: this.wetterKind === 'kaelte',
     };
   }
 
@@ -926,8 +1022,10 @@ export class Game {
     this.drawGoal(ctx, camX, camY);
     this.drawEntities(ctx, camX, camY);
     this.drawProjectiles(ctx, camX, camY);
+    this.drawWetter(ctx, camX, camY);
     this.drawPlayer(ctx, camX, camY);
     this.drawParticles(ctx, camX, camY);
+    this.drawWetterFx(ctx);
     this.drawScreenFx(ctx);
   }
 
@@ -1272,6 +1370,52 @@ export class Game {
       ctx.fillRect(Math.round(q.x - camX), Math.round(q.y - camY), 2, 2);
     }
     ctx.globalAlpha = 1;
+  }
+
+  drawWetter(ctx, camX, camY) {
+    // Vordach als gestreiftes Dach
+    for (const sh of this.level.shelters || []) {
+      const x = Math.round(sh.x - camX);
+      const y = Math.round(sh.y - camY);
+      for (let i = 0; i < sh.w; i += 8) {
+        ctx.fillStyle = i % 16 === 0 ? '#c8402f' : '#e8e2d0';
+        ctx.fillRect(x + i, y - 10, 8, 10);
+      }
+      ctx.fillStyle = '#4a3a52';
+      ctx.fillRect(x, y - 12, sh.w, 2);
+    }
+    // fliegende Notenblätter
+    const blatt = this.spr('blatt');
+    for (const b of this.blaetter) {
+      blit(ctx, blatt, Math.round(b.x - camX), Math.round(b.y - camY + Math.sin(b.t * 4) * 2), b.vx < 0);
+    }
+  }
+
+  drawWetterFx(ctx) {
+    if (this.wetterKind === 'regen') {
+      ctx.fillStyle = 'rgba(170,195,225,0.45)';
+      for (let i = 0; i < 46; i++) {
+        const x = Math.round((hash2(i, 1, 3) * this.vw + this.time * 320 + i * 6) % this.vw);
+        const y = Math.round((hash2(i, 2, 5) * this.vh + this.time * 1100) % this.vh);
+        ctx.fillRect(x, y, 1, 4);
+      }
+      ctx.fillStyle = `rgba(40,60,90,${0.16 + this.nass / 700})`;
+      ctx.fillRect(0, 0, this.vw, this.vh);
+    } else if (this.wetterKind === 'sonne') {
+      ctx.fillStyle = 'rgba(255,190,110,0.12)';
+      ctx.fillRect(0, 0, this.vw, this.vh);
+      ctx.fillStyle = 'rgba(255,220,150,0.10)';
+      ctx.fillRect(0, 0, this.vw, 8);
+    } else if (this.wetterKind === 'kaelte') {
+      ctx.fillStyle = 'rgba(150,190,230,0.14)';
+      ctx.fillRect(0, 0, this.vw, this.vh);
+    }
+    if (this.gustWarn) {
+      ctx.fillStyle = 'rgba(232,196,106,0.75)';
+      const cx = this.gustDir > 0 ? 8 : this.vw - 14;
+      ctx.fillRect(cx, this.vh / 2 - 6, 6, 2);
+      ctx.fillRect(this.gustDir > 0 ? cx + 4 : cx - 2, this.vh / 2 - 9, 2, 8);
+    }
   }
 
   drawScreenFx(ctx) {

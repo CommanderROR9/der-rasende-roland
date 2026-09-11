@@ -14,6 +14,7 @@ const ui = {
   aktsub: $('#aktsub'), hintbar: $('#hintbar'),
   deckel: $('#deckel'), ohro: $('#ohro'), kluft: $('#kluft'),
   hitze: $('#hitze i'), takt: $('#takt .beat'), bpm: $('#bpm'), nerven: $('#nerven'),
+  wetter: $('#wetter'), nass: $('#nass i'),
   title: $('#title'), startBtn: $('#startBtn'), resetBtn: $('#resetBtn'),
   garde: $('#garde'), gardeTitle: $('#gardeTitle'), gardeCards: $('#gardeCards'), gardeBack: $('#gardeBack'),
   pause: $('#pause'), resumeBtn: $('#resumeBtn'), quitBtn: $('#quitBtn'),
@@ -239,7 +240,8 @@ function refreshHud() {
   }
   ui.walkReadout.classList.remove('hidden');
   ui.racerReadout.classList.add('hidden');
-  const sig = [h.nerves, h.heat, Math.round(h.ohropax), h.outfit.id, h.deckel, h.bpm, h.glanz > 0.5, h.hint, h.hidden].join('|');
+  const sig = [h.nerves, h.heat, Math.round(h.ohropax), h.outfit.id, h.deckel, h.bpm,
+    h.glanz > 0.5, h.hint, h.hidden, h.wetter, h.nass, h.gustDir, h.friert].join('|');
   if (sig === hudPrev) return;
   hudPrev = sig;
   ui.deckel.textContent = `${h.deckel}/${h.deckelTotal}`;
@@ -249,7 +251,16 @@ function refreshHud() {
   ui.hitze.parentElement.classList.toggle('hot', h.heat > 60);
   ui.nerven.textContent = '●'.repeat(h.nerves) + '○'.repeat(Math.max(0, h.maxNerves - h.nerves));
   ui.bpm.textContent = String(h.bpm);
-  ui.aktsub.textContent = LEVEL.name + (h.hidden ? ' · VERSTECKT' : h.slow ? ' · TEMPO HÄNGT' : h.glanz > 0.5 ? ' · GLANZALARM' : '');
+  const WETTER_NAMEN = { sonne: 'SONNE', wind: 'WIND', regen: 'REGEN', kaelte: 'KÄLTE' };
+  if (ui.wetter) ui.wetter.textContent = WETTER_NAMEN[h.wetter] || '—';
+  if (ui.nass) {
+    ui.nass.style.width = Math.min(100, h.nass) + '%';
+    ui.nass.parentElement.classList.toggle('hot', h.nass > 55);
+  }
+  const zusatz = h.friert ? ' · FINGER STEIFF'
+    : (h.gustDir ? (h.gustDir > 0 ? ' · WINDSTOSS →' : ' · ← WINDSTOSS') : '');
+  ui.aktsub.textContent = LEVEL.name + zusatz
+    + (h.hidden ? ' · VERSTECKT' : h.slow ? ' · TEMPO HÄNGT' : h.glanz > 0.5 ? ' · GLANZALARM' : '');
   if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
   else ui.hintbar.classList.add('hidden');
 }

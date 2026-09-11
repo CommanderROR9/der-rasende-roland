@@ -292,6 +292,7 @@ export const LEVELS = [
   { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', build: buildAkt1 },
   { id: 'akt2', name: 'AKT 2 — DIE PROBE', build: buildAkt2 },
   { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', build: buildCabrio },
+  { id: 'akt3', name: 'AKT 3 — OPEN AIR', build: buildAkt3 },
 ];
 
 // ============================================================================
@@ -338,5 +339,138 @@ export function buildCabrio() {
               { at: 0.74, rain: false, label: 'DER REGEN LÄSST NACH' }],
     takts: [{ at: 0.6, bpm: 124, label: 'NOCH ZWÖLF MINUTEN BIS ZUM AUFTRITT' }],
     goals: { distance: null },
+  };
+}
+
+// ============================================================================
+// AKT 3 — OPEN AIR
+// Freilichtbühne im Park. Neue Mechanik: das Wetter wechselt (Sonne, Wind,
+// Regen, Kälte) und verändert das Spiel — Hitze im Frack, Windböen und
+// fliegende Notenblätter, rutschiger Boden, steife Finger. Unter dem Vordach
+// wird man wieder trocken; der Auftritt am Ende geht nur im Frack.
+// ============================================================================
+export function buildAkt3() {
+  const W3 = 140;
+  const H3 = 26;
+  const grid = [];
+  for (let y = 0; y < H3; y++) grid.push(new Array(W3).fill(1));
+
+  const spawns = [];
+  const gates = [];
+  const lights = [];
+  const alcoves = [];
+  const hints = [];
+  const shelters = [];
+
+  const carve = (x, y, w, h) => {
+    for (let j = y; j < y + h; j++) {
+      for (let i = x; i < x + w; i++) {
+        if (j >= 0 && j < H3 && i >= 0 && i < W3) grid[j][i] = 0;
+      }
+    }
+  };
+  const rect = (x, y, w, h, kind) => {
+    const v = kind === '=' ? 2 : kind === 'x' ? 3 : 1;
+    for (let j = y; j < y + h; j++) {
+      for (let i = x; i < x + w; i++) {
+        if (j >= 0 && j < H3 && i >= 0 && i < W3) grid[j][i] = v;
+      }
+    }
+  };
+  const e = (kind, tx, surfaceRow, extra = {}) => spawns.push({ kind, tx, walkRow: surfaceRow - 1, ...extra });
+  const lamp = (tx, ty) => lights.push({ x: (tx - 2) * TILE, y: ty * TILE, w: 5 * TILE, h: 4 * TILE });
+  const alcove = (tx, ty, w = 2) => alcoves.push({ x: tx * TILE, y: ty * TILE, w: w * TILE, h: TILE });
+  const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
+
+  // ---------------------------------------------------------------- Hohlräume --
+  carve(1, 20, 20, 5);        // Parkplatz x1..20
+  carve(21, 18, 44, 7);       // Wiese x21..64
+  carve(65, 8, 40, 17);       // Bühne und Gerüst x65..104
+  carve(105, 21, 20, 4);      // Hinter der Bühne x105..124
+
+  // ------------------------------------------------------- Bühne, Treppe, Turm --
+  rect(65, 24, 3, 1);         // Treppenstufen zur Bühne (je 16 px)
+  rect(68, 23, 3, 1);
+  rect(71, 22, 3, 1);
+  rect(74, 21, 3, 1);
+  rect(77, 21, 18, 1);        // Bühnenboden x77..94, Kante 336
+  rect(99, 23, 3, 1, '=');    // hinterer Aufgang zur Bühne, Kante 368
+
+  // Gerüst über der Bühne (je 32 px). Die Lichtbrücke ist einseitig, damit
+  // man von unten hinaufspringen kann, ohne sich den Kopf zu stoßen.
+  rect(84, 19, 4, 1, '=');
+  rect(88, 17, 4, 1, '=');
+  rect(84, 15, 4, 1, '=');
+  rect(88, 13, 4, 1, '=');
+  rect(76, 11, 22, 1, '=');   // Lichtturm / Brücke x76..97, Kante 176
+
+  // Vordach über der Wiese (Schutz vor Regen), solide
+  rect(30, 19, 15, 1);
+  shelters.push({ x: 30 * TILE, y: 20 * TILE, w: 15 * TILE, h: 5 * TILE });
+
+  // ------------------------------------------------------------- Besetzung --
+  e('spawn', 4, 25, { isSpawn: true });
+  e('stand', 8, 25);
+  e('item', 12, 25, { item: 'bierdeckel' });
+  lamp(10, 21);
+
+  e('item', 26, 25, { item: 'bierdeckel' });
+  e('piccolo', 34, 25, { patrol: [32, 38], dir: -1 });
+  e('item', 40, 25, { item: 'ohropax' });
+  alcove(44, 24);
+  e('sopran', 47, 25, { dir: -1 });
+  e('item', 52, 25, { item: 'bierdeckel' });
+  e('koffer', 57, 25, { patrol: [55, 61] });
+  lamp(58, 20);
+
+  lamp(80, 18);
+  e('dirigent', 88, 21, { dir: -1 });
+  e('tenor', 92, 21, { patrol: [79, 93], dir: -1 });
+  e('item', 86, 21, { item: 'wasser' });
+  e('item', 82, 11, { item: 'bierdeckel' });   // oben auf der Brücke
+  lamp(90, 12);
+
+  // Auftritt: nur im Frack
+  rect(93, 9, 1, 3);
+  gates.push({ tx: 93, ty: 9, tw: 1, th: 3, need: 'frack', open: false });
+  e('stand', 89, 11);
+  e('item', 96, 11, { item: 'bierdeckel' });
+
+  // Hinter der Bühne
+  e('koffer', 110, 25, { patrol: [107, 114] });
+  e('item', 118, 25, { item: 'wasser' });
+  e('piccolo', 121, 25, { patrol: [119, 123], dir: -1 });
+
+  const goal = {
+    x: 96 * TILE, y: 9 * TILE, w: TILE, h: 3 * TILE,
+    name: 'PODIUM', need: null, locked: '',
+  };
+
+  // Das Wetter wechselt und verändert das Spiel
+  const wetter = [
+    { kind: 'sonne', dur: 20, label: 'SONNE — DER FRACK WIRD ZUR SAUNA' },
+    { kind: 'wind', dur: 24, label: 'WIND — DIE NOTEN FLIEGEN' },
+    { kind: 'regen', dur: 24, label: 'REGEN — DER BODEN WIRD RUTSCHIG' },
+    { kind: 'kaelte', dur: 22, label: 'KÄLTE — DIE FINGER WERDEN STEIFF' },
+  ];
+
+  tip(1, 'AKT 3 — OPEN AIR. DAS WETTER MACHT HIER DIE MUSIK');
+  tip(22, 'UNTER DEM VORDACH WIRD MAN WIEDER TROCKEN');
+  tip(65, 'TREPPE HOCH AUF DIE BÜHNE — ODER HINTEN HERUM');
+  tip(78, 'DAS GERÜST GEHT BIS ZUM LICHTTURM HINAUF');
+  tip(86, 'DER DIRIGENT STEHT AUF DER BÜHNE. WIE IMMER');
+  tip(92, 'ZUM AUFTRITT AM PODIUM NUR IM FRACK — UND DA OBEN BRENNT DIE SONNE');
+  tip(119, 'HINTER DER BÜHNE. HIER STEHEN DIE KOFFER');
+
+  return {
+    id: 'akt3',
+    mode: 'sidescroller',
+    name: 'AKT 3 — OPEN AIR',
+    subtitle: 'Freilichtbühne im Park. Das Wetter spielt mit — leider.',
+    w: W3, h: H3,
+    grid, spawns, gates, lights, alcoves, hints, shelters, weather: wetter,
+    goal,
+    bpm: 100,
+    deckelTotal: spawns.filter((s) => s.kind === 'item' && s.item === 'bierdeckel').length,
   };
 }

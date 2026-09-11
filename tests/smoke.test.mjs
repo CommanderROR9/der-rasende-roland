@@ -1,6 +1,6 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1, buildAkt2, buildCabrio, LEVELS } from '../src/world.js';
+import { buildAkt1, buildAkt2, buildAkt3, buildCabrio, LEVELS } from '../src/world.js';
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
@@ -930,6 +930,177 @@ function place(game, px, py) {
   check('Verkehr bleibt begrenzt', r6.traffic.length < 40, `n=${r6.traffic.length}`);
   check('Straßenrand bleibt begrenzt', r6.roadside.length < 300, `n=${r6.roadside.length}`);
   events.length = 0;
+}
+
+// ============================================================== AKT 3 ========
+{
+  const level = buildAkt3();
+  check('Akt 3 existiert als eigenes Levelmodul', level.id === 'akt3' && level.w >= 120);
+  check('Akt 3: fünf Bierdeckel', level.deckelTotal === 5, `n=${level.deckelTotal}`);
+  check('Akt 3: vier Wetterlagen vorgesehen', (level.weather || []).length === 4
+    && level.weather.map((w) => w.kind).join(',') === 'sonne,wind,regen,kaelte');
+  check('Akt 3: Vordach als Schutz vorhanden', (level.shelters || []).length >= 1);
+  check('Akt 3: Auftritt am Podium nur im Frack',
+    level.gates.length === 1 && level.gates[0].need === 'frack');
+  check('Akt 3: Gerüst in Sprunghöhe (32 px)',
+    level.grid[19][84] === 2 && level.grid[17][88] === 2
+    && level.grid[15][84] === 2 && level.grid[13][88] === 2);
+  check('Akt 3: Lichtbrücke ist begehbar, aber nicht massiv', level.grid[11][80] === 2);
+  check('Akt 3: Bühnenboden vorhanden', level.grid[21][85] === 1);
+  check('Akt 3: steht im Register',
+    LEVELS.length >= 4 && LEVELS[3].id === 'akt3');
+}
+
+// Wetter: Zyklus, Wirkung, Notenblätter, Vordach
+{
+  const mkAkt3 = (difficulty = 'gemuetlich') => {
+    const level = buildAkt3();
+    const input = createInput(null);
+    const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {},
+      view: VIEW_DESKTOP, difficulty });
+    game.reset('schwarz');
+    return { level, input, game };
+  };
+
+  const { game } = mkAkt3();
+  game.update(1 / 60);                                  // erster Frame setzt das Wetter
+  check('Akt 3 startet mit Sonne', game.hud.wetter === 'sonne', String(game.hud.wetter));
+  check('Wetter wird angesagt', !!game.hud.hint && /SONNE/.test(game.hud.hint), String(game.hud.hint));
+  step(game, 21);
+  check('Wetter wechselt nach der Standzeit', game.hud.wetter === 'wind', String(game.hud.wetter));
+  step(game, 25);
+  check('danach Regen', game.hud.wetter === 'regen', String(game.hud.wetter));
+  step(game, 25);
+  check('dann Kälte', game.hud.wetter === 'kaelte', String(game.hud.wetter));
+
+  // Sonne brät, im Frack stärker
+  const heiss = (outfit) => {
+    const { game: g } = mkAkt3();
+    g.reset(outfit);
+    place(g, 40 * 16, 25 * 16 - PHYS.playerH);
+    step(g, 3);
+    return g.heat;
+  };
+  const hSchwarz = heiss('schwarz');
+  const hFrack = heiss('frack');
+  check('Sonne wärmt jeden, den Frack am stärksten', hFrack > hSchwarz * 2,
+    `schwarz ${hSchwarz.toFixed(1)} frack ${hFrack.toFixed(1)}`);
+
+  // Wind wirkt als Kraft
+  const { game: gWind } = mkAkt3();
+  gWind.wetterIdx = 0; gWind.wetterTimer = 0; gWind.update(1 / 60);   // in den Wind wechseln
+  check('Windphase aktiv', gWind.wetterKind === 'wind', String(gWind.wetterKind));
+  let gueste = 0;
+  for (let i = 0; i < 60 * 20 && !gueste; i++) {
+    gWind.update(1 / 60);
+    if (gWind.gustTimer > 0) gueste = 1;
+  }
+  check('Wind schickt Böen', gueste === 1);
+  check('Wind trägt Notenblätter', gWind.blaetter.length > 0 || gWind.wetterKind !== 'wind');
+
+  // Notenblatt trifft
+  const { game: gBlatt } = mkAkt3();
+  const p = place(gBlatt, 40 * 16, 25 * 16 - PHYS.playerH);
+  gBlatt.blaetter.push({ x: p.x, y: p.y + 4, vx: 0, vy: 0, t: 0, alive: true });
+  gBlatt.update(1 / 60);
+  const blattGemeldet = `${gBlatt.hud.hint || ''} ${JSON.stringify((gBlatt.hintQueue || []).map((q) => q.text))}`;
+  check('Notenblatt im Gesicht bremst kurz',
+    gBlatt.stunTimer > 0 && /NOTENBLATT/.test(blattGemeldet),
+    `stun=${gBlatt.stunTimer} meldung=${blattGemeldet.slice(0, 60)}`);
+
+  // Regen: nass werden und unter dem Vordach trocknen
+  const { game: gRegen } = mkAkt3();
+  gRegen.wetterIdx = 1; gRegen.wetterTimer = 0; gRegen.update(1 / 60);   // in den Regen
+  check('Regenphase aktiv', gRegen.wetterKind === 'regen', String(gRegen.wetterKind));
+  place(gRegen, 58 * 16, 25 * 16 - PHYS.playerH);       // draußen auf der Wiese
+  step(gRegen, 4);
+  const nassDraussen = gRegen.nass;
+  check('im Regen wird man nass', nassDraussen > 40, `nass=${nassDraussen.toFixed(0)}`);
+  place(gRegen, 36 * 16, 25 * 16 - PHYS.playerH);       // unter das Vordach
+  step(gRegen, 2);
+  check('unter dem Vordach trocknet man', gRegen.nass < nassDraussen,
+    `${gRegen.nass.toFixed(0)} statt ${nassDraussen.toFixed(0)}`);
+  check('nass macht den Boden rutschig', gRegen.hud.nass > 0);
+
+  // Kälte: steifer Sprung
+  const sprungHoehe = (wetterKind) => {
+    const { game: g, input: i } = mkAkt3();
+    const idx = g.wetter.findIndex((w) => w.kind === wetterKind);
+    g.wetterIdx = idx - 1; g.wetterTimer = 0;      // beim nächsten Frame genau diese Lage
+    g.update(1 / 60);
+    place(g, 40 * 16, 25 * 16 - PHYS.playerH);
+    step(g, 0.3);
+    const y0 = g.player.y;
+    i.setKey('jump', true);
+    let hoch = 0;
+    for (let k = 0; k < 60; k++) { g.update(1 / 60); hoch = Math.max(hoch, y0 - g.player.y); }
+    return hoch;
+  };
+  const warm = sprungHoehe('sonne');
+  const kalt = sprungHoehe('kaelte');
+  check('Kälte macht die Finger steif (niedrigerer Sprung)', kalt < warm,
+    `kalt ${kalt.toFixed(1)}px vs warm ${warm.toFixed(1)}px`);
+}
+
+// Durchspiel-Bot für Akt 3 (Treppe, Gerüst, Lichtbrücke, Podium)
+{
+  const level = buildAkt3();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {}, view: VIEW_DESKTOP });
+  game.reset('schwarz');
+  game.maxNerves = 99; game.nerves = 99;
+  const route = [
+    { wp: [10, 25] }, { wp: [40, 25] }, { wp: [58, 25] },
+    { wp: [66, 24] }, { wp: [69, 23] }, { wp: [72, 22] }, { wp: [75, 21] },
+    { wp: [80, 21] },
+    { wp: [85, 19] }, { wp: [89, 17] }, { wp: [85, 15] }, { wp: [89, 13] },
+    { wp: [80, 11] }, { wp: [91, 11] },
+    { outfit: 'frack' },
+    { wp: [96, 11] },
+  ];
+  const failures = [];
+  let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
+  for (const stepItem of route) {
+    if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    const [wx, row] = stepItem.wp;
+    const tx = wx * TILE + 8;
+    const feetY = row * TILE;
+    let ok = false, bestDist = Infinity, noProgress = 0;
+    for (let i = 0; i < 16 * 60; i++) {
+      const p = game.player;
+      const d = tx - (p.x + p.w / 2);
+      const zielTiefer = feetY > p.y + p.h + 6;
+      const amZielX = Math.abs(d) < 12;
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      if (amZielX && zielTiefer) richtung = letzteRichtung;
+      else if (richtung !== 0) letzteRichtung = richtung;
+      input.setKey('right', richtung > 0);
+      input.setKey('left', richtung < 0);
+      const higher = feetY < p.y + p.h - 8;
+      const footRow = Math.floor((p.y + p.h + 1) / TILE);
+      const holeAhead = feetY <= p.y + p.h + 4
+        && game.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0;
+      if (Math.abs(d) < bestDist - 4) { bestDist = Math.abs(d); noProgress = 0; } else noProgress++;
+      const needJump = higher || holeAhead || noProgress > 20;
+      if (jumpHold > 0) { input.setKey('jump', true); jumpHold -= 1; if (jumpHold === 0) jumpRelease = 3; }
+      else if (jumpRelease > 0) { input.setKey('jump', false); jumpRelease -= 1; }
+      else if (p.onGround && needJump) { jumpHold = 16; input.setKey('jump', true); jumpHold -= 1; }
+      else input.setKey('jump', false);
+      game.update(1 / 60);
+      if (game.state === 'paused') game.resume();
+      if (game.state === 'collapse') game.respawnFromCheckpoint();
+      if (game.state === 'complete') { ok = true; break; }
+      if (Math.abs(d) < 8 && Math.abs((p.y + p.h) - feetY) < 18 && p.onGround) { ok = true; break; }
+    }
+    if (!ok) {
+      const p = game.player;
+      failures.push(`${wx}/${row} (x=${p.x.toFixed(0)} fuß=${(p.y + p.h).toFixed(0)} wetter=${game.wetterKind})`);
+    }
+  }
+  check('Akt 3: Bot läuft Treppe, Gerüst und Brücke', failures.length === 0, failures.join(' | '));
+  check('Akt 3: Route endet am Podium', game.state === 'complete', `state=${game.state}`);
+  check('Akt 3: Frack öffnet den Auftritt', game.gates[0].open === true);
+  check('Akt 3: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
 // ------------------------------------------------------ Pause & Langzeitlauf --

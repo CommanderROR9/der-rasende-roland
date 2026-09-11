@@ -136,8 +136,13 @@ Browser-Durchlauf.
   lenken; Gegenverkehr, LKW, Regenguss mit Gripverlust, Radarfallen, kippender
   Notenständer; Abschlusstafel mit Fahrzeit, Höchsttempo und Kontakten.
 
-**Geplant:** Akte 3–8 (Open Air mit Wetter, Orchestergraben, Bühne, Finale),
-Motorrad-Interludium (Nacht, Tunnel, kühlt den Hitzebalken), Epilog Kleingarten.
+- **Akt 3 (Open Air):** Freilichtbühne mit **Wetterzyklus** (Sonne/Wind/Regen/Kälte),
+  Windböen mit Vorwarnung und fliegenden Notenblättern, Nässe mit Rutschgefahr und
+  Vordach zum Trocknen, Kälte mit steiferen Fingern; Gerüstaufstieg zur Lichtbrücke,
+  Dirigent auf der Bühne, Frack-Gate am Podium.
+
+**Geplant:** Akte 4–8 (Orchestergraben, Bühne, Finale), Motorrad-Interludium
+(Nacht, Tunnel, kühlt den Hitzebalken), Epilog Kleingarten.
 
 **Idee für später — Bratwurst-Grill (Bonusspiel):** ein kleines Minigame im Kleingarten-
 Epilog: Würste im Takt wenden (die Taktmechanik aus dem Spiel, nur entspannt), Kohle

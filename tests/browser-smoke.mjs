@@ -490,6 +490,42 @@ try {
 
   await evaluate("window.__roland.loadAct(0)");
 
+  // --- Akt 3 Open Air: Wetter im Browser ----------------------------------
+  await evaluate("window.__roland.loadAct(3)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(900);
+  const akt3 = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.game.level.name,
+    wetter: window.__roland.game.hud.wetter,
+    dom: document.getElementById('wetter').textContent,
+    phasen: (window.__roland.game.level.weather || []).length,
+    vordach: (window.__roland.game.level.shelters || []).length,
+    state: window.__roland.game.state
+  })`));
+  check('Akt 3 lädt und läuft', akt3.name.includes('AKT 3') && akt3.state === 'play', JSON.stringify(akt3));
+  check('Wetter steht im HUD', akt3.dom === 'SONNE' && akt3.wetter === 'sonne', JSON.stringify(akt3));
+  check('Akt 3: vier Wetterlagen und ein Vordach',
+    akt3.phasen === 4 && akt3.vordach >= 1, JSON.stringify(akt3));
+
+  // Wetterwechsel im echten Browser abwarten (Sonne -> Wind)
+  let gewechselt = null;
+  for (let i = 0; i < 40 && !gewechselt; i++) {
+    await sleep(600);
+    const w = await evaluate('window.__roland.game.hud.wetter');
+    if (w === 'wind') gewechselt = w;
+  }
+  check('Wetter wechselt im Browser', gewechselt === 'wind', String(gewechselt));
+  const windProbe = JSON.parse(await evaluate(`JSON.stringify({
+    blaetter: window.__roland.game.blaetter.length,
+    dom: document.getElementById('wetter').textContent,
+    errors: window.__errors
+  })`));
+  check('Wind bringt Notenblätter', windProbe.blaetter > 0, JSON.stringify(windProbe));
+  check('keine Fehler in Akt 3', windProbe.errors.length === 0, JSON.stringify(windProbe.errors));
+  await evaluate("window.__roland.loadAct(0)");
+
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
   await send('Emulation.setDeviceMetricsOverride', {
     width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
