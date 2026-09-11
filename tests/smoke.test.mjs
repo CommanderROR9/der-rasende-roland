@@ -1,6 +1,6 @@
 // tests/smoke.test.mjs — headless Tests der Simulation (kein Browser, kein Canvas).
 // Aufruf: node tests/smoke.test.mjs
-import { buildAkt1, buildAkt2, buildAkt3, buildCabrio, LEVELS } from '../src/world.js';
+import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildCabrio, LEVELS } from '../src/world.js';
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
@@ -515,6 +515,7 @@ function place(game, px, py) {
   // danach zwingend ein paar Frames loslassen — sonst gibt es keine neue
   // Sprungkante und der Bot hüpft nie wieder.
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
+  game.wetterIdx = 0; game.wetterTimer = 9999; game.wetterKind = 'sonne';   // ruhiges Wetter: die Route prüft Geometrie, nicht Sturm
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
     const [wx, row] = stepItem.wp;
@@ -1103,6 +1104,132 @@ function place(game, px, py) {
   check('Akt 3: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
+// ============================================================ AKT 4: GRABEN ===
+{
+  const lv = buildAkt4();
+  check('Akt 4: Graben ist dunkel und als solcher markiert',
+    lv.setting === 'graben' && lv.dark === true, `${lv.setting}/${lv.dark}`);
+  check('Akt 4: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
+  check('Akt 4: zwei Versenkungen, ein Souffleurkasten',
+    lv.elevators.length === 2 && lv.spooks.length === 1);
+  check('Akt 4: Auftritt nur im Frack', lv.goal.need === 'frack');
+  check('Akt 4: Pultlampen als Lichtquellen', lv.gleams.length >= 10, String(lv.gleams.length));
+
+  const mk4 = (difficulty = 'gemuetlich') => {
+    const g = new Game({
+      level: buildAkt4(), input: createInput(null),
+      audio: { play() {}, engine() {}, engineOff() {} },
+      events: () => {}, view: VIEW_DESKTOP, difficulty,
+    });
+    g.reset('schwarz');
+    return g;
+  };
+
+  const { game: g4 } = { game: mk4() };
+  const g0 = lv.gleams[1];
+  check('Akt 4: an der Pultlampe ist es hell',
+    g4.lightAt(g0.tx, g0.ty) > 0.6, g4.lightAt(g0.tx, g0.ty).toFixed(2));
+  let dunkelster = 1;
+  for (let tx = 22; tx < 34; tx++) {
+    for (let ty = 20; ty < 25; ty++) dunkelster = Math.min(dunkelster, g4.lightAt(tx, ty));
+  }
+  check('Akt 4: abseits der Lampen ist es dunkel', dunkelster < 0.15, `dunkelster ${dunkelster.toFixed(2)}`);
+  check('Akt 4: eigene Lampe macht die Umgebung sichtbar',
+    g4.lightAt(Math.floor(g4.player.x / TILE), Math.floor(g4.player.y / TILE)) > 0.3);
+
+  // Versenkung: hinauf und wieder herunter
+  const lift = g4.entities.find((e) => e.kind === 'lift');
+  place(g4, lift.x + 20, lift.y - PHYS.playerH);
+  step(g4, 0.4);
+  const yStart = g4.player.y;
+  let yHoch = yStart, obenErreicht = false;
+  for (let i = 0; i < 60 * 14; i++) {
+    g4.update(1 / 60);
+    if (g4.player.y < yHoch) yHoch = g4.player.y;
+    if (g4.player.y < lift.top + PHYS.playerH + 4) [obenErreicht] = [true];
+  }
+  check('Akt 4: Versenkung nimmt den Spieler mit nach oben',
+    obenErreicht && yHoch < yStart - 100, `von ${yStart.toFixed(0)} auf ${yHoch.toFixed(0)}`);
+  check('Akt 4: Versenkung faehrt auch wieder herunter', g4.player.y > yHoch + 40,
+    `${yHoch.toFixed(0)} -> ${g4.player.y.toFixed(0)}`);
+
+  // Steg ist ohne Versenkung nicht erreichbar
+  const hoeheSteg = 12 * TILE;
+  const hoechstesPult = 17 * TILE;
+  check('Akt 4: Steg liegt ausserhalb der Sprunghoehe',
+    hoechstesPult - hoeheSteg > 40, `${hoechstesPult - hoeheSteg} px`);
+
+  // Souffleurkasten
+  const { game: g5 } = { game: mk4() };
+  step(g5, 0.2);
+  const sp = g5.spuk[0];
+  place(g5, sp.tx * TILE + 20, (sp.ty + sp.h) * TILE - PHYS.playerH);
+  g5.update(1 / 60);
+  check('Akt 4: Souffleurkasten erschrickt', g5.spuk[0].done === true && g5.stunTimer > 0,
+    `stun=${g5.stunTimer.toFixed(2)}`);
+  check('Akt 4: Souffleur meldet sich auch sprachlich',
+    g5.hud.hint.includes('SOUFFLEUR') || (g5.hintQueue || []).some((q) => q.text.includes('SOUFFLEUR')),
+    String(g5.hud.hint));
+
+  // Durchspiel-Route: Boden, Versenkung, Steg, Frack, Auftritt
+  const i6 = createInput(null);
+  const g6 = new Game({
+    level: buildAkt4(), input: i6,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  g6.reset('schwarz');
+  g6.maxNerves = 99;
+  g6.nerves = 99;
+  const route4 = [
+    { wp: [10, 25] }, { wp: [30, 25] }, { wp: [50, 25] },
+    { wp: [60, 25] },
+    { wp: [60, 12], sec: 26 },          // auf die Versenkung warten und mitfahren
+    { wp: [66, 12] },                   // Umkleide auf dem Steg
+    { outfit: 'frack' },
+    { wp: [74, 12] }, { wp: [86, 12] }, // übers Absperrband
+    { wp: [96, 12] },                   // Auftritt
+  ];
+  const fehler4 = [];
+  let jh4 = 0, jr4 = 0, lr4 = 1;
+  for (const schritt of route4) {
+    if (schritt.outfit) { g6.setOutfit(schritt.outfit); continue; }
+    const [wx, row] = schritt.wp;
+    const tx = wx * TILE + 8, feetY = row * TILE;
+    let ok = false, best = Infinity, still = 0;
+    const maxFrames = Math.round((schritt.sec || 14) * 60);
+    for (let i = 0; i < maxFrames; i++) {
+      const p = g6.player;
+      const d = tx - (p.x + p.w / 2);
+      const zielTiefer = feetY > p.y + p.h + 6;
+      let richtung = d > 3 ? 1 : (d < -3 ? -1 : 0);
+      if (Math.abs(d) < 12 && zielTiefer) richtung = lr4;
+      else if (richtung !== 0) lr4 = richtung;
+      i6.setKey('right', richtung > 0);
+      i6.setKey('left', richtung < 0);
+      const footRow = Math.floor((p.y + p.h + 1) / TILE);
+      const holeAhead = g6.tileVal(Math.floor((p.x + p.w + 6) / TILE), footRow) === 0 && feetY <= p.y + p.h + 4;
+      if (Math.abs(d) < best - 4) { best = Math.abs(d); still = 0; } else still++;
+      const need = (feetY < p.y + p.h - 8 && d < 56) || holeAhead || still > 20;
+      if (jh4 > 0) { i6.setKey('jump', true); jh4 -= 1; if (jh4 === 0) jr4 = 3; }
+      else if (jr4 > 0) { i6.setKey('jump', false); jr4 -= 1; }
+      else if (p.onGround && need) { jh4 = 16; i6.setKey('jump', true); jh4 -= 1; }
+      else i6.setKey('jump', false);
+      g6.update(1 / 60);
+      if (g6.state === 'paused') g6.resume();
+      if (g6.state === 'collapse') g6.respawnFromCheckpoint();
+      if (g6.state === 'complete') { ok = true; break; }
+      if (Math.abs(d) < 8 && Math.abs((p.y + p.h) - feetY) < 18 && p.onGround) { ok = true; break; }
+    }
+    if (!ok) {
+      const p = g6.player;
+      fehler4.push(`${wx}/${row} (x=${p.x.toFixed(0)} fuß=${(p.y + p.h).toFixed(0)})`);
+    }
+  }
+  check('Akt 4: Bot faehrt mit der Versenkung und tritt auf', fehler4.length === 0, fehler4.join(' | '));
+  check('Akt 4: Route endet mit dem Auftritt', g6.state === 'complete', `state=${g6.state}`);
+  check('Akt 4: Frack oeffnet den Auftritt', g6.gates.every((g) => g.open === true));
+}
 // -------------------------------------------------- Schauplatz (Keller/Freiluft) --
 {
   const j3 = buildAkt3();

@@ -52,6 +52,8 @@ export class Game {
     this.entities = this.level.spawns
       .filter((s) => !s.isSpawn && s.kind !== 'lamp')
       .map((s) => this.makeEntity(s));
+    // Versenkungen sind eigene Objekte (nicht aus den Spawn-Daten)
+    for (const el of this.level.elevators || []) this.entities.push(this.makeLift(el));
     this.gates = this.level.gates.map((g) => ({ ...g, open: false, notified: -99 }));
     this.projectiles = [];
     this.particles = [];
@@ -82,6 +84,8 @@ export class Game {
     this.hintQueue = [];
     this.taktChanges = (this.level.takts || []).map((t) => ({ ...t, done: false }));
     // Wetter (Akt 3): Sonne, Wind, Regen, Kälte im Wechsel
+    this.dunkel = this.level.dark ? (this.difficulty === 'gemuetlich' ? 0.80 : 0.90) : 0;
+    this.spuk = (this.level.spooks || []).map((sp) => ({ ...sp, done: false }));
     this.wetter = (this.level.weather || []).map((w) => ({ ...w }));
     this.wetterIdx = -1;
     this.wetterTimer = 0;
@@ -113,6 +117,14 @@ export class Game {
     this.cam.x = clamp(this.player.x - this.vw / 2, 0, this.level.w * TILE - this.vw);
     this.cam.y = clamp(this.player.y - this.vh / 2, 0, this.level.h * TILE - this.vh);
     this.hud = this.buildHud();
+  }
+
+  makeLift(el) {
+    const top = el.topRow * TILE, bottom = el.bottomRow * TILE;
+    return {
+      kind: 'lift', x: el.tx * TILE, y: bottom, w: el.w * TILE, h: 8,
+      top, bottom, period: el.period || 10, phase: el.phase || 0, dy: 0, alive: true,
+    };
   }
 
   makeEntity(s) {
@@ -175,6 +187,14 @@ export class Game {
    *  0 = Kontexttip. Höherer Rang darf verdrängen; alles andere wird entweder
    *  aufgehoben (Kontext) oder der Aufrufer versucht es später erneut.
    *  @returns true, wenn die Meldung jetzt angezeigt wird */
+  /** Ist die Anforderung des Ziels erfüllt? 'mappe' oder eine Kluft. */
+  goalErfuellt() {
+    const need = this.level.goal.need;
+    if (!need) return true;
+    if (need === 'mappe') return !!this.hasMappe;
+    return this.outfit.id === need;
+  }
+
   message(text, dur = 4.5, prio = 1) {
     if (this.hint && this.time - this.hint.at < 1.5 && this.hint.prio >= prio) {
       // Nie verdrängen: aufheben und gleich danach zeigen (ohne Doppelte).
@@ -202,6 +222,7 @@ export class Game {
     }
     if (this.state !== 'play') return;
     this.time += dt;
+    this.updateLifts(dt);
     this.updatePlayer(dt);
     this.updateTakt(dt);
     this.updateEnemies(dt);
@@ -220,6 +241,69 @@ export class Game {
     this.stats.deckel = this.deckel;
     this.stats.taktHits = this.taktHits;
     this.hud = this.buildHud();
+  }
+
+  /** Versenkungen: fahren auf und ab und nehmen mit, wer oben steht. */
+  updateLifts(dt) {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'lift') continue;
+      const ph = (((this.time + en.phase) % en.period) + en.period) % en.period;
+      const t = ph / en.period;
+      const k = t < 0.5 ? t * 2 : 2 - t * 2;          // Dreieckswelle
+      const ny = Math.round(en.bottom + (en.top - en.bottom) * k);
+      en.dy = ny - en.y;
+      en.y = ny;
+      const oben = p.y + p.h;
+      if (p.x + p.w > en.x + 1 && p.x < en.x + en.w - 1
+          && oben >= en.y - 3 && oben <= en.y + 8 && p.vy >= -1) {
+        p.y = en.y - p.h;
+        p.vy = 0;
+        p.onGround = true;
+      }
+    }
+  }
+
+  /** Farben je Schauplatz: der Graben ist dunkelrot, der Keller blau-violett. */
+  pal() {
+    if (this.level.setting === 'graben') {
+      return { bg: '#120a10', far: '#1d1016', mid: '#251319',
+        stein: '#2a1a20', stein2: '#341f27', kante: '#4a2730', kante2: '#63333c' };
+    }
+    return { bg: '#141021', far: '#1b1630', mid: '#191428',
+      stein: '#2b2438', stein2: '#332b44', kante: '#453a5c', kante2: '#5d4f78' };
+  }
+
+  /** Helligkeit 0..1 an einer Kachelmitte — im Dunkeln auch für Tests. */
+  lightAt(tx, ty) {
+    if (!this.level.dark) return 1;
+    if (tx < 0 || ty < 0 || tx >= this.level.w || ty >= this.level.h) return 1;
+    const px = tx * TILE + TILE / 2, py = ty * TILE + TILE / 2;
+    const p = this.player;
+    const eigen = 1 - Math.hypot(px - (p.x + p.w / 2), py - (p.y + p.h / 2)) / (TILE * this.diff.sicht);
+    let best = clamp(eigen, 0, 1) * 0.8;
+    for (const g of this.level.gleams || []) {
+      const d = Math.hypot(px - (g.tx * TILE + TILE / 2), py - (g.ty * TILE + TILE / 2));
+      best = Math.max(best, clamp(1 - d / (g.r * TILE), 0, 1));
+    }
+    return best;
+  }
+
+  /** Der Graben ist stockdunkel — nur Pultlampen und die eigene Lampe leuchten. */
+  drawDarkness(ctx, camX, camY) {
+    if (!this.level.dark) return;
+    const x0 = Math.max(0, Math.floor(camX / TILE));
+    const x1 = Math.min(this.level.w - 1, Math.ceil((camX + this.vw) / TILE));
+    const y0 = Math.max(0, Math.floor(camY / TILE));
+    const y1 = Math.min(this.level.h - 1, Math.ceil((camY + this.vh) / TILE));
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const a = clamp(this.dunkel - this.lightAt(tx, ty) * this.dunkel, 0, this.dunkel);
+        if (a <= 0.01) continue;
+        ctx.fillStyle = `rgba(3,2,6,${a.toFixed(3)})`;
+        ctx.fillRect(Math.round(tx * TILE - camX), Math.round(ty * TILE - camY), TILE, TILE);
+      }
+    }
   }
 
   updatePlayer(dt) {
@@ -372,6 +456,15 @@ export class Game {
       const v = this.tileVal(tx, ty);
       if (v === 1) return { v, tx, ty };
       if ((v === 2 || v === 3) && p.y + p.h <= ty * TILE + 1) return { v, tx, ty };
+    }
+    // Versenkungen sind fahrbarer Boden
+    for (const en of this.entities) {
+      if (en.kind !== 'lift') continue;
+      if (p.x + p.w > en.x + 1 && p.x < en.x + en.w - 1) {
+        if (p.y + p.h >= en.y - 2 && p.y + p.h <= en.y + 4) {
+          return { v: 2, tx: Math.floor(p.x / TILE), ty: Math.floor(en.y / TILE), lift: true };
+        }
+      }
     }
     return null;
   }
@@ -786,6 +879,19 @@ export class Game {
       }
     }
     this.entities = this.entities.filter((en) => en.alive);
+    // Souffleurkasten: wer zu nahe kommt, hört plötzlich den Text mit
+    for (const sp of this.spuk) {
+      if (sp.done) continue;
+      const slot = { x: sp.tx * TILE, y: sp.ty * TILE, w: sp.w * TILE, h: sp.h * TILE };
+      if (!overlap(p, slot)) continue;
+      sp.done = true;
+      this.stunTimer = Math.max(this.stunTimer, 0.5);
+      this.shake = 5;
+      p.vx = -p.dir * 90;
+      this.audio.play('sopran');
+      this.message('DER SOUFFLEUR FLÜSTERT. DIREKT AM OHR.', 5, 2);
+    }
+
     // Türen und Bänder
     for (const g of this.gates) {
       if (g.open) continue;
@@ -807,7 +913,7 @@ export class Game {
     const goal = this.level.goal;
     if (overlap(p, goal)) {
       // Was ein Ziel verlangt, steht in den Leveldaten (Akt 1: Notenmappe, Akt 2: nichts).
-      const erfuellt = !goal.need || (goal.need === 'mappe' && this.hasMappe);
+      const erfuellt = this.goalErfuellt();
       if (erfuellt) this.complete();
       else if (this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
@@ -867,8 +973,9 @@ export class Game {
     if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
-    const zielFrei = !g.need || (g.need === 'mappe' && this.hasMappe);
-    if (dg < 96) best = { text: `${g.name}: ${zielFrei ? 'WEITER' : 'ES FEHLT ETWAS'}`, x: g.x + 8, y: g.y - 2 };
+    const zielFrei = this.goalErfuellt();
+    const grund = g.need === 'frack' ? 'NUR IM FRACK' : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
+    if (dg < 96) best = { text: `${g.name}: ${zielFrei ? 'WEITER' : grund}`, x: g.x + 8, y: g.y - 2 };
     if (!best) return null;
     return {
       text: best.text, action: !!best.action, key: best.key,
@@ -1022,6 +1129,7 @@ export class Game {
     this.drawGoal(ctx, camX, camY);
     this.drawEntities(ctx, camX, camY);
     this.drawProjectiles(ctx, camX, camY);
+    this.drawDarkness(ctx, camX, camY);
     this.drawWetter(ctx, camX, camY);
     this.drawPlayer(ctx, camX, camY);
     this.drawParticles(ctx, camX, camY);
@@ -1031,10 +1139,11 @@ export class Game {
 
   drawBackground(ctx, camX, camY) {
     if (this.level.setting === 'openair') { this.drawSky(ctx, camX, camY); return; }
-    ctx.fillStyle = '#141021';
+    const pal = this.pal();
+    ctx.fillStyle = pal.bg;
     ctx.fillRect(0, 0, this.vw, this.vh);
     // ferne Bogenreihen
-    ctx.fillStyle = '#1b1630';
+    ctx.fillStyle = pal.far;
     const farOff = (camX * 0.25) % 96;
     for (let i = -1; i < this.vw / 96 + 2; i++) {
       const x = Math.round(i * 96 - farOff);
@@ -1044,7 +1153,7 @@ export class Game {
       }
     }
     // Rohre und Pfeiler
-    ctx.fillStyle = '#191428';
+    ctx.fillStyle = pal.mid;
     const midOff = (camX * 0.5) % 128;
     for (let i = -1; i < this.vw / 128 + 2; i++) {
       const x = Math.round(i * 128 - midOff);
@@ -1066,6 +1175,19 @@ export class Game {
   }
 
   drawLights(ctx, camX, camY) {
+    // Im Dunkeln sind die Pultlampen das Wichtigste im Bild
+    for (const g of this.level.gleams || []) {
+      const gx = Math.round(g.tx * TILE - camX), gy = Math.round(g.ty * TILE - camY);
+      if (gx < -16 || gy < -16 || gx > this.vw + 16 || gy > this.vh + 16) continue;
+      ctx.fillStyle = 'rgba(255,214,140,0.16)';
+      ctx.fillRect(gx - 3, gy - 2, TILE + 6, TILE + 4);
+      ctx.fillStyle = '#3a3238';
+      ctx.fillRect(gx + 5, gy + 2, 6, 12);
+      ctx.fillStyle = '#ffd68c';
+      ctx.fillRect(gx + 6, gy + 3, 4, 4);
+      ctx.fillStyle = '#fff3cf';
+      ctx.fillRect(gx + 7, gy + 4, 2, 2);
+    }
     for (const l of this.level.lights) {
       const x = Math.round(l.x - camX), y = Math.round(l.y - camY);
       ctx.fillStyle = 'rgba(255,206,120,0.05)';
@@ -1236,9 +1358,10 @@ export class Game {
             ctx.fillRect(px + Math.floor(hash2(tx, ty, i + 2) * 13), py + Math.floor(hash2(tx, ty, i + 9) * 13), 3, 2);
           }
         } else if (stil === 'stein') {
-          ctx.fillStyle = '#2b2438';
+          const fp = this.pal();
+          ctx.fillStyle = fp.stein;
           ctx.fillRect(px, py, TILE, TILE);
-          ctx.fillStyle = '#332b44';
+          ctx.fillStyle = fp.stein2;
           const n = 3 + Math.floor(hash2(tx, ty, 1) * 3);
           for (let i = 0; i < n; i++) {
             const hx = Math.floor(hash2(tx, ty, i + 2) * 12);
@@ -1246,9 +1369,9 @@ export class Game {
             ctx.fillRect(px + hx, py + hy + 1, 4, 2);
           }
           if (this.tileVal(tx, ty - 1) !== 1) {
-            ctx.fillStyle = '#453a5c';
+            ctx.fillStyle = fp.kante;
             ctx.fillRect(px, py, TILE, 2);
-            ctx.fillStyle = '#5d4f78';
+            ctx.fillStyle = fp.kante2;
             ctx.fillRect(px, py, TILE, 1);
           }
         } else if (stil === 'holz') {

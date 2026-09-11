@@ -58,6 +58,16 @@ const REWARDS = {
     title: 'BELOHNUNG: PAUSENBROT',
     text: 'Hinter der Bühnentür wird es dunkel und warm. Ein Pausenbrot für die nächste Runde — und ein Nerv mehr.',
   },
+  akt3: {
+    title: 'BELOHNUNG: KANTINENKAFFEE',
+    text: 'Lauwarm, mit Kondenswasser am Becherrand. Der Applaus hallt noch im Park, '
+      + 'und für einen Moment ist der Frack gar nicht mehr so schlimm.',
+  },
+  akt4: {
+    title: 'BELOHNUNG: DER TAKTSTOCK',
+    text: 'Der Dirigent hat ihn liegen lassen. Ab jetzt liegt er im Handschuhfach, '
+      + 'zwischen Parkmünzen und einem Fahrschein von 1987.',
+  },
   cabrio: {
     title: 'ANGEKOMMEN: OPEN-AIR-BÜHNE',
     text: 'Motor aus, Verdeck bleibt offen. Die Bühne steht schon, der Wind hat die Noten schon einmal verteilt — Akt 3 wartet.',

@@ -552,6 +552,43 @@ try {
   check('Open Air zeigt Himmel statt Hoehlenwand', hell3 > hell1 + 60,
     `Akt3 ${JSON.stringify(obenAkt3)} vs Akt1 ${JSON.stringify(obenAkt1)}`);
   check('keine Fehler in Akt 3', windProbe.errors.length === 0, JSON.stringify(windProbe.errors));
+  // --- Akt 4: Orchestergraben ---------------------------------------------
+  await evaluate("window.__roland.loadAct(4)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(1200);
+  const grab = JSON.parse(await evaluate(`JSON.stringify({
+    name: window.__roland.level.name,
+    dunkel: window.__roland.game.dunkel,
+    lifts: window.__roland.game.entities.filter((e) => e.kind === 'lift').length,
+    state: window.__roland.game.state,
+    errors: window.__errors
+  })`));
+  check('Akt 4 laedt und laeuft', grab.name.includes('GRABEN') && grab.state === 'play', JSON.stringify(grab));
+  check('Akt 4: Dunkelheit aktiv, zwei Versenkungen', grab.dunkel > 0.5 && grab.lifts === 2,
+    JSON.stringify(grab));
+
+  const bildStat = `(() => {
+    const c = document.getElementById('game');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let s = 0, n = 0, m = 0;
+    for (let i = 0; i < d.length; i += 16) {
+      const h = (d[i] + d[i + 1] + d[i + 2]) / 3;
+      s += h; n++; if (h > m) m = h;
+    }
+    return JSON.stringify({ schnitt: Math.round(s / n), max: Math.round(m) });
+  })()`;
+  const grabBild = JSON.parse(await evaluate(bildStat));
+  check('Akt 4 ist stockdunkel', grabBild.schnitt < 50, JSON.stringify(grabBild));
+  check('Akt 4: Pultlampen leuchten trotzdem', grabBild.max > 150, JSON.stringify(grabBild));
+
+  const liftA = await evaluate("window.__roland.game.entities.find((e) => e.kind === 'lift').y");
+  await sleep(1600);
+  const liftB = await evaluate("window.__roland.game.entities.find((e) => e.kind === 'lift').y");
+  check('Akt 4: Versenkung faehrt im Browser', liftA !== liftB, `${liftA} -> ${liftB}`);
+  check('keine Fehler im Graben', (await evaluate('JSON.stringify(window.__errors)')) === '[]');
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------

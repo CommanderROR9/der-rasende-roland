@@ -141,7 +141,11 @@ Browser-Durchlauf.
   Vordach zum Trocknen, Kälte mit steiferen Fingern; Gerüstaufstieg zur Lichtbrücke,
   Dirigent auf der Bühne, Frack-Gate am Podium.
 
-**Geplant:** Akte 4–8 (Orchestergraben, Bühne, Finale), Motorrad-Interludium
+- **Akt 4 (Orchestergraben):** Dunkelheit mit Notenpultlampen als Lichtinseln,
+  Versenkungen (Bühnenaufzüge) als einziger Weg nach oben, Souffleurkasten als
+  Schreck, morscher Notenpult, Dirigent auf dem Podium; Belohnung: der Taktstock.
+
+**Geplant:** Akte 5–8 (Bühne, Finale), Motorrad-Interludium
 (Nacht, Tunnel, kühlt den Hitzebalken), Epilog Kleingarten.
 
 **Idee für später — Bratwurst-Grill (Bonusspiel):** ein kleines Minigame im Kleingarten-
