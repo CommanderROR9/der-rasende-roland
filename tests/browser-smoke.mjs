@@ -144,6 +144,35 @@ try {
   check('Kluft ist schwarz', st.kluft === 'schwarz', st.kluft);
   check('Drei Nerven, fünf Bierdeckel', st.nerven === 3 && st.deckelTotal === 5);
 
+  // Befund D2: Umziehen muss am Avatar sichtbar sein. Der Sprite-Cache
+  // schlüsselte vorher nur auf die Palettenbuchstaben (".hHsSawrb") — die sind
+  // bei allen drei Klüften gleich, also bekam jede dieselbe Zeichnung.
+  const kluftBild = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const cv = document.createElement('canvas');
+    cv.width = 24; cv.height = 28;
+    const ctx = cv.getContext('2d');
+    const p = g.player;
+    const merker = { x: p.x, y: p.y, vx: p.vx, vy: p.vy };
+    const zurueck = g.outfit.id;
+    const fp = {};
+    for (const id of ['schwarz', 'anzug', 'frack']) {
+      g.setOutfit(id);
+      p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.flash = 0; p.invuln = 0; p.dir = 1;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      g.drawPlayer(ctx, 0, 0);
+      const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      let h = 0;
+      for (let i = 0; i < d.length; i++) h = (h * 31 + d[i]) % 2147483647;
+      fp[id] = h;
+    }
+    g.setOutfit(zurueck);
+    p.x = merker.x; p.y = merker.y; p.vx = merker.vx; p.vy = merker.vy;
+    return JSON.stringify(fp);
+  })()`));
+  check('Jede Kluft zeichnet ein eigenes Bild',
+    new Set(Object.values(kluftBild)).size === 3, JSON.stringify(kluftBild));
+
   // Tastatur über echte Key-Events
   const x0 = await evaluate('window.__roland.game.player.x');
   await key('KeyD', 'keyDown');
@@ -400,6 +429,30 @@ try {
   }
   check('Stationen 3 und 6 sind die Fahr-Interludien',
     fahrProbe[0] === 'cabrio:mx5' && fahrProbe[1] === 'motorrad:motorrad', fahrProbe.join(' | '));
+
+  // Befund D1: Der Klick auf den Stationsknopf selbst muss die Fahrt-Interludien
+  // starten. Vorher warf `for (const h of LEVEL.hints)` dort einen TypeError,
+  // weil Cabrio und Motorrad keine Hints liefern — die Schleife stand vor
+  // startLevel(), also passierte nach dem Klick gar nichts.
+  const klickProbe = [];
+  for (let i = 0; i < wahl.knoepfe.length; i++) {
+    await evaluate(`(() => { window.__errors.length = 0; document.querySelector('#actRow button[data-akt="${i}"]').click(); return 1; })()`);
+    await sleep(260);
+    klickProbe.push({
+      akt: i,
+      id: await evaluate('window.__roland.level.id'),
+      fahrzeug: await evaluate('window.__roland.level.fahrzeug || ""'),
+      laeuft: await evaluate('window.__roland.aktiv ? window.__roland.aktiv.state : "keiner"'),
+      fehler: await evaluate('JSON.stringify(window.__errors)'),
+    });
+  }
+  const fahrKlicks = klickProbe.filter((k) => k.fahrzeug);
+  check('Stationsklick startet beide Fahr-Interludien',
+    fahrKlicks.length === 2 && fahrKlicks.every((k) => k.laeuft === 'play'),
+    JSON.stringify(fahrKlicks));
+  check('Stationsklick bleibt auf jeder Station fehlerfrei',
+    klickProbe.every((k) => k.fehler === '[]'),
+    klickProbe.filter((k) => k.fehler !== '[]').map((k) => `akt${k.akt}: ${k.fehler}`).join(' | '));
 
   // --- Akt 2 im echten Browser --------------------------------------------
   // Nach Akt 1 erscheint der Kurzweg (hier über den Spielstand simuliert)
