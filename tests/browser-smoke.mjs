@@ -1349,14 +1349,16 @@ try {
   // die Sprungtaste so lange gehalten wie im Gefahrenlauf) und faengt einen
   // Kollaps mit dem Knopf des Spiels ab, damit der Weg weitergeht.
   let kollaps4 = 0;
+  let abgang4 = 'zeit';             // Warum endete der letzte Lauf? (Nachweis unten)
   const gehe4 = async (code, bedingung, maxMs) => {
     await key(code, 'keyDown');
     let letzteX = await evaluate('window.__roland.game.player.x');
     let fest = 0;
     let erreicht = false;
+    abgang4 = 'zeit';
     for (let i = 0; i < Math.ceil(maxMs / 110); i++) {
       await sleep(110);
-      if (await evaluate(bedingung)) { erreicht = true; break; }
+      if (await evaluate(bedingung)) { erreicht = true; abgang4 = 'erreicht'; break; }
       const stand = JSON.parse(await evaluate(
         'JSON.stringify({x: window.__roland.game.player.x, state: window.__roland.game.state})'));
       if (stand.state === 'collapse') {
@@ -1367,7 +1369,7 @@ try {
         fest = 0;
         continue;
       }
-      if (stand.state !== 'play') break;
+      if (stand.state !== 'play') { abgang4 = `ende:${stand.state}`; break; }
       fest = Math.abs(stand.x - letzteX) < 3 ? fest + 1 : 0;
       letzteX = stand.x;
       if (fest >= 3) {                      // ~0,35 s festgefahren: echter Sprung
@@ -1650,6 +1652,12 @@ try {
   // 9) Nach der Uebergabe ist der Graben kein Kampfplatz mehr: hinunter, das
   //    optionale Andenken holen und dabei Nerven und Gegner beobachten.
   const nervenVorher = await evaluate('window.__roland.game.nerves');
+  // Nerven steigen nur durch eine Brezel (+1, src/game.js), Schaden ist nach der
+  // Uebergabe gesperrt (damage() bricht bei game.frieden ab). Die Brezeln in der
+  // Welt machen den Befund "nerven steigt" nachpruefbar: der Weg zum Andenken
+  // fuehrt an der zweiten Brezel vorbei.
+  const brezelnOben = await evaluate(
+    "window.__roland.game.entities.filter((e) => e.kind === 'item' && e.item === 'brezel' && e.alive).length");
   const hinunter = await gehe4('KeyA',
     '(() => { const p = window.__roland.game.player; return p.y + p.h > 380 && p.x < 940; })()', 8000);
   const unten = await zust4(`{
@@ -1674,20 +1682,43 @@ try {
     && /AUFTRITT/.test(andenken.ziel || ''), JSON.stringify(andenken));
   await bild4('akt4-andenken.png');
 
-  await sleep(2500);
-  const ruhe = await zust4(`{
-    friedlich: window.__roland.game.hud.friedlich,
-    nerven: window.__roland.game.nerves,
-    projektile: window.__roland.game.projectiles.length,
-    zielen: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').map((e) => Math.round(e.aim)),
-    invuln: Math.round(window.__roland.game.player.invuln * 100) / 100,
-    dirigentAbstand: Math.round(Math.abs(
-      window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
-  }`);
+  // Die Ruhe wird in einem Fenster gemessen, nicht in einem Augenblick: ein
+  // Geschoss, das VOR der Uebergabe abgefeuert wurde, ist noch bis zu 3,4 s
+  // unterwegs (Schall 3,4 s, Taktstock 3,0 s Lebenszeit). Erst fliegt nichts
+  // mehr, und von da an darf nichts Neues dazukommen: kein neuer Schuss, kein
+  // Nachzielen, kein neuer Treffer. Nur damage() setzt player.invuln > 0 — ein
+  // frischer Treffer waere an einem Ausschlag nach oben zu erkennen.
+  let ruhe = null, neueGeschosse = 0, nachgezielt = 0, neueTreffer = 0, vorherProj = null;
+  for (let i = 0; i < 40; i++) {
+    await sleep(150);
+    ruhe = await zust4(`{
+      friedlich: window.__roland.game.hud.friedlich,
+      nerven: window.__roland.game.nerves,
+      projektile: window.__roland.game.projectiles.length,
+      zielen: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').map((e) => Math.round(e.aim)),
+      invuln: Math.round(window.__roland.game.player.invuln * 100) / 100,
+      brezeln: window.__roland.game.entities.filter((e) => e.kind === 'item' && e.item === 'brezel' && e.alive).length,
+      dirigentAbstand: Math.round(Math.abs(
+        window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
+    }`);
+    if (vorherProj !== null && ruhe.projektile > vorherProj) neueGeschosse += 1;
+    vorherProj = ruhe.projektile;
+    if (ruhe.zielen.some((a) => a > 0)) nachgezielt += 1;
+    if (ruhe.invuln > 0) neueTreffer += 1;
+    if (i >= 8 && ruhe.projektile === 0 && !ruhe.zielen.some((a) => a > 0)) break;
+  }
+  // player.invuln <= 0 heisst "nicht mehr unverwundbar": der Zaehler laeuft von
+  // diff.invuln auf 0 herunter und landet durch die Bildschrittweite knapp
+  // darunter (-0,02). Das ist das Ende der alten Verwundbarkeit, kein Treffer.
   check('Akt 4: nach der Uebergabe greift im Graben niemand mehr an (kein Schaden, kein Nachzielen)',
-    ruhe.friedlich === true && ruhe.nerven >= nervenVorher && ruhe.projektile === 0
-    && ruhe.zielen.every((a) => a === 0) && ruhe.invuln === 0 && ruhe.dirigentAbstand < 96,
-    `nerven=${nervenVorher}->${ruhe.nerven} ${JSON.stringify(ruhe)}`);
+    ruhe.friedlich === true && neueGeschosse === 0 && nachgezielt === 0 && neueTreffer === 0
+    && ruhe.nerven >= nervenVorher && ruhe.projektile === 0 && ruhe.zielen.every((a) => a === 0)
+    && ruhe.invuln <= 0 && ruhe.dirigentAbstand < 96,
+    `nerven=${nervenVorher}->${ruhe.nerven} neuGeschosse=${neueGeschosse} neueTreffer=${neueTreffer} `
+    + `brezeln=${brezelnOben}->${ruhe.brezeln} ${JSON.stringify(ruhe)}`);
+  results.push(`AKT4 Ruhe im Graben: Nerven ${nervenVorher}->${ruhe.nerven}`
+    + ` (Brezeln ${brezelnOben}->${ruhe.brezeln}), neue Geschosse ${neueGeschosse},`
+    + ` neue Treffer ${neueTreffer}`);
 
   // 10) Zurueck nach oben und der Auftritt: Umkleide, Frack, Gitter, Abschluss.
   await gehe4('KeyA',
@@ -1738,15 +1769,30 @@ try {
     imFrack.kluft === 'frack' && imFrack.state === 'play' && imFrack.zielFrei === true,
     JSON.stringify(imFrack));
 
-  const zumAuftritt = await gehe4('KeyD', "window.__roland.game.state !== 'play'", 9000);
-  const auftritt = await zust4(`{
+  // Der Auftritt endet an der Zielschwelle hinter dem Gitter (Ziel bei 96*TILE):
+  // der laufende Spieler geht im Frack hindurch und das Spiel wechselt nach
+  // 'complete'. gehe4 bricht ab, sobald der Zustand 'play' verlaesst, meldet den
+  // Lauf dabei aber nicht als erreicht — je nachdem, in welches Abtastfenster
+  // der Abschluss faellt oder ob er erst im Auslauf nach dem Loslassen der Taste
+  // passiert. Geprueft wird deshalb der Endzustand des Spiels selbst, und zwar
+  // vollstaendig: im Frack, Gitter offen, hinter dem Gitter, Auftritt beendet.
+  const zumAuftritt = await gehe4('KeyD', "window.__roland.game.state !== 'play'", 16000);
+  const auftrittStand = `{
     state: window.__roland.game.state,
     gitter: window.__roland.game.gates[1].open,
+    kluft: window.__roland.game.outfit.id,
     x: Math.round(window.__roland.game.player.x),
     errors: window.__errors
-  }`);
+  }`;
+  let auftritt = await zust4(auftrittStand);
+  for (let i = 0; i < 12 && auftritt.state === 'play'; i++) {
+    await sleep(250);
+    auftritt = await zust4(auftrittStand);
+  }
+  results.push(`AKT4 Auftritt: Lauf=${zumAuftritt} (${abgang4}), Ende=${auftritt.state},`
+    + ` x=${auftritt.x}, Gitter=${auftritt.gitter}, Kluft=${auftritt.kluft}`);
   check('Akt 4: im Frack oeffnet der laufende Spieler das Gitter und der Auftritt endet',
-    zumAuftritt === true && auftritt.state === 'complete' && auftritt.gitter === true
+    auftritt.state === 'complete' && auftritt.gitter === true && auftritt.kluft === 'frack'
     && auftritt.x > 82 * 16, JSON.stringify(auftritt));
   check('Akt 4: der ganze Weg durch den Graben bleibt ohne Konsolenfehler',
     auftritt.errors.length === 0, JSON.stringify(auftritt.errors));
