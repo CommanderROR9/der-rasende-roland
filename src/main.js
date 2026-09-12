@@ -29,7 +29,7 @@ const ui = {
   walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
   grillReadout: $('#grillReadout'), gPunkte: $('#gPunkte'), gServiert: $('#gServiert'),
   gVerbrannt: $('#gVerbrannt'), gTakt: $('#gTakt'), gBpm: $('#gBpm'),
-  applaus: $('#applaus'), applausWrap: $('#applausWrap'), journal: $('#journal'),
+  applaus: $('#applaus'), applausWrap: $('#applausWrap'), applausStufen: $('#applausStufen'), journal: $('#journal'),
   uOhro: $('#uOhro'), uKluft: $('#uKluft'), uHitze: $('#uHitze'),
   uWetter: $('#uWetter'), uNass: $('#uNass'), uTakt: $('#uTakt'), uNerven: $('#uNerven'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
@@ -309,7 +309,8 @@ function refreshHud() {
   ui.walkReadout.classList.remove('hidden');
   ui.racerReadout.classList.add('hidden');
   const sig = [h.nerves, h.heat, Math.round(h.ohropax), h.outfit.id, h.deckel, h.bpm,
-    h.glanz > 0.5, h.hint, h.hidden, h.wetter, h.nass, h.gustDir, h.friert, h.ruhig, h.ziel].join('|');
+    h.glanz > 0.5, h.hint, h.hidden, h.wetter, h.nass, h.gustDir, h.friert, h.ruhig, h.ziel,
+    h.applaus, h.applausPuls].join('|');
   if (sig === hudPrev) return;
   hudPrev = sig;
   // Der Kleingarten hat kein Gedächtnis für Hitze, Takt und Nerven (Befund D5):
@@ -324,11 +325,28 @@ function refreshHud() {
   ui.hitze.parentElement.classList.toggle('hot', h.heat > 60);
   ui.nerven.textContent = '●'.repeat(h.nerves) + '○'.repeat(Math.max(0, h.maxNerves - h.nerves));
   ui.bpm.textContent = String(h.bpm);
-  // Applaus nur im Finale zeigen, sonst ausblenden
+  // Applaus nur im Finale zeigen, sonst ausblenden. Er wächst in Stufen
+  // (Auftrag A5): Stand am Zielwert, sichtbare Stufenblöcke und ein kurzer
+  // Puls bei jedem Einsatz der Zugabe — kein stiller Zahlenwert.
   if (ui.applausWrap) {
     const hatApplaus = h.applaus !== null && h.applaus !== undefined;
     ui.applausWrap.classList.toggle('hidden', !hatApplaus);
-    if (hatApplaus) ui.applaus.textContent = `${h.applaus}%`;
+    if (hatApplaus) {
+      ui.applaus.textContent = h.applausZiel ? `${h.applaus}/${h.applausZiel}` : String(h.applaus);
+      if (ui.applausStufen) {
+        const n = h.zugabeNoetig || 0;
+        const voll = n && h.applausZiel ? Math.round((h.applaus / h.applausZiel) * n) : 0;
+        ui.applausStufen.textContent = n
+          ? '▮'.repeat(Math.min(n, voll)) + '▯'.repeat(Math.max(0, n - voll)) : '';
+      }
+      const stufe = String(h.zugabeSchritt === null || h.zugabeSchritt === undefined ? '' : h.zugabeSchritt);
+      if (ui.applaus.dataset.stufe !== stufe) {
+        ui.applaus.dataset.stufe = stufe;
+        ui.applaus.classList.remove('puls');
+        void ui.applaus.offsetWidth;      // Animation neu starten
+        ui.applaus.classList.add('puls');
+      }
+    }
   }
   const WETTER_NAMEN = { sonne: 'SONNE', wind: 'WIND', regen: 'REGEN', kaelte: 'KÄLTE' };
   if (ui.wetter) ui.wetter.textContent = WETTER_NAMEN[h.wetter] || '—';
