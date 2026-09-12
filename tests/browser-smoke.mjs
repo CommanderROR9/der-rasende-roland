@@ -1099,8 +1099,10 @@ try {
   check('Akt 3: das Absperrband oeffnet sich auf dem Weg zur Wiese',
     nachBand.band === true && nachBand.x > 20 * 16 && nachBand.state !== 'collapse', JSON.stringify(nachBand));
 
-  // Wind als Taktvorgabe: die Boee wird vorher angekuendigt und traegt die
-  // Notenblaetter mit — die Pulte bleiben dabei spielbar (kein Blocker).
+  // Wind: die Boee kuendigt sich 0,9 s vorher an und treibt Notenblaetter mit
+  // (bis zu acht gleichzeitig, 0,6 s Stun bei Kontakt) — die Pulte bleiben
+  // dabei spielbar. Der Schub selbst verschiebt den Spieler nicht messbar
+  // (62 vs. Bodenreibung 900), geprueft wird deshalb Vorwarnung + Blaetter.
   await evaluate("window.__roland.game.wetterIdx = 1; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'wind'");
   await sleep(300);
   const wetterWind = JSON.parse(await evaluate(`JSON.stringify({
@@ -1118,7 +1120,7 @@ try {
     if (b.weht && (b.blaetter > 0 || b.warnung)) windspur = b;
     else await sleep(280);
   }
-  check('Akt 3: der Wind kuendigt die Boee an und traegt die Blaetter (Taktvorgabe)',
+  check('Akt 3: die Boee kuendigt sich vorher an und treibt die Notenblaetter (kein Blocker)',
     wetterWind.wetter === 'wind' && wetterWind.dom === 'WIND'
     && windspur !== null && windspur.state === 'play', JSON.stringify({ wetterWind, windspur }));
 
@@ -1136,8 +1138,9 @@ try {
     for (let i = 0; i < 6; i++) {
       const teil = await evaluate(`window.__roland.game.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}').teil`);
       if (teil >= 2) break;
-      // Vor jedem Schlag zurueck ans Pult und ins Taktfenster: Wind und
-      // Gegentreffer schieben den Spieler sonst aus der Reichweite.
+      // Vor jedem Schlag zurueck ans Pult und ins Taktfenster: Gegentreffer und
+      // Rueckstoss (vx 110) schieben den Spieler sonst aus der Reichweite —
+      // der Windschub allein reicht dafuer nicht (siehe Windpruefung oben).
       await evaluate(`(() => {
         const g = window.__roland.game;
         const p = g.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}');
@@ -1169,12 +1172,13 @@ try {
   check('Akt 3: Ostpult zeigt die zwei Klammern (0/2) und laesst sich im Takt sichern',
     /SICHERN/.test(ostPult.schild?.text || '') && /\(0\/2\)/.test(ostPult.schild?.text || '')
     && ostPult.teil === 2 && ostPult.flag === true, JSON.stringify(ostPult));
-  check('Akt 3: beide Pulte sind auch bei Wind spielbar (Wind gibt den Takt, sperrt nicht)',
+  check('Akt 3: beide Pulte sind auch bei Wind sicherbar (Boeen sperren nicht)',
     westPult.wetter === 'wind' && ostPult.wetter === 'wind'
     && westPult.state === 'play' && ostPult.state === 'play', JSON.stringify({ westPult, ostPult }));
 
-  // Fuer die Podiumspruefung zurueck auf ruhiges Wetter: die Windboeen schieben
-  // den Spieler sonst vom einen Kachel breiten Podium (Wind ist oben belegt).
+  // Fuer die Podiumspruefung zurueck auf ruhiges Wetter: die Windpruefung ist
+  // oben belegt, und Notenblatt-Stoesse (0,6 s Stun) sollen den Torlauf hier
+  // nicht stoeren. Nicht der Schub ist das Problem, sondern der Stun.
   await evaluate("window.__roland.game.wetterIdx = 0; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'sonne'");
   await sleep(250);
 
