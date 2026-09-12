@@ -741,6 +741,120 @@ try {
     nachAbgabe.abgegeben === true && nachAbgabe.mappe === false && nachAbgabe.teil === 0,
     JSON.stringify(nachAbgabe));
 
+  // Akt-2-Musterstrecke im echten Browser: Anna an beiden Enden, fünf
+  // Requisiten, Motiv und Journal — dazu drei Raumbilder act2-*.png.
+  await evaluate("window.__roland.loadAct(1)");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(800);
+  const a2muster = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const npcs = g.entities.filter((e) => e.kind === 'npc');
+    const decor = g.entities.filter((e) => e.kind === 'decor');
+    return JSON.stringify({
+      annas: npcs.filter((e) => e.flag === 'probe_beauftragt' || e.flag === 'probe_abgenommen').length,
+      namen: [...new Set(npcs.map((e) => e.name))],
+      decor: new Set(decor.map((e) => e.spr)).size,
+      motiv: (g.level.motiv && g.level.motiv.id) || null,
+      steps: (g.level.storySteps || []).length,
+      ziel: g.hud.ziel,
+      route: g.level.route && g.level.route.reversible === true
+    });
+  })()`));
+  check('Akt 2 rendert zwei Anna-Begegnungen', a2muster.annas === 2, JSON.stringify(a2muster));
+  check('Akt 2 hat mindestens fünf unterschiedliche Raumrequisiten', a2muster.decor >= 5, JSON.stringify(a2muster));
+  check('Akt 2 nennt das Proben-Motiv für das Finale', a2muster.motiv === 'probe-motiv', JSON.stringify(a2muster));
+  check('Akt 2 startet das Journal mit Anna', (a2muster.ziel || '').includes('ANNA'), a2muster.ziel);
+  // Flur: Briefing per echter E-Taste, dann das erste Raumbild.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const a = g.entities.find((e) => e.kind === 'npc' && e.flag === 'probe_beauftragt');
+    g.player.x = a.x - 18; g.player.y = a.y + a.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(250);
+  check('Anna wird im Browser als Interaktion beschriftet',
+    (await evaluate("(window.__roland.game.hud.label || {}).text || ''")).includes('ANNA'));
+  check('Touch-Aktion heißt bei Anna nicht Tritt',
+    (await evaluate("document.getElementById('btnAction').textContent")) === 'AKTION');
+  const flurShot = await send('Page.captureScreenshot', { format: 'png' });
+  const flurPath = join(act1ShotDir, 'act2-flur.png');
+  writeFileSync(flurPath, Buffer.from(flurShot.data, 'base64'));
+  check('Akt-2-Flurbild geschrieben', existsSync(flurPath));
+  results.push(`AKT2-SCREENSHOT ${flurPath}`);
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(100);
+  }
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const gate = g.gates.find((e) => e.flag === 'probe_beauftragt');
+    g.player.x = gate.tx * 16 - g.player.w + 2;
+    g.player.y = 25 * 16 - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(200);
+  const a2brief = JSON.parse(await evaluate(`JSON.stringify({
+    flag: window.__roland.game.storyFlags.has('probe_beauftragt'),
+    tor: window.__roland.game.gates.find((e) => e.flag === 'probe_beauftragt').open,
+    ziel: window.__roland.game.hud.ziel
+  })`));
+  check('Drei echte E-Tastendrücke schließen Annas Auftrag ab', a2brief.flag === true, JSON.stringify(a2brief));
+  check('Annas Auftrag öffnet die Saaltür im Browser', a2brief.tor === true, JSON.stringify(a2brief));
+  check('Das Journal wechselt danach zu Mappe und Einsatz', (a2brief.ziel || '').includes('MAPPE'), a2brief.ziel);
+  // Pult: getragene Mappe im Bild, dann Abgabe und Einsatz per E-Taste.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const p = g.entities.find((e) => e.kind === 'pult');
+    g.player.x = p.x + 4; g.player.y = p.y + p.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(1200);
+  const pultShot = await send('Page.captureScreenshot', { format: 'png' });
+  const pultPath = join(act1ShotDir, 'act2-pult.png');
+  writeFileSync(pultPath, Buffer.from(pultShot.data, 'base64'));
+  check('Akt-2-Pultbild geschrieben', existsSync(pultPath));
+  results.push(`AKT2-SCREENSHOT ${pultPath}`);
+  await key('KeyE', 'keyDown'); await sleep(60);
+  await key('KeyE', 'keyUp'); await sleep(160);
+  for (let i = 0; i < 3; i++) {
+    await evaluate('window.__roland.game.beatPhase = 0.02');
+    await key('KeyE', 'keyDown'); await sleep(60);
+    await key('KeyE', 'keyUp'); await sleep(140);
+  }
+  const a2einsatz = JSON.parse(await evaluate(`JSON.stringify({
+    teil: window.__roland.game.entities.find((e) => e.kind === 'pult').teil,
+    gelungen: window.__roland.game.einsatzGelungen,
+    flag: window.__roland.game.storyFlags.has('einsatz_gelungen')
+  })`));
+  check('Drei Takte im Takt ergeben den Einsatz im Browser',
+    a2einsatz.teil === 3 && a2einsatz.gelungen === true && a2einsatz.flag === true, JSON.stringify(a2einsatz));
+  // Bühne: Frack an, Anna-Payoff per E-Taste, drittes Raumbild am Ziel.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    g.setOutfit('frack');
+    const a = g.entities.find((e) => e.kind === 'npc' && e.flag === 'probe_abgenommen');
+    g.player.x = a.x - 18; g.player.y = a.y + a.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(300);
+  const buehneShot = await send('Page.captureScreenshot', { format: 'png' });
+  const buehnePath = join(act1ShotDir, 'act2-buehne.png');
+  writeFileSync(buehnePath, Buffer.from(buehneShot.data, 'base64'));
+  check('Akt-2-Bühnenbild geschrieben', existsSync(buehnePath));
+  results.push(`AKT2-SCREENSHOT ${buehnePath}`);
+  for (let i = 0; i < 2; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(100);
+  }
+  const a2payoff = JSON.parse(await evaluate(`JSON.stringify({
+    flag: window.__roland.game.storyFlags.has('probe_abgenommen'),
+    zielFrei: window.__roland.game.goalErfuellt()
+  })`));
+  check('Annas Abschied gibt den Bühneneingang frei',
+    a2payoff.flag === true && a2payoff.zielFrei === true, JSON.stringify(a2payoff));
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Cabrio-Interludium im Browser --------------------------------------
