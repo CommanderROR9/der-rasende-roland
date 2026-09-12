@@ -12,7 +12,9 @@ export function createAudio() {
     if (ac) return ac;
     const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
     if (!AC) { enabled = false; return null; }
-    ac = new AC();
+    // Ein Browser ohne Ton darf das Spiel nicht anhalten: ohne Kontext bleibt
+    // alles still, aber spielbar.
+    try { ac = new AC(); } catch { return null; }
     master = ac.createGain();
     master.gain.value = 0.22;
     master.connect(ac.destination);
