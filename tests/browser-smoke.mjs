@@ -1602,11 +1602,16 @@ try {
   //    Uebergabe wirklich im Spiel steht. Nicht der Druck ist die Pruefung,
   //    sondern die Uebergabe selbst.
   let zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 6000);
-  let uebergabeVersuche = 0;
-  for (let i = 0; i < 12; i++) {
+  let uebergabeVersuche = 0, anmarsch4 = 0;
+  for (let i = 0; i < 5; i++) {
     if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
     if (!(await evaluate(nah4('nimmt', 'kiste')))) {
-      zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 3000) || zuRolfOben;
+      // Nicht bei Rolf: hoechstens zweimal erneut anmarschieren, sonst keine
+      // Blinddrucke und kein Weiterlaufen in die falsche Richtung.
+      if (anmarsch4 >= 2) break;
+      anmarsch4 += 1;
+      zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 2500) || zuRolfOben;
+      if (!(await evaluate(nah4('nimmt', 'kiste')))) break;
     }
     uebergabeVersuche += 1;
     await key('KeyE', 'keyDown'); await sleep(90);
