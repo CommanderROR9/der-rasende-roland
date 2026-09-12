@@ -1206,16 +1206,24 @@ try {
   check('Akt 3: im Frack oeffnet der Spieler das Podiumstor',
     nachTor.tor === true && nachTor.x > 93 * 16, JSON.stringify(nachTor));
 
-  // Das Podium verlangt beide Pulte UND Rolfs Abschied.
+  // Das Podium verlangt beide Pulte UND Rolfs Abschied. Beide Pulte sind
+  // gesichert, offen ist also genau der dritte Ziel-Flag (openair_abgenommen).
+  // Geprueft wird deshalb nicht nur die Sperre, sondern auch, dass das Journal
+  // den NOCH OFFENEN Schritt nennt (Rolfs Abschied). Der immer gleiche Zielname
+  // PODIUM allein waere kein Beleg fuer die Spielerfuehrung.
   const amPodium = JSON.parse(await evaluate(`JSON.stringify({
     state: window.__roland.game.state,
     zielFrei: window.__roland.game.goalErfuellt(),
     ziel: window.__roland.game.hud.ziel,
     label: window.__roland.game.hud.label,
+    pulteGesichert: ['pult_west_gesichert', 'pult_ost_gesichert']
+      .every((f) => window.__roland.game.storyFlags.has(f)),
+    abschiedOffen: !window.__roland.game.storyFlags.has('openair_abgenommen'),
   })`));
   check('Akt 3: das Podium gibt erst mit beiden Pulten und Rolfs Abschied frei',
     amPodium.state === 'play' && amPodium.zielFrei === false
-    && /PODIUM/.test(amPodium.ziel || ''), JSON.stringify(amPodium));
+    && amPodium.pulteGesichert === true && amPodium.abschiedOffen === true
+    && /ROLF AM PODIUM TREFFEN/.test(amPodium.ziel || ''), JSON.stringify(amPodium));
 
   // Rolfs Abschied ueber die Aktionstaste; danach endet der Auftritt.
   for (let i = 0; i < 2; i++) {
