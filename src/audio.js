@@ -3,13 +3,18 @@
 export function createAudio() {
   let ac = null;
   let master = null;
+  let musikGain = null;
   let enabled = true;
+  let musikAn = true;
+  let musikLaut = 0.8;
 
   function ctx() {
     if (ac) return ac;
     const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
     if (!AC) { enabled = false; return null; }
-    ac = new AC();
+    // Ein Browser ohne Ton darf das Spiel nicht anhalten: ohne Kontext bleibt
+    // alles still, aber spielbar.
+    try { ac = new AC(); } catch { return null; }
     master = ac.createGain();
     master.gain.value = 0.22;
     master.connect(ac.destination);
@@ -51,6 +56,44 @@ export function createAudio() {
   let engOsc = null, engGain = null;
   return {
     resume() { const c = ctx(); if (c && c.state === 'suspended') c.resume(); },
+    /** Geteilter Kontext für die Musik-Engine (kein zweiter AudioContext). */
+    musikKontext() { return ctx(); },
+    /** Eigener Musik-Bus, getrennt von den Geräuschen — kein Krachen. */
+    musikBus() {
+      const c = ctx();
+      if (!c) return null;
+      if (!musikGain) {
+        musikGain = c.createGain();
+        musikGain.gain.value = (musikAn ? musikLaut : 0) * 0.5;
+        musikGain.connect(c.destination);
+      }
+      return musikGain;
+    },
+    setMusicEnabled(on) {
+      musikAn = !!on;
+      if (musikGain && ac) {
+        const t = ac.currentTime;
+        try {
+          musikGain.gain.cancelScheduledValues(t);
+          musikGain.gain.setValueAtTime(Math.max(0.0001, musikGain.gain.value), t);
+          musikGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, (musikAn ? musikLaut : 0) * 0.5), t + 0.08);
+        } catch { musikGain.gain.value = (musikAn ? musikLaut : 0) * 0.5; }
+      }
+    },
+    setMusicVolume(v) {
+      const n = Number(v);
+      musikLaut = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.8;
+      if (musikGain && ac) {
+        const t = ac.currentTime;
+        try {
+          musikGain.gain.cancelScheduledValues(t);
+          musikGain.gain.setValueAtTime(Math.max(0.0001, musikGain.gain.value), t);
+          musikGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, (musikAn ? musikLaut : 0) * 0.5), t + 0.08);
+        } catch { musikGain.gain.value = (musikAn ? musikLaut : 0) * 0.5; }
+      }
+    },
+    isMusicEnabled() { return musikAn; },
+    musicVolume() { return musikLaut; },
     /** Motorbrummen für das Fahr-Interludium. */
     engine(anteil = 0) {
       const c = ctx();

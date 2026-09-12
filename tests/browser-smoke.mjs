@@ -35,6 +35,9 @@ const profile = mkdtempSync(join(tmpdir(), 'roland-chrome-'));
 const chrome = spawn(chromiumPath, [
   '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
   '--disable-dev-shm-usage', '--no-sandbox', '--mute-audio',
+  // Ton im Prüflauf: der Browser darf den AudioContext nicht aus Höflichkeit
+  // sperren — geprüft wird, dass die Seite ihn erst nach dem Start anlegt.
+  '--autoplay-policy=no-user-gesture-required',
   `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
   '--window-size=1280,720', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -100,6 +103,28 @@ async function key(code, type) {
     type, code, key: k, text: type === 'char' ? k : undefined,
     windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk,
   });
+}
+// Echter Mausklick auf ein Element: nur so entsteht die Nutzeraktion, die der
+// Browser für Ton verlangt (`element.click()` in der Konsole zählt nicht).
+async function echterKlick(selector) {
+  const r = JSON.parse(await evaluate(`(() => {
+    const e = document.querySelector(${JSON.stringify(selector)});
+    if (!e) return 'null';
+    const b = e.getBoundingClientRect();
+    return JSON.stringify({ x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) });
+  })()`));
+  if (!r) return false;
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  return true;
+}
+// Auswertung mit Nutzeraktion (Rückfallebene, wenn der Mausklick nicht landet).
+async function evaluateMitGeste(expr) {
+  const r = await send('Runtime.evaluate', {
+    expression: expr, returnByValue: true, awaitPromise: true, userGesture: true,
+  });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || ''));
+  return r.result.value;
 }
 
 try {
@@ -570,6 +595,7 @@ try {
       id: await evaluate('window.__roland.level.id'),
       fahrzeug: await evaluate('window.__roland.level.fahrzeug || ""'),
       laeuft: await evaluate('window.__roland.aktiv ? window.__roland.aktiv.state : "keiner"'),
+      motiv: await evaluate('window.__roland.musik.aktuellesMotiv()'),
       fehler: await evaluate('JSON.stringify(window.__errors)'),
     });
   }
@@ -580,6 +606,11 @@ try {
   check('Stationsklick bleibt auf jeder Station fehlerfrei',
     klickProbe.every((k) => k.fehler === '[]'),
     klickProbe.filter((k) => k.fehler !== '[]').map((k) => `akt${k.akt}: ${k.fehler}`).join(' | '));
+  // Musik: jeder Stationsklick zieht das Motiv der Station nach (kein Tonvergleich,
+  // aber der Zustandswechsel muss stimmen).
+  check('Stationswechsel wechselt das Musikmotiv',
+    klickProbe.every((k) => k.motiv === k.id),
+    klickProbe.map((k) => `${k.id}->${k.motiv}`).join(' | '));
 
   // --- Akt 2 im echten Browser --------------------------------------------
   // Nach Akt 1 erscheint der Kurzweg (hier über den Spielstand simuliert)
@@ -1446,6 +1477,138 @@ try {
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 
   await evaluate("window.__roland.loadAct(0)");
+
+  // --- Musik im echten Browser -------------------------------------------
+  // Kein Tonvergleich (nicht messbar), aber: vor dem Start darf gar kein
+  // AudioContext entstehen, nach dem Start muss er laufen, der Stationswechsel
+  // muss ohne Konsolenfehler durchlaufen und der Node-Haushalt klein bleiben.
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, station: 'akt1' }))");
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(2200);
+  const vorStart = JSON.parse(await evaluate(`JSON.stringify({
+    kontext: window.__roland.musik.kontextZustand(),
+    motiv: window.__roland.musik.aktuellesMotiv(),
+    bereit: window.__roland.musikBereit,
+    schalter: !!document.getElementById('musikBtn'),
+    regler: document.getElementById('musikVol') ? document.getElementById('musikVol').type : 'keiner'
+  })`));
+  check('Vor dem Start entsteht kein AudioContext (kein Ton vor der ersten Nutzeraktion)',
+    vorStart.kontext === 'kein-kontext' && vorStart.motiv === null && vorStart.bereit === false,
+    JSON.stringify(vorStart));
+  check('Musik hat einen eigenen Schalter und Regler (getrennt vom Ton)',
+    vorStart.schalter === true && vorStart.regler === 'range', JSON.stringify(vorStart));
+
+  // Echter Mausklick auf START, dann auf die erste Garderoben-Karte.
+  let geste = 'Maus';
+  await echterKlick('#startBtn');
+  await sleep(450);
+  let gardeOffen = (await evaluate("!document.getElementById('garde').classList.contains('hidden')"));
+  if (!gardeOffen) { geste = 'Rückfallebene mit Nutzeraktion'; await evaluateMitGeste("document.getElementById('startBtn').click()"); await sleep(300); }
+  await echterKlick('#gardeCards button');
+  await sleep(500);
+  let aktivDa = (await evaluate('!!window.__roland.aktiv'));
+  if (!aktivDa) { geste = 'Rückfallebene mit Nutzeraktion'; await evaluateMitGeste("document.querySelectorAll('#gardeCards button')[0].click()"); await sleep(400); }
+
+  let kontextZustand = 'kein-kontext';
+  for (let i = 0; i < 12; i++) {
+    kontextZustand = await evaluate('window.__roland.musik.kontextZustand()');
+    if (kontextZustand === 'running') break;
+    await sleep(150);
+  }
+  const nachStart = JSON.parse(await evaluate(`JSON.stringify({
+    kontext: window.__roland.musik.kontextZustand(),
+    motiv: window.__roland.musik.aktuellesMotiv(),
+    bereit: window.__roland.musikBereit,
+    laeuft: window.__roland.musik.laeuft(),
+    knoten: window.__roland.musik.offeneKnoten(),
+    knopf: document.getElementById('musikBtn').textContent
+  })`));
+  check('Audio-Kontext ist nach dem Start aktiv',
+    nachStart.kontext === 'running', `${JSON.stringify(nachStart)} (Weg: ${geste})`);
+  check('Musik spielt das Motiv der geladenen Station',
+    nachStart.motiv === 'akt1' && nachStart.laeuft === true && nachStart.bereit === true,
+    JSON.stringify(nachStart));
+  check('Der Node-Haushalt bleibt klein (keine hängenden Audio-Nodes)',
+    nachStart.knoten > 0 && nachStart.knoten <= 48, `${nachStart.knoten} Nodes`);
+
+  // Jede Station durchschalten: Motiv folgt, keine Konsolenfehler, kein Wachstum.
+  const musikWechsel = [];
+  const anzahlStationen = await evaluate('window.__roland.levelCount');
+  for (let i = 0; i < anzahlStationen; i++) {
+    await evaluate(`(() => {
+      window.__errors.length = 0;
+      window.__roland.loadAct(${i});
+      document.getElementById('startBtn').click();
+      return 1;
+    })()`);
+    await sleep(260);
+    if ((await evaluate("window.__roland.level.mode")) !== 'racer') {
+      await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+      await sleep(260);
+    }
+    musikWechsel.push({
+      id: await evaluate('window.__roland.level.id'),
+      motiv: await evaluate('window.__roland.musik.aktuellesMotiv()'),
+      knoten: await evaluate('window.__roland.musik.offeneKnoten()'),
+      fehler: await evaluate('JSON.stringify(window.__errors)'),
+    });
+  }
+  check('Stationswechsel ohne Konsolenfehler',
+    musikWechsel.every((w) => w.fehler === '[]'),
+    musikWechsel.filter((w) => w.fehler !== '[]').map((w) => `${w.id}: ${w.fehler}`).join(' | '));
+  check('Jede Station bekommt ihr eigenes Motiv',
+    musikWechsel.every((w) => w.motiv === w.id),
+    musikWechsel.map((w) => `${w.id}->${w.motiv}`).join(' | '));
+  const maxKnoten = Math.max(...musikWechsel.map((w) => w.knoten));
+  check('Die Nodes sammeln sich beim Wechseln nicht an',
+    maxKnoten <= 64, `${maxKnoten} Nodes nach ${musikWechsel.length} Wechseln`);
+
+  // Schalter: Musik getrennt stumm, Lautstärke, Zustand im Spielstand.
+  await evaluate("document.getElementById('musikBtn').click()");
+  await sleep(200);
+  const stumm = JSON.parse(await evaluate(`JSON.stringify({
+    text: document.getElementById('musikBtn').textContent,
+    stumm: window.__roland.musik.istStumm(),
+    pegel: window.__roland.musik.effektiveLautstaerke(),
+    gespeichert: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').musik
+  })`));
+  check('Musik lässt sich getrennt abschalten und merkt sich das',
+    stumm.stumm === true && stumm.pegel === 0 && stumm.gespeichert === false,
+    JSON.stringify(stumm));
+  await evaluate("document.getElementById('musikBtn').click()");
+  await evaluate(`(() => {
+    const v = document.getElementById('musikVol');
+    v.value = '30';
+    v.dispatchEvent(new Event('input'));
+    return 1;
+  })()`);
+  await sleep(200);
+  const laut = JSON.parse(await evaluate(`JSON.stringify({
+    laut: window.__roland.musik.lautstaerke(),
+    effektiv: window.__roland.musik.effektiveLautstaerke(),
+    regler: document.getElementById('musikVol').value,
+    gespeichert: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').musikLaut,
+    tonAus: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').sound
+  })`));
+  check('Musiklautstärke wirkt und steht im Spielstand',
+    Math.abs(laut.laut - 0.3) < 1e-9 && Math.abs(laut.effektiv - 0.3) < 1e-9
+      && laut.regler === '30' && Math.abs(laut.gespeichert - 0.3) < 1e-9
+      && laut.tonAus === undefined,
+    JSON.stringify(laut));
+
+  // Zurück ins Menü: die Musik verstummt und gibt ihre Nodes frei.
+  const nachQuit = JSON.parse(await evaluate(`(() => {
+    document.getElementById('quitBtn').click();
+    const m = window.__roland.musik;
+    m.stop();
+    return JSON.stringify({ knoten: m.offeneKnoten(), laeuft: m.laeuft(), kontext: m.kontextZustand() });
+  })()`));
+  check('Musikstopp gibt alle Nodes frei, ohne den Kontext zu verlieren',
+    nachQuit.knoten === 0 && nachQuit.laeuft === false && nachQuit.kontext === 'running',
+    JSON.stringify(nachQuit));
+  check('keine Fehler in der Musikprüfung',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+    await evaluate('JSON.stringify(window.__errors)'));
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
   // Ausdrücklich auf Akt 1 setzen: der Abschnitt prüft die Lauf-Steuerung und
