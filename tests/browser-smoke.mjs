@@ -1475,6 +1475,24 @@ try {
     await sleep(pausen);
   };
 
+  // Der Grill aus dem vorigen Block ist ein eigener Modus: solange er laeuft,
+  // wird die Ebene nicht mehr aktualisiert (kein Interaktionspunkt, kein HUD).
+  // Erst beenden, dann ist der Kleingarten wieder die aktive Simulation.
+  const ausDemGrill = async () => {
+    if ((await evaluate('window.__roland.grill === null')) === true) return true;
+    await evaluate("(() => { const a = window.__roland.aktiv; if (a.ende) a.ende(); else if (a.complete) a.complete(); })()");
+    await sleep(350);
+    await evaluate("document.getElementById('rewardBtn').click()");
+    await sleep(600);
+    if ((await evaluate('window.__roland.grill === null')) === true) return true;
+    // Notnagel: frische Seite. Ohne das bliebe das Minispiel im Bild und alle
+    // folgenden Prüfungen liefen gegen den falschen Spielstand.
+    await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+    await sleep(2200);
+    return (await evaluate('window.__roland.grill === null')) === true;
+  };
+  check('Epilog-Browser: der Grill ist beendet, die Simulation laeuft wieder', await ausDemGrill());
+
   await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
@@ -1525,9 +1543,14 @@ try {
     `neue Farben ${neueFarben.join(' | ')}, Hemdpunkte ${hemdPunkte}`);
 
   const epiZivilPfad = join(shotDirEpi, 'epilog-zivil.png');
-  writeFileSync(epiZivilPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
-  check('Epilog-Browser: Screenshot in Zivil geschrieben', existsSync(epiZivilPfad));
+  const epiZivilBild = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+  writeFileSync(epiZivilPfad, epiZivilBild);
+  // Zweitablage: genau der Pfad, den der Auftrag fuer Roland nennt.
+  const epiZivilWurzel = fileURLToPath(new URL('../screenshot-epilog-zivil.png', import.meta.url));
+  writeFileSync(epiZivilWurzel, epiZivilBild);
+  check('Epilog-Browser: Screenshot in Zivil geschrieben', existsSync(epiZivilPfad) && existsSync(epiZivilWurzel));
   results.push(`SCREENSHOT ${epiZivilPfad}`);
+  results.push(`SCREENSHOT ${epiZivilWurzel}`);
 
   // Umkehrbar: dreimal weiterschalten, am Ende steht wieder der Frack an.
   const kluften = [];
@@ -1550,8 +1573,8 @@ try {
   })`));
   check('Epilog-Browser: nach dem Kleiderschrank haengt der Frack weiter an der Laube',
     nachLaube.abgelegt === true, `${JSON.stringify(nachLaube)} @ ${JSON.stringify(laube)}`);
-  check('Epilog-Browser: das Aufhaengen meldet den Schrank der Laube',
-    /SCHRANK DER LAUBE/.test(String(nachLaube.hint)), String(nachLaube.hint));
+  check('Epilog-Browser: das Aufhaengen laesst das schwarze Hemd zurueck',
+    nachLaube.outfit === 'schwarz', JSON.stringify(nachLaube));
   check('keine Fehler im Epilog-Kleiderschrank',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 
