@@ -12,6 +12,7 @@ const ITEM_DEFS = {
   stimmblatt: { spr: 'stimmblatt', w: 10, h: 12, label: 'STIMMBLATT' },
   brezel: { spr: 'brezel', w: 10, h: 7, label: 'BREZEL' },
   bier: { spr: 'bier', w: 10, h: 13, label: 'FEIERABENDBIER' },
+  taktstock: { spr: 'taktstock', w: 8, h: 10, label: 'TAKTSTOCK' },
 };
 
 const ENEMY_KINDS = new Set(['piccolo', 'sopran', 'tenor', 'koffer', 'dirigent']);
@@ -87,6 +88,13 @@ export class Game {
     this.taktHits = 0;
     this.deckel = 0;
     this.hasMappe = false;
+    // Tragezustand (Akt 4): die Lampenkiste bleibt ein eigenes Objekt in der
+    // Welt und wird getragen, nicht verschluckt. Wer trägt, ist nicht wehrlos:
+    // der Takt-Tritt bleibt möglich, absetzen geht mit DUCKEN + E.
+    this.traegt = false;
+    this.kisteEnt = null;
+    // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4).
+    this.frieden = false;
     this.standCooldown = 0;
     this.hint = null;
     this.pauseReason = null;
@@ -172,6 +180,17 @@ export class Game {
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
       case 'pult':
         return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3, flag: s.flag, aktion: s.aktion };
+      case 'kiste': {
+        // Rolfs Lampenkiste: bleibt als Objekt in der Welt, auch beim Tragen
+        // (alive=false), damit Absetzen und Wiederaufnehmen verlustfrei sind.
+        const matrix = SPRITES[s.spr || 'lampenkiste'];
+        const h = matrix ? matrix.length : 14;
+        const w = matrix ? Math.max(...matrix.map((row) => row.length)) : 16;
+        return {
+          kind: 'kiste', spr: s.spr || 'lampenkiste', label: s.label || 'LAMPENKISTE',
+          x: s.tx * TILE, y: (s.walkRow + 1) * TILE - h, w, h, alive: true, near: false,
+        };
+      }
       case 'npc': {
         const matrix = SPRITES[s.spr];
         const h = matrix ? matrix.length : 22;
@@ -384,7 +403,10 @@ export class Game {
     const boost = this.frackBoost > 0 ? 1.35 : 1;
     // Wetter: Regen macht den Boden rutschig, Kälte macht langsam und steif
     const wetterTempo = (this.nassFaktor ? 0.88 : 1) * (this.wetterKind === 'kaelte' ? 0.88 : 1);
-    const speed = this.outfit.speed * slow * boost * wetterTempo;
+    // Die Lampenkiste ist schwer: etwas langsamer, aber ohne neue Sackgasse —
+    // Sprunghöhe und Taktaktion bleiben unverändert.
+    const tragTempo = this.traegt ? 0.85 : 1;
+    const speed = this.outfit.speed * slow * boost * wetterTempo * tragTempo;
 
     // Ducken verändert die Trefferfläche
     const wantDuck = !frozen && inp.down() && p.onGround;
@@ -428,11 +450,19 @@ export class Game {
     const actNow = inp.action() && !frozen;
     const actPressed = actNow && !this.prevAction;
     this.wantInteract = actPressed;
-    // Am Kleiderständer ist der Druck zum Umziehen gedacht, nicht zum Tritt.
-    // Am Dirigentenpult wird der Einsatz gegeben (DRR-04).
-    if (actPressed && !this.nearStand() && !this.nearPult() && !this.nearNpc()) {
-      if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
-      else this.tryTritt();
+    // Am Kleiderständer ist der Druck zum Umziehen gedacht, nicht zum Tritt;
+    // am Dirigentenpult wird der Einsatz gegeben (DRR-04); an der Lampenkiste
+    // wird aufgenommen bzw. (DUCKEN + E) abgesetzt.
+    if (actPressed) {
+      const kiste = this.nearKiste();
+      if (kiste && !this.traegt) {
+        // Aufnehmen hat Vorrang: die Kiste steht sonst als Requisite im Weg.
+        this.kisteAufnehmen(kiste);
+      } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc()) {
+        if (this.traegt && inp.down()) this.kisteAbsetzen();
+        else if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
+        else this.tryTritt();
+      }
     }
     this.prevAction = inp.action();
 
@@ -772,6 +802,9 @@ export class Game {
 
   // -------------------------------------------------------------- Gegner --
   updateEnemies(dt) {
+    // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4): niemand
+    // greift mehr an, niemand schießt, nichts schiebt mehr an.
+    if (this.frieden) return;
     let slowActive = false;
     const p = this.player;
     for (const en of this.entities) {
@@ -994,6 +1027,19 @@ export class Game {
     }
     this.entities = this.entities.filter((en) => en.alive);
 
+    // Die Lampenkiste: Nahmarkierung setzen. Aufnehmen und Absetzen geschehen in
+    // updatePlayer, damit dieselbe Taste nicht doppelt wirkt.
+    for (const en of this.entities) {
+      if (en.kind === 'kiste') en.near = overlap(p, this.standSlot(en));
+    }
+    // Der Aufstieg selbst ist ein Storyschritt: wer die Kiste trägt und oben
+    // ankommt, hört, dass Rolf an der Versenkung wartet.
+    if (this.traegt && !this.storyFlags.has('kiste_oben') && p.y + p.h <= 13 * TILE) {
+      this.storyFlags.add('kiste_oben');
+      this.events({ type: 'story', flag: 'kiste_oben' });
+      this.message('DIE KISTE IST OBEN. ROLF WARTET AN DER VERSENKUNG.', 6, 2);
+    }
+
     // Datengetriebene Gespräche: E blättert bewusst durch kurze Zeilen; in der
     // Nähe einer Figur löst dieselbe Taste deshalb keinen Beton-Tritt aus.
     for (const en of this.entities) {
@@ -1152,6 +1198,81 @@ export class Game {
     return null;
   }
 
+  /** Rolfs Lampenkiste in Reichweite — aufnehmen oder wieder aufnehmen. */
+  nearKiste() {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'kiste' || !en.alive) continue;
+      if (overlap(p, this.standSlot(en))) return en;
+    }
+    return null;
+  }
+
+  /**
+   * Kiste aufnehmen: sie verschwindet nicht, sie wird getragen (alive=false).
+   * Sichtbar am Spieler, Tempo leicht raus, Taktaktionen bleiben möglich.
+   */
+  kisteAufnehmen(en) {
+    if (this.traegt) return false;
+    en.alive = false;
+    en.near = false;
+    this.traegt = true;
+    this.kisteEnt = en;
+    this.storyFlags.add('kiste_aufgenommen');
+    this.audio.play('pickup');
+    this.message('LAMPENKISTE AUFGENOMMEN. DUCKEN + E LEGT SIE WIEDER AB.', 6, 2);
+    this.events({ type: 'kiste', auf: 'genommen' });
+    this.hud = this.buildHud();
+    return true;
+  }
+
+  /**
+   * Kiste absetzen: sie fällt bis auf den nächsten festen Boden in ihrer Spalte
+   * und bleibt dort liegen — überall wieder aufnehmbar, kein Softlock.
+   */
+  kisteAbsetzen() {
+    const en = this.kisteEnt;
+    if (!this.traegt || !en) return false;
+    const p = this.player;
+    const tx = Math.floor((p.x + p.w / 2) / TILE);
+    let boden = null;
+    for (let ty = Math.floor((p.y + p.h + 1) / TILE); ty < this.level.h; ty++) {
+      const v = this.tileVal(tx, ty);
+      if (v === 1 || v === 2 || v === 3) { boden = ty; break; }
+    }
+    en.x = clamp(tx * TILE, 0, (this.level.w - 1) * TILE);
+    en.y = boden === null ? p.y + p.h - en.h : boden * TILE - en.h;
+    en.alive = true;
+    // Beim Tragen fällt die Kiste aus der Entitätsliste (alive=false-Filter);
+    // abgesetzt gehört sie wieder hinein, sonst wäre sie unsichtbar und für
+    // immer unerreichbar.
+    if (!this.entities.includes(en)) this.entities.push(en);
+    this.traegt = false;
+    this.kisteEnt = en;
+    this.audio.play('pickup');
+    this.message('LAMPENKISTE ABGESETZT. E NIMMT SIE WIEDER AUF.', 4.5, 2);
+    this.events({ type: 'kiste', auf: 'abgesetzt' });
+    this.hud = this.buildHud();
+    return true;
+  }
+
+  /**
+   * Übergabe an Rolf oben an der Hauptversenkung: die Kiste ist weg, und mit der
+   * Pflicht endet auch der Druck — kein Kampfplatz mehr, kein erzwungenes Sammeln.
+   */
+  kisteUebergeben(npc) {
+    if (!this.traegt) return false;
+    const en = this.kisteEnt;
+    this.traegt = false;
+    this.kisteEnt = null;
+    if (en) { en.alive = false; en.uebergeben = true; }
+    this.frieden = true;
+    this.audio.play('gate');
+    this.message('ROLF NIMMT DIE LAMPENKISTE. DIE PFLICHT IST VORBEI.', 6, 2);
+    this.events({ type: 'kiste', auf: 'uebergeben', npc: npc && npc.npc });
+    return true;
+  }
+
   requirementMet(requirement) {
     if (requirement === 'mappe') return !!this.hasMappe;
     return this.storyFlags.has(requirement);
@@ -1168,6 +1289,11 @@ export class Game {
       this.message(npc.blocked || `${npc.name}: „DA FEHLT NOCH ETWAS.“`, 5.5, 3);
       return false;
     }
+    // Wer die Kiste abnimmt (Akt 4), verlangt sie auch: ohne Kiste kein Satz.
+    if (npc.nimmt === 'kiste' && !this.traegt) {
+      this.message(npc.blocked || `${npc.name}: „WO IST DIE KISTE?“`, 5.5, 3);
+      return false;
+    }
     if (npc.complete) {
       this.message(`${npc.name}: „${npc.after || 'WIR SEHEN UNS OBEN.'}“`, 5, 3);
       return true;
@@ -1182,6 +1308,7 @@ export class Game {
         this.storyFlags.add(npc.flag);
         this.events({ type: 'story', flag: npc.flag, npc: npc.npc });
       }
+      if (npc.nimmt === 'kiste') this.kisteUebergeben(npc);
     }
     this.hud = this.buildHud();
     return true;
@@ -1289,6 +1416,21 @@ export class Game {
         action: !fertig, key: 'E', x: pult.x + 8, y: pult.y - 20,
       };
     }
+    // Lampenkiste (Akt 4): aufnehmen — oder, wenn man sie trägt, der Hinweis,
+    // wie sie wieder abgesetzt wird (DUCKEN + E). Beides bleibt eine bewusste
+    // Aktion und macht den Tragezustand ohne Menü verständlich.
+    const kiste = this.entities.find((en) => en.kind === 'kiste' && en.near);
+    if (kiste) {
+      best = {
+        text: 'LAMPENKISTE AUFNEHMEN', action: true, key: 'E',
+        x: kiste.x + kiste.w / 2, y: kiste.y - 8,
+      };
+    } else if (this.traegt && !npc && !stand) {
+      best = {
+        text: 'LAMPENKISTE ABSETZEN', action: true, key: 'S+E',
+        x: p.x + p.w / 2, y: p.y - 12,
+      };
+    }
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
     const zielFrei = this.goalErfuellt();
@@ -1356,6 +1498,14 @@ export class Game {
         }
         break;
       }
+      case 'taktstock':
+        // Optionales Andenken (Akt 4): kein Storyschritt, kein Ziel — nur ein
+        // Fundstück, das im Handschuhfach landet (siehe story.js BELOHNUNGEN).
+        this.storyFlags.add('taktstock_genommen');
+        this.audio.play('pickup');
+        this.message('TAKTSTOCK. DER DIRIGENT HAT IHN LIEGEN LASSEN.', 5, 2);
+        this.events({ type: 'story', flag: 'taktstock_genommen' });
+        break;
       case 'brezel':
         this.nerves = Math.min(this.maxNerves, this.nerves + 1);
         this.audio.play('pickup');
@@ -1369,6 +1519,8 @@ export class Game {
   damage(n, fromX) {
     const p = this.player;
     if (p.invuln > 0 || this.state !== 'play') return false;
+    // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4).
+    if (this.frieden) return false;
     this.nerves -= n;
     p.invuln = this.diff.invuln;
     p.flash = 0.25;
@@ -1499,6 +1651,9 @@ export class Game {
       hint: this.hint ? this.hint.text : null,
       state: this.state,
       hasMappe: this.hasMappe,
+      traegt: !!this.traegt,
+      kiste: !!this.kisteEnt,
+      friedlich: !!this.frieden,
       applaus: this.level.applaus ? Math.round(this.applaus) : null,
       applausZiel: this.level.applaus ? this.level.goal.applaus : null,
       label: this.nearestLabel(),
@@ -1991,6 +2146,16 @@ export class Game {
           }
           break;
         }
+        case 'kiste': {
+          const spr = this.spr(en.spr);
+          blit(ctx, spr, x, y, false, 0);
+          if (en.near) {
+            // dezente Markierung: hier ist eine Aktion möglich
+            ctx.fillStyle = 'rgba(93,224,207,0.75)';
+            ctx.fillRect(x + 5, y - 6, 6, 2);
+          }
+          break;
+        }
         case 'npc': {
           const spr = this.spr(en.spr);
           blit(ctx, spr, x, y + en.h - spr.h, !!en.flip, 0);
@@ -2070,6 +2235,11 @@ export class Game {
     if (this.hasMappe && !this.mappeAbgegeben) {
       const mappe = this.spr('mappe');
       blit(ctx, mappe, x + (p.dir < 0 ? -7 : 10), y + 10, p.dir < 0, 0, hurt ? 0.6 : 1);
+    }
+    // Die Lampenkiste reist sichtbar mit (Akt 4): über dem Kopf getragen.
+    if (this.traegt) {
+      const kiste = this.spr('lampenkiste');
+      blit(ctx, kiste, x - 2, y - 13, false, 0, hurt ? 0.6 : 1);
     }
     if (hurt) {
       // Ruhender Schutzrahmen statt Blinken: man sieht den Schutz, ohne dass

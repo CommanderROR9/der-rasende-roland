@@ -1509,11 +1509,20 @@ function place(game, px, py) {
   g6.reset('schwarz');
   g6.maxNerves = 99;
   g6.nerves = 99;
+  // Akt 4 ist eine Story-Strecke: das Gitter am Ende des Dienstgangs öffnet nur
+  // Rolfs Auftrag, die Kiste kommt nur auf E mit, und Rolf oben nimmt sie nur
+  // auf E ab. Genau wie die Bots in Akt 2 und Akt 3 muss dieser Bot die
+  // Gespräche deshalb mit echten Aktionsanschlägen führen — bleiben sie aus,
+  // steht er vor verschlossenem Gitter (Befund A4b: x=308, Tile 19). Die
+  // Strecke selbst bleibt unverändert und wird komplett zu Fuß gegangen.
   const route4 = [
-    { wp: [10, 25] }, { wp: [30, 25] }, { wp: [50, 25] },
+    { wp: [10, 25] }, { wp: [12, 25] }, { talk: 'graben_beauftragt' },
+    { wp: [30, 25] }, { kiste: true },  // Rolfs Lampenkiste aufnehmen (E)
+    { wp: [50, 25] },
     { wp: [60, 25] },
     { wp: [60, 12], sec: 26 },          // auf die Versenkung warten und mitfahren
     { wp: [66, 12] },                   // Umkleide auf dem Steg
+    { talk: 'kiste_uebergeben' },       // Rolf nimmt die Kiste ab (E)
     { outfit: 'frack' },
     { wp: [74, 12] }, { wp: [86, 12] }, // übers Absperrband
     { wp: [96, 12] },                   // Auftritt
@@ -1522,6 +1531,19 @@ function place(game, px, py) {
   let jh4 = 0, jr4 = 0, lr4 = 1;
   for (const schritt of route4) {
     if (schritt.outfit) { g6.setOutfit(schritt.outfit); continue; }
+    if (schritt.kiste) {                // E in Reichweite der Kiste
+      i6.setKey('action', true); g6.update(1 / 60);
+      i6.setKey('action', false); g6.update(1 / 60);
+      continue;
+    }
+    if (schritt.talk) {                 // E blättert die Datenzeilen durch
+      const npc = g6.entities.find((en) => en.kind === 'npc' && en.flag === schritt.talk);
+      for (let i = 0; i < npc.dialog.length; i++) {
+        i6.setKey('action', true); g6.update(1 / 60);
+        i6.setKey('action', false); g6.update(1 / 60);
+      }
+      continue;
+    }
     const [wx, row] = schritt.wp;
     const tx = wx * TILE + 8, feetY = row * TILE;
     let ok = false, best = Infinity, still = 0;
@@ -2076,11 +2098,37 @@ function place(game, px, py) {
   });
   vier.reset('schwarz');
   let zusammenbrueche = 0, kante = 0, sprungTakt = 0;
-  const weg4 = [[10, 25], [30, 25], [44, 23], [50, 25], [60, 25], [60, 12], [66, 12], [72, 12], [86, 12], [96, 12]];
-  let ziel4 = 0;
+  // Dieselbe Story-Hürde wie im Routenbot oben: ohne Rolfs Auftrag bleibt das
+  // Gitter zu, ohne E bleibt die Kiste liegen und ohne Übergabe endet der Akt
+  // nicht. Die Wegpunkte sind unverändert — der Bot geht sie weiter zu Fuß.
+  const weg4 = [
+    [10, 25], [12, 25], { talk: 'graben_beauftragt' },
+    [30, 25], { kiste: true },
+    [44, 23], [50, 25], [60, 25],
+    [60, 12], [66, 12], { talk: 'kiste_uebergeben' },
+    { outfit: 'frack' },
+    [72, 12], [86, 12], [96, 12],
+  ];
+  const wegpunkte4 = weg4.filter((s) => Array.isArray(s)).length;
+  let ziel4 = 0, erreicht4 = 0;
   for (let i = 0; i < 60 * 300 && vier.state !== 'complete' && ziel4 < weg4.length; i++) {
+    const schritt = weg4[ziel4];
+    if (schritt.outfit) { vier.setOutfit(schritt.outfit); ziel4 += 1; continue; }
+    if (schritt.kiste) {              // E in Reichweite der Lampenkiste
+      i4.setKey('action', true); vier.update(1 / 60);
+      i4.setKey('action', false); vier.update(1 / 60);
+      ziel4 += 1; continue;
+    }
+    if (schritt.talk) {               // E blättert die Datenzeilen durch
+      const npc = vier.entities.find((en) => en.kind === 'npc' && en.flag === schritt.talk);
+      for (let k = 0; k < npc.dialog.length; k++) {
+        i4.setKey('action', true); vier.update(1 / 60);
+        i4.setKey('action', false); vier.update(1 / 60);
+      }
+      ziel4 += 1; continue;
+    }
     const p = vier.player;
-    const [tx, row] = weg4[ziel4];
+    const [tx, row] = schritt;
     const dx = tx * 16 + 8 - (p.x + p.w / 2);
     const sollY = row * 16;
     i4.setKey('right', dx > 3);
@@ -2096,16 +2144,14 @@ function place(game, px, py) {
     vier.update(1 / 60);
     if (vier.state === 'paused') vier.resume();
     if (vier.state === 'collapse') { zusammenbrueche++; vier.respawnFromCheckpoint(); }
-    if (Math.abs(dx) < 8 && Math.abs((p.y + p.h) - sollY) < 18 && p.onGround) ziel4 += 1;
-    // Auf dem Steg steht der Kleiderstaender: fuer das Tor braucht es den Frack
-    if (ziel4 >= 8 && vier.outfit.id !== 'frack') vier.setOutfit('frack');
+    if (Math.abs(dx) < 8 && Math.abs((p.y + p.h) - sollY) < 18 && p.onGround) { ziel4 += 1; erreicht4 += 1; }
   }
   // Erreichbarkeit ist die harte Aussage: jeder Wegpunkt (inkl. Versenkung)
   // ohne Teleport. Die Zusammenbrueche stehen als Druckmesser in der Meldung —
   // wie streng das fuer einen Menschen ist, entscheidet Rolands eigener Test.
   check('Akt 4: Route ist erreichbar (alle Wegpunkte, ohne Teleport)',
-    ziel4 >= weg4.length || vier.state === 'complete',
-    `Ziel ${ziel4}/${weg4.length}, Zusammenbrüche=${zusammenbrueche} (Druckmesser)`);
+    erreicht4 >= wegpunkte4 || vier.state === 'complete',
+    `Wegpunkte ${erreicht4}/${wegpunkte4}, Zusammenbrüche=${zusammenbrueche} (Druckmesser)`);
 }
 
 // ------------------------------- Akt 4: Weg nach oben ohne Punktlandung -------
