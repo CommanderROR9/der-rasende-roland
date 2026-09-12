@@ -564,6 +564,12 @@ export class Game {
       }
       if (this.gustTimer > 0) {
         this.gustTimer -= dt;
+        // Der Schub allein bewegt den Spieler praktisch nicht: er läuft VOR
+        // moveAndCollide und wird von der Bodenreibung (900·dt) aufgefressen.
+        // Gemessen (Sonde mit stehendem und laufendem Spieler): stehend
+        // 0,00 px, laufend +2,2 px pro 2 s Böe. Was der Wind wirklich leistet,
+        // ist die Vorwarnung (0,9 s) und die Notenblätter: bis zu acht
+        // gleichzeitig, 0,6 s Stun bei Kontakt — die Pulte bleiben sicherbar.
         p.vx += this.gustDir * 62 * dt;
       }
       if (Math.random() < dt * 3.4 && this.blaetter.length < 8) {
@@ -581,7 +587,8 @@ export class Game {
       this.gustWarn = 0;
     }
 
-    // Notenblätter treiben und stoßen den Spieler an
+    // Notenblätter treiben mit der Böe und stoßen den Spieler an: 0,6 s Stun,
+    // kein Schaden (die Böe selbst verschiebt ihn nicht messbar, siehe oben).
     for (const b of this.blaetter) {
       b.t += dt;
       b.x += b.vx * dt;
