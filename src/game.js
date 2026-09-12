@@ -96,6 +96,7 @@ export class Game {
     // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4).
     this.frieden = false;
     this.standCooldown = 0;
+    this.garderobeCooldown = 0;   // Kleiderschrank im Kleingarten (Epilog)
     this.hint = null;
     this.pauseReason = null;
     this.goalNote = -99;
@@ -178,6 +179,14 @@ export class Game {
         return { kind: 'grill', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 20, h: 12, alive: true, near: false };
       case 'schrank':
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
+      case 'garderobe': {
+        // Der Kleiderschrank im Kleingarten (Epilog): ein eigener
+        // Interaktionspunkt, an dem Frack und Zivil gewechselt werden.
+        const matrix = SPRITES[s.spr || 'kleiderschrank'];
+        const h = matrix ? matrix.length : 30;
+        const w = matrix ? Math.max(...matrix.map((row) => row.length)) : 16;
+        return { kind: 'garderobe', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - h, w, h, alive: true, near: false };
+      }
       case 'pult':
         return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3, flag: s.flag, aktion: s.aktion };
       case 'kiste': {
@@ -304,6 +313,7 @@ export class Game {
     this.updateHints();
     if (this.frackBoost > 0) this.frackBoost -= dt;
     if (this.standCooldown > 0) this.standCooldown -= dt;
+    if (this.garderobeCooldown > 0) this.garderobeCooldown -= dt;
     if (this.invuln > 0) this.invuln -= dt;
     this.stats.time = this.time;
     this.stats.deckel = this.deckel;
@@ -468,7 +478,7 @@ export class Game {
       if (kiste && !this.traegt) {
         // Aufnehmen hat Vorrang: die Kiste steht sonst als Requisite im Weg.
         this.kisteAufnehmen(kiste);
-      } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc()) {
+      } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc() && !this.nearGarderobe()) {
         if (this.traegt && inp.down()) this.kisteAbsetzen();
         else if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
         else this.tryTritt();
@@ -817,6 +827,41 @@ export class Game {
     return true;
   }
 
+  /** Was der Kleiderschrank im Kleingarten gerade anbietet. */
+  garderobeAngebot() {
+    if (this.outfit.id === 'zivil') {
+      return this.frackAbgelegt
+        ? 'KLEIDERSCHRANK: NUR NOCH ZIVIL'
+        : 'KLEIDERSCHRANK: FRACK ANZIEHEN';
+    }
+    return 'KLEIDERSCHRANK: ZIVIL ANZIEHEN';
+  }
+
+  /**
+   * Outfitwechsel am Kleiderschrank des Kleingartens. Umkehrbar: Zivil und
+   * Frack wechseln sich ab, so oft man will. Einzige Ausnahme ist der Frack,
+   * der schon in der Laube hängt — der kommt nicht zurück, das ist die
+   * bestehende Einbahnstraße des Epilogs („für immer").
+   * @returns die Kluft, die danach getragen wird
+   */
+  garderobeWechsel() {
+    this.garderobeCooldown = 0.5;
+    if (this.outfit.id === 'zivil') {
+      if (this.frackAbgelegt) {
+        this.message('DER FRACK HÄNGT IM SCHRANK DER LAUBE. HIER GIBT ES NUR NOCH ZIVIL.', 5, 1);
+        return this.outfit.id;
+      }
+      this.setOutfit('frack');
+      this.storyFlags.delete('zivil_an');
+      this.message('FRACK AN. DAS HAWAII-HEMD BLEIBT IM SCHRANK.', 4.5, 2);
+      return this.outfit.id;
+    }
+    this.setOutfit('zivil');
+    this.storyFlags.add('zivil_an');
+    this.message('ZIVIL: SHORTS UND HAWAII-HEMD. KEINE HITZE, KEIN GLANZ, KEIN TAKT.', 5, 2);
+    return this.outfit.id;
+  }
+
   // -------------------------------------------------------------- Gegner --
   updateEnemies(dt) {
     // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4): niemand
@@ -1109,9 +1154,26 @@ export class Game {
       if (this.outfit.id === 'frack') {
         this.frackAblegen();
         this.message('DER FRACK HÄNGT IM SCHRANK DER LAUBE. FÜR IMMER.', 5.5, 2);
-      } else {
+      } else if (this.frackAbgelegt) {
         this.message('IM SCHRANK HÄNGT DER FRACK. DU TRÄGST IHN SCHON NICHT MEHR.', 5, 1);
+      } else {
+        // Der Frack hängt noch an dir: der Schrank der Laube ist dann nur eine
+        // leere Kammer. Kein falscher Hinweis, dass er schon drin hängt.
+        this.message('DER SCHRANK DER LAUBE IST LEER. DER FRACK HÄNGT NOCH AN DIR.', 5, 1);
       }
+    }
+
+    // Der Kleiderschrank im Kleingarten (Epilog): hier wird auf Zivil
+    // umgezogen — und wieder zurück in den Frack. Nur auf Tastendruck, wie am
+    // Kleiderständer: bloßes Vorbeilaufen zieht niemanden um.
+    for (const en of this.entities) {
+      if (en.kind !== 'garderobe') continue;
+      const slot = { x: en.x - 22, y: en.y - 26, w: en.w + 44, h: en.h + 34 };
+      const nah = overlap(p, slot);
+      en.near = nah;
+      if (!nah || !this.wantInteract || this.garderobeCooldown > 0) continue;
+      this.wantInteract = false;
+      this.garderobeWechsel();
     }
 
     // Souffleurkasten: wer zu nahe kommt, hört plötzlich den Text mit
@@ -1211,6 +1273,17 @@ export class Game {
     const p = this.player;
     for (const en of this.entities) {
       if (en.kind === 'npc' && overlap(p, this.standSlot(en))) return en;
+    }
+    return null;
+  }
+
+  /** Der Kleiderschrank im Kleingarten: hier ist E eine Aktion, kein Tritt. */
+  nearGarderobe() {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'garderobe') continue;
+      const slot = { x: en.x - 22, y: en.y - 26, w: en.w + 44, h: en.h + 34 };
+      if (overlap(p, slot)) return en;
     }
     return null;
   }
@@ -1428,6 +1501,15 @@ export class Game {
       best = {
         text: traegtFrack ? 'FRACK IN DEN SCHRANK HÄNGEN' : 'SCHRANK DER LAUBE',
         action: traegtFrack, key: 'E', x: schrank.x + 8, y: schrank.y - 6,
+      };
+    }
+    // Der Kleiderschrank im Kleingarten: eigener Punkt, eigene, kontextabhängige
+    // Beschriftung. Er ist immer eine bewusste Aktion (AKTION), nie ein Tritt.
+    const garderobe = this.entities.find((en) => en.kind === 'garderobe' && en.near);
+    if (garderobe) {
+      best = {
+        text: this.garderobeAngebot(),
+        action: true, key: 'E', x: garderobe.x + 8, y: garderobe.y - 8,
       };
     }
     const pult = this.entities.find((en) => en.kind === 'pult' && en.near);
@@ -1673,6 +1755,7 @@ export class Game {
       frackOffUsed: this.frackOffUsed,
       frackAbgelegt: this.frackAbgelegt,
       setzen: !!this.setzen,
+      zivilAn: this.storyFlags.has('zivil_an'),
       ruhig: !!this.level.ruhig,
       ziel: this.zielText(),
       stimmblaetter: this.stimmblaetter,
@@ -2158,6 +2241,17 @@ export class Game {
             // dezente Markierung: hier ist eine Aktion möglich
             ctx.fillStyle = 'rgba(93,224,207,0.75)';
             ctx.fillRect(x + 5, y - 10, 6, 2);
+          }
+          break;
+        }
+        case 'garderobe': {
+          const spr = this.spr('kleiderschrank');
+          blit(ctx, spr, x, y, false, 0);
+          if (en.near) {
+            // dezent, aber unterscheidbar vom Schrank der Laube: zwei Marker
+            ctx.fillStyle = 'rgba(93,224,207,0.75)';
+            ctx.fillRect(x + 4, y - 10, 8, 2);
+            ctx.fillRect(x + 6, y - 14, 4, 2);
           }
           break;
         }
