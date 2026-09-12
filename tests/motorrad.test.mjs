@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { buildMotorrad, buildCabrio } from '../src/world.js';
 import { Racer, buildTrack, SEG_LEN, project, CAM_H } from '../src/racer.js';
 import { createInput } from '../src/input.js';
+import { MOTORRAD_SPRITES, drawNightBike, drawNightSky } from '../src/motorrad-art.js';
 
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log(`PASS ${name}`); }
@@ -105,5 +106,85 @@ test('night roadside does not flicker', () => {
     last = now;
   }
   assert.ok(flips <= 4, `${flips} flips`);
+});
+// --- Darstellung: Roland sah ein Auto mit zwei Rädern nebeneinander ----------
+function spurLaeufe(zeile) {
+  const out = [];
+  let von = -1;
+  for (let x = 0; x <= zeile.length; x++) {
+    if (x < zeile.length && zeile[x] !== ' ' && von < 0) von = x;
+    else if ((x === zeile.length || zeile[x] === ' ') && von >= 0) { out.push([von, x - 1]); von = -1; }
+  }
+  return out;
+}
+test('Fahrzeug-Sprite ist ein Motorrad, kein zweispuriges Auto', () => {
+  for (const name of ['motorrad', 'motorrad_brake']) {
+    const rows = MOTORRAD_SPRITES[name];
+    const mitte = (rows[0].length - 1) / 2;
+    // Heckansicht: genau EIN Hinterrad, mittig. Zwei Räder nebeneinander = Auto.
+    for (let y = rows.length - 8; y < rows.length; y++) {
+      const spur = spurLaeufe(rows[y]);
+      assert.equal(spur.length, 1, `${name} Zeile ${y}: ${spur.length} Spuren statt einem Hinterrad`);
+      const [von, bis] = spur[0];
+      assert.ok(bis - von + 1 >= 5, `${name} Zeile ${y}: Hinterrad zu schmal (${bis - von + 1} px)`);
+      assert.ok(Math.abs((von + bis) / 2 - mitte) <= 2, `${name} Zeile ${y}: Hinterrad nicht mittig`);
+    }
+    // Schmaler Aufbau: der alte Auto-Sprite war 26 Pixel breit.
+    const breit = Math.max(...rows.map((row) => Math.max(0, ...spurLaeufe(row).map(([a, b]) => b - a + 1))));
+    assert.ok(breit <= 20, `${name} ist ${breit} px breit — das liest sich als Auto`);
+    assert.match(rows.slice(12, 18).join(''), /[Rry]/, `${name} ohne Rücklicht/Blinker`);
+    assert.match(rows.slice(0, 8).join(''), /h/, `${name} ohne Helm/Fahrer von hinten`);
+  }
+});
+
+test('Scheinwerferkegel liegt auf der Straße, nicht am Himmel', () => {
+  const rects = [];
+  const ctx = {
+    fillStyle: '', font: '', textAlign: 'left',
+    fillRect(x, y, w, h) { rects.push({ stil: this.fillStyle, x, y, w, h }); },
+    drawImage() {}, fillText() {},
+  };
+  const r = { vw: 384, vh: 216, lenkung: 0, panneTimer: 0,
+    input: { action: () => false }, sprite: () => ({ canvas: {}, w: 30, h: 26 }) };
+  drawNightBike(r, ctx);
+  const horizont = Math.ceil(r.vh / 2);
+  const alpha = (q) => Number((q.stil.match(/,([\d.]+)\)$/) || [])[1]);
+  const kegel = rects.filter((q) => /^rgba\(255,2(32|36)/.test(q.stil));
+  assert.ok(kegel.length >= 20, `${kegel.length} Kegelstreifen`);
+  for (const q of kegel) {
+    assert.ok(q.y >= horizont, `Kegel bei y=${q.y} hängt am Himmel (Horizont ${horizont})`);
+  }
+  const oben = Math.min(...kegel.map((q) => q.y));
+  assert.ok(oben - horizont <= 8, `Kegel beginnt ${oben - horizont} px unter dem Horizont`);
+  const nah = kegel.filter((q) => q.y >= r.vh - 40), fern = kegel.filter((q) => q.y <= oben + 20);
+  assert.ok(Math.max(...fern.map((q) => q.w)) > Math.max(...nah.map((q) => q.w)),
+    'Kegel verbreitert sich nicht zum Fluchtpunkt hin');
+  assert.ok(Math.max(...nah.map(alpha)) > Math.max(...fern.map(alpha)),
+    'kein heller Lichtsee direkt vor dem Vorderrad');
+});
+
+test('Tunnellampen hängen mit Perspektive an der Decke, nicht als seitliches Band', () => {
+  const segs = [];
+  for (let n = 0; n < 170; n++) {
+    const rel = 300 / (n + 1.5);
+    segs.push({ index: 800 + n, p1: { screen: { x: 192 + Math.round(n * 0.4), fy: 108 + rel, w: Math.round(rel * 6) } } });
+  }
+  const rects = [];
+  const ctx = {
+    fillStyle: '',
+    fillRect(x, y, w, h) { rects.push({ stil: this.fillStyle, x, y, w, h }); },
+    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {},
+  };
+  const r = { vw: 384, vh: 216, position: 160000, imTunnel: () => true, tunnel: [{ from: 770, to: 1150 }] };
+  drawNightSky(r, ctx, segs);
+  const horizont = Math.ceil(r.vh / 2);
+  const lampen = rects.filter((q) => q.stil === '#ffe2a8');
+  assert.ok(lampen.length >= 4, `${lampen.length} Deckenlampen`);
+  // Vorher: alle auf einer Höhe, 30 px breit, seitlich durchlaufend (sah wie ein Zug aus).
+  assert.ok(new Set(lampen.map((q) => q.y)).size >= 3,
+    `alle Lampen auf einer Höhe (${[...new Set(lampen.map((q) => q.y))].join(',')})`);
+  for (const q of lampen) assert.ok(q.y < horizont - 2, `Lampe bei y=${q.y} hängt nicht an der Decke`);
+  assert.ok(Math.max(...lampen.map((q) => q.w)) >= 2 * Math.min(...lampen.map((q) => q.w)),
+    'Lampen werden zum Fluchtpunkt hin nicht schmaler');
 });
 console.log(`${passed} Motorrad tests passed`);
