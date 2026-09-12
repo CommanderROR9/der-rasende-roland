@@ -1099,25 +1099,28 @@ try {
   check('Akt 3: das Absperrband oeffnet sich auf dem Weg zur Wiese',
     nachBand.band === true && nachBand.x > 20 * 16 && nachBand.state !== 'collapse', JSON.stringify(nachBand));
 
-  // Wind als Taktvorgabe: er schiebt den Spieler, blockiert die Pulte aber nicht.
+  // Wind als Taktvorgabe: die Boee wird vorher angekuendigt und traegt die
+  // Notenblaetter mit — die Pulte bleiben dabei spielbar (kein Blocker).
   await evaluate("window.__roland.game.wetterIdx = 1; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'wind'");
   await sleep(300);
-  let böe = null;
-  for (let i = 0; i < 40 && !böe; i++) {
+  const wetterWind = JSON.parse(await evaluate(`JSON.stringify({
+    wetter: window.__roland.game.hud.wetter,
+    dom: document.getElementById('wetter').textContent,
+  })`));
+  let windspur = null;
+  for (let i = 0; i < 40 && !windspur; i++) {
     const b = JSON.parse(await evaluate(`JSON.stringify({
-    weht: window.__roland.game.gustTimer > 0,
-    warnung: window.__roland.game.gustWarn > 0,
-    x: window.__roland.game.player.x,
-    state: window.__roland.game.state,
+      weht: window.__roland.game.gustTimer > 0,
+      warnung: window.__roland.game.gustWarn > 0,
+      blaetter: window.__roland.game.blaetter.length,
+      state: window.__roland.game.state,
     })`));
-    if (b.weht) {
-      await sleep(500);
-      const x2 = await evaluate('window.__roland.game.player.x');
-      böe = { drift: Math.round((x2 - b.x) * 10) / 10, warnung: b.warnung, state: b.state };
-    } else await sleep(280);
+    if (b.weht && (b.blaetter > 0 || b.warnung)) windspur = b;
+    else await sleep(280);
   }
-  check('Akt 3: die Windboee schiebt den Spieler',
-    böe !== null && Math.abs(böe.drift) > 0.5 && böe.state === 'play', JSON.stringify(böe));
+  check('Akt 3: der Wind kuendigt die Boee an und traegt die Blaetter (Taktvorgabe)',
+    wetterWind.wetter === 'wind' && wetterWind.dom === 'WIND'
+    && windspur !== null && windspur.state === 'play', JSON.stringify({ wetterWind, windspur }));
 
   // Beide Pulte im Takt sichern — bei laufendem Wind.
   const pultLabel = `JSON.stringify(window.__roland.game.hud.label)`;
@@ -1203,13 +1206,12 @@ try {
   const amPodium = JSON.parse(await evaluate(`JSON.stringify({
     state: window.__roland.game.state,
     zielFrei: window.__roland.game.goalErfuellt(),
-    hint: window.__roland.game.hud.hint || '',
-    queue: (window.__roland.game.hintQueue || []).map((q) => q.text),
+    ziel: window.__roland.game.hud.ziel,
     label: window.__roland.game.hud.label,
   })`));
   check('Akt 3: das Podium gibt erst mit beiden Pulten und Rolfs Abschied frei',
     amPodium.state === 'play' && amPodium.zielFrei === false
-    && [amPodium.hint, ...amPodium.queue].some((t) => /PULTE/.test(t)), JSON.stringify(amPodium));
+    && /PODIUM/.test(amPodium.ziel || ''), JSON.stringify(amPodium));
 
   // Rolfs Abschied ueber die Aktionstaste; danach endet der Auftritt.
   for (let i = 0; i < 2; i++) {
