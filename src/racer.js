@@ -5,6 +5,8 @@
 import { DIFFICULTY, BPM_BASE } from './config.js';
 import { SPRITES } from './sprites.js';
 import { spriteCanvas, hash2 } from './render.js';
+import { drivingCue, resetJourney, updateJourney, finishJourney } from './cabrio-drive.js';
+import { CABRIO_SPRITES, CABRIO_PALETTE, drawJourneySky, drawJourneySegment, drawJourneyCar, drawJourneyHud } from './cabrio-art.js';
 
 export const SEG_LEN = 200;      // Länge eines Segments in Welteinheiten
 export const ROAD_W = 2000;      // halbe Straßenbreite
@@ -38,7 +40,8 @@ export function buildTrack(spec) {
       h += hill;
       segs.push({
         index: segs.length,
-        curve: part.curve || 0,
+        curve: (part.curve || 0) * (part.ease
+          ? (1 - Math.cos(Math.PI * Math.min(1, i / part.ease, (len - 1 - i) / part.ease))) / 2 : 1),
         y: h,
         p1: { world: { x: 0, y: h, z }, camera: {}, screen: {} },
         p2: { world: { x: 0, y: h + hill, z: z + SEG_LEN }, camera: {}, screen: {} },
@@ -83,7 +86,10 @@ export class Racer {
   }
 
   sprite(name) {
-    if (!this.spr.has(name)) this.spr.set(name, spriteCanvas(name, SPRITES[name]));
+    if (!this.spr.has(name)) {
+      const custom = this.level.journey && CABRIO_SPRITES[name];
+      this.spr.set(name, spriteCanvas(custom ? `cabrio-${name}` : name, custom || SPRITES[name], custom ? CABRIO_PALETTE : undefined));
+    }
     return this.spr.get(name);
   }
 
@@ -109,6 +115,7 @@ export class Racer {
     // Das Motorrad ist flinker als das Cabrio
     const grund = SEG_LEN * 58 * (this.difficulty === 'gemuetlich' ? 0.8 : 1);
     this.maxSpeed = grund * (this.fahrzeug === 'motorrad' ? 1.22 : 1);
+    if (this.level.journey) this.maxSpeed = this.level.journey.cruise * (this.difficulty === 'gemuetlich' ? 0.88 : 1);
     this.damage = 0;
     this.hits = 0;
     this.topSpeed = 0;
@@ -187,6 +194,7 @@ export class Racer {
     }
     this.bumps = 0;
     this.blitze = 0;
+    if (this.level.journey) resetJourney(this);
     this.hud = this.buildHud();
   }
 
@@ -214,13 +222,14 @@ export class Racer {
   // --------------------------------------------------------------- Simulation --
   update(dt) {
     if (this.state !== 'play') return;
+    this.alignJourneyCamera();
     this.time += dt;
     const inp = this.input;
 
     // Gas gibt es automatisch: am Handy muss man nur lenken.
     const lenkung = inp.axis();
     let ziel = this.maxSpeed * (this.rain ? 0.8 : 1);
-    if (inp.action()) ziel *= 0.35;
+    if (inp.action()) ziel *= this.level.journey ? 0.30 : 0.35;
     if (Math.abs(this.playerX) > 1) ziel *= 0.34;
     if (this.panneTimer > 0) { ziel = 0; this.panneTimer -= dt; }
 
@@ -229,7 +238,7 @@ export class Racer {
     this.speed = clamp(this.speed, 0, this.maxSpeed);
     this.topSpeed = Math.max(this.topSpeed, this.speed);
 
-    const seg = this.segmentAt(this.position);
+    const seg = this.segmentAt(this.position + (this.level.journey ? this.playerZ : 0));
     const curve = seg ? seg.curve : 0;
     const pct = this.speed / this.maxSpeed;
     // In der Kurve zieht es nach außen, Lenken arbeitet dagegen
@@ -239,18 +248,21 @@ export class Racer {
     this.playerX += lenkung * dt * (1.5 + pct * 1.7) * (this.rain ? 0.85 : 1);
     this.playerX = clamp(this.playerX, -1.9, 1.9);
 
-    if (Math.abs(curve) >= 2 && Math.abs(lenkung) > 0.2 && this.standTilt === 0 && pct > 0.4) {
+    if (!this.level.journey && Math.abs(curve) >= 2 && Math.abs(lenkung) > 0.2 && this.standTilt === 0 && pct > 0.4) {
       this.standTilt = 1;
       this.message('DER NOTENSTÄNDER KIPPT UM. WIEDER MAL.', 4, 1);
     }
     if (Math.abs(curve) < 1) this.standTilt = Math.max(0, this.standTilt - dt * 0.4);
 
     const vorher = this.position;
-    this.position = (this.position + this.speed * dt) % this.trackLength;
+    this.position = this.level.journey ? Math.min(this.trackLength - this.playerZ, this.position + this.speed * dt)
+      : (this.position + this.speed * dt) % this.trackLength;
     // Streckenende erreicht = angekommen (die Strecke ist eine Route, kein Rundkurs)
-    if (this.position < vorher && this.time > 3) { this.complete(); return; }
+    if ((this.level.journey && this.position >= this.trackLength - this.playerZ)
+      || (this.position < vorher && this.time > 3)) { this.complete(); this.hud = this.buildHud(); return; }
     this.updateObjects(dt);
     this.updateStrecke();
+    if (this.level.journey) updateJourney(this, dt);
     this.updateTakt(dt);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 22);
     if (this.blitze > 0) this.blitze = Math.max(0, this.blitze - dt * 1.6);
@@ -381,6 +393,7 @@ export class Racer {
       ['NASSES LAUB', String(this.laubTreffer || 0)],
       ['REGEN', this.rain ? 'ja, leider' : 'nein, alles trocken'],
     ];
+    if (this.level.journey) finishJourney(this);
     this.events({
       type: 'complete',
       stats: { time: this.time, speed: this.topSpeed, hits: this.hits },
@@ -396,24 +409,32 @@ export class Racer {
   buildHud() {
     return {
       modus: 'racer',
+      drive: this.level.journey ? drivingCue(this) : null,
       speed: Math.round(kmh(this.speed)),
       zeit: this.time,
       hits: this.hits,
       damage: this.damage,
       rain: this.rain,
-      strecke: this.trackLength ? this.position / this.trackLength : 0,
+      strecke: this.trackLength ? clamp(this.position / (this.trackLength - (this.level.journey ? this.playerZ : 0)), 0, 1) : 0,
       bpm: this.bpm,
       beatPhase: this.beatPhase,
       hint: this.hint ? this.hint.text : null,
-      ziel: (this.level && this.level.ziel) || null,
+      ziel: this.level.journey ? `${drivingCue(this).section} — DIE MAPPE ZUR BÜHNE BRINGEN` : (this.level && this.level.ziel) || null,
       label: null,
       state: this.state,
     };
   }
 
   // --------------------------------------------------------------- Zeichnen --
+  alignJourneyCamera() {
+    // Der Kollisionspunkt liegt an den sichtbaren Hinterrädern, nicht unterhalb
+    // des Bildes. Bei Resize muss Simulation UND Projektion ihn neu bestimmen.
+    if (this.level.journey) this.playerZ = CAM_DEPTH * CAM_H * this.vh / (2 * (this.vh / 2 - 8));
+  }
+
   /** Projektion eines Frames: sichtbare Segmente und Objekte, auch ohne Zeichnen prüfbar. */
   buildFrame() {
+    this.alignJourneyCamera();
     const vw = this.vw, vh = this.vh;
     const baseSeg = this.segmentAt(this.position);
     const basePct = (this.position % SEG_LEN) / SEG_LEN;
@@ -426,6 +447,7 @@ export class Racer {
     let dx = -(baseSeg.curve * basePct);
     const visible = [];
     for (let n = 0; n < DRAW_DIST; n++) {
+      if (this.level.journey && baseSeg.index + n >= this.segments.length) break;
       const seg = this.segments[(baseSeg.index + n) % this.segments.length];
       seg.looped = seg.index < baseSeg.index;
       seg.fog = fogAt(n / DRAW_DIST, this.rain ? 4.4 : 3.2);
@@ -435,27 +457,29 @@ export class Racer {
       project(seg.p2, this.playerX * ROAD_W - x - dx, playerY + CAM_H, camZ, vw, vh);
       x += dx;
       dx += seg.curve;
-      if (seg.p1.camera.z <= CAM_DEPTH || seg.p2.screen.y >= seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
+      if (seg.p1.camera.z <= CAM_DEPTH || seg.p2.screen.y > seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
       visible.push(seg);
       maxy = seg.p1.screen.y;
     }
 
     const drawList = [];
     const alle = [];
-    for (const r of this.roadside) alle.push({ z: r.z, kind: r.kind, xf: r.x, breite: SPRITE_F[r.kind] || 0.2 });
-    for (const c of this.traffic) alle.push({ z: c.z, kind: c.kind, xf: c.lane, breite: SPRITE_F[c.kind] || 0.3 });
+    const sceneryWidth = {house:.85,oak:.8,poplar:.36,stage:2.25,pennant:.25,post:.035,arrow:.22};
+    for (const r of this.roadside) alle.push({ z: r.z, kind: r.kind, xf: r.x, flip:r.flip, breite: sceneryWidth[r.kind] || SPRITE_F[r.kind] || 0.2 });
+    for (const c of this.traffic) alle.push({ z: c.z, kind: c.kind, sprite: this.level.journey && c.speed<0 ? 'oncoming' : c.kind, xf: c.lane, breite: SPRITE_F[c.kind] || 0.3 });
     for (const h of this.potholes) alle.push({ z: h.z, kind: 'schlagloch', xf: h.lane, breite: SPRITE_F.schlagloch });
     for (const l of this.laub) alle.push({ z: l.z, kind: 'laub', xf: l.lane, breite: SPRITE_F.laub });
     for (const o of alle) {
       const rel = o.z - this.position;
       if (rel < 0 || rel > DRAW_DIST * SEG_LEN) continue;
-      const seg = this.segments[(baseSeg.index + Math.floor(rel / SEG_LEN)) % this.segments.length];
+      const seg = this.level.journey ? this.segmentAt(o.z)
+        : this.segments[(baseSeg.index + Math.floor(rel / SEG_LEN)) % this.segments.length];
       if (!visible.includes(seg)) continue;
-      const pct = (rel % SEG_LEN) / SEG_LEN;
+      const pct = ((this.level.journey ? o.z : rel) % SEG_LEN) / SEG_LEN;
       const half = lerp(seg.p1.screen.w, seg.p2.screen.w, pct);
       const sx = lerp(seg.p1.screen.x, seg.p2.screen.x, pct) + o.xf * half;
       const sy = lerp(seg.p1.screen.y, seg.p2.screen.y, pct);
-      drawList.push({ kind: o.kind, sx, sy, half, fog: seg.fog, clip: seg.clip, breite: o.breite });
+      drawList.push({ kind: o.kind, sprite:o.sprite || o.kind, flip:o.flip, sx, sy, half, fog: seg.fog, clip: seg.clip, breite: o.breite });
     }
     // weit zuerst zeichnen
     drawList.sort((a, b) => a.half - b.half);
@@ -467,12 +491,15 @@ export class Racer {
     this.drawSky(ctx);
     for (const seg of frame.visible) this.drawSegment(ctx, this.vw, seg);
     for (const o of frame.drawList) {
-      this.drawSpriteAt(ctx, o.kind, o.breite, o.sx, o.sy, o.half, o.fog, o.clip);
+      if(o.flip){ctx.save();ctx.translate(o.sx*2,0);ctx.scale(-1,1);}
+      this.drawSpriteAt(ctx, o.sprite, o.breite, o.sx, o.sy, o.half, o.fog, o.clip);
+      if(o.flip)ctx.restore();
     }
     if (this.nacht) this.drawScheinwerfer(ctx);
     this.drawCar(ctx);
     if (this.rain) this.drawRain(ctx);
     this.drawFx(ctx);
+    if(this.level.journey) drawJourneyHud(this,ctx);
   }
 
   /** Ist der Wagen gerade im Tunnel? */
@@ -482,6 +509,7 @@ export class Racer {
   }
 
   drawSky(ctx) {
+    if(this.level.journey) return drawJourneySky(this,ctx);
     const vw = this.vw, vh = this.vh;
     if (this.imTunnel()) {
       ctx.fillStyle = '#08060c';
@@ -554,6 +582,7 @@ export class Racer {
   }
 
   drawSegment(ctx, vw, seg) {
+    if(this.level.journey) return drawJourneySegment(this,ctx,seg);
     const dunkel = Math.floor(seg.index / 3) % 2 === 0;
     const nachtF = this.nacht && !this.imTunnel();
     const gras = nachtF ? (dunkel ? '#0b1016' : '#090e13')
@@ -616,6 +645,7 @@ export class Racer {
   }
 
   drawCar(ctx) {
+    if(this.level.journey) return drawJourneyCar(this,ctx);
     const spr = this.sprite(this.fahrzeug);
     const scale = (this.vh / 216) * 2.3;
     const w = Math.round(spr.w * scale);

@@ -965,7 +965,7 @@ function place(game, px, py) {
   rk.traffic.length = 0;
   rk.reset();
   stepAny(rk, 4);                    // erst Fahrt aufnehmen
-  rk.position = 80 * SEG_LEN;        // mitten in der ersten Rechtskurve
+  rk.position = rk.segments.find(s => s.curve > 1.8).index * SEG_LEN;
   rk.playerX = 0;
   stepAny(rk, 1.5);
   check('Kurve zieht nach außen', rk.playerX < -0.05, `x=${rk.playerX.toFixed(2)}`);
@@ -1001,7 +1001,7 @@ function place(game, px, py) {
     r4.update(1 / 60);
   }
   check('Fahrt endet an der Open-Air-Bühne', r4.state === 'complete', `state=${r4.state} ${(r4.hud.strecke * 100).toFixed(0)}%`);
-  check('Fahrzeit ist plausibel', r4.time > 20 && r4.time < 60, `${r4.time.toFixed(1)}s`);
+  check('Fahrzeit ist plausibel', r4.time > 20 && r4.time < 100, `${r4.time.toFixed(1)}s`);
   check('Höchstgeschwindigkeit wird angezeigt', r4.hud.speed > 60, `${r4.hud.speed} km/h`);
   check('Abschluss meldet Fahrwerte',
     ev4.length === 1 && Array.isArray(ev4[0].rows) && ev4[0].rows.length >= 3,
@@ -1052,8 +1052,9 @@ function place(game, px, py) {
   check('Schlagloch bremst und wird gezählt', r8.bumps === 1 && gebremst,
     `bumps=${r8.bumps} gebremst=${gebremst}`);
 
-  // Radarfalle blitzt
-  const { r: r9 } = mkRacer();
+  // Die Nachtfahrt behält die Radarregel. Das Cabrio verwendet stattdessen
+  // vorhersehbare Kurvenhinweise, keine zufällig verteilten Blitzer mehr.
+  const { r: r9 } = mkRacer('gemuetlich', buildMotorrad());
   r9.traffic.length = 0;
   for (let i = 0; i < 60 * 2; i++) { r9.playerX = 0; r9.update(1 / 60); }
   const blitz = r9.roadside.find((o) => o.kind === 'blitzer');
