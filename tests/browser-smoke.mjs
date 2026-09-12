@@ -1356,6 +1356,18 @@ try {
     nachtBild.max > 120, JSON.stringify(nachtBild));
   check('keine Fehler in der Nachtfahrt', moto.errors.length === 0, JSON.stringify(moto.errors));
 
+  // Motorrad-Journey: fünf Nachtabschnitte, Helm-Motiv statt Mappe.
+  const motoJourney = JSON.parse(await evaluate(`JSON.stringify({
+    section: window.__roland.aktiv.hud.drive?.section || null,
+    cue: window.__roland.aktiv.hud.drive?.cue || null,
+    ziel: window.__roland.aktiv.hud.ziel,
+    tunnel: window.__roland.racer.imTunnel()
+  })`));
+  check('Motorrad zeigt Nachtabschnitt und Helm-Ziel',
+    motoJourney.section === 'OPERNPLATZ' && !!motoJourney.cue
+    && motoJourney.ziel.includes('NACH HAUSE') && motoJourney.tunnel === false,
+    JSON.stringify(motoJourney));
+
   // --- Akt 5 (Finale) — vor der Nachtfahrt --------------------------------
   await evaluate(`window.__roland.loadAct(${idxVon('DIE BÜHNE')})`);
   await evaluate("document.getElementById('startBtn').click()");
