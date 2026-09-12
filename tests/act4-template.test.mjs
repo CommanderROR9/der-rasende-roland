@@ -7,6 +7,7 @@ import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
 import { PHYS, TILE } from '../src/config.js';
 import { SPRITES } from '../src/sprites.js';
+import { readFileSync } from 'node:fs';
 
 const results = [];
 let failed = 0;
@@ -265,6 +266,87 @@ check('Briefing, Kiste und Frack schließen Akt 4 ab', game.state === 'complete'
     kampf.traegt === true && kampf.lastTritt !== null, JSON.stringify(kampf.lastTritt));
   check('der Taktstock ist auch mit Kiste aufnehmbar (optionales Andenken)',
     kampf.level.spawns.some((s) => s.kind === 'item' && s.item === 'taktstock'));
+}
+
+// ------------------------------------------------ Versenkungen sichtbar ----
+// Playtest-Befund A4d: Die Versenkungen waren überhaupt nicht gezeichnet — in
+// drawEntities fehlte der Fall `lift`. Der einzige Weg nach oben stand als
+// unsichtbare Plattform im dunklen Graben. Diese Prüfung deckt JEDE Versenkung
+// aus level.elevators ab: Name, Schild in Reichweite, vorhandener Sprite und
+// vorhandener Zeichenweg. Eine unsichtbare Versenkung kann so nicht unbemerkt
+// zurückkommen.
+{
+  const quelle = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
+  const ab = quelle.indexOf("case 'lift':");
+  const rest = ab >= 0 ? quelle.slice(ab + 1) : '';
+  const bis = rest.indexOf('case ');
+  const liftCode = bis > 0 ? rest.slice(0, bis) : rest;
+
+  check('die Zeichenschleife kennt die Versenkung als eigenen Fall',
+    ab >= 0 && /fillRect/.test(liftCode) && /en\.w/.test(liftCode),
+    `case bei ${ab}, Zeichenaufrufe ${(liftCode.match(/fillRect/g) || []).length}`);
+  check('die gezeichnete Versenkung hat Leuchte, Warnstreifen und Schienen',
+    ['rgba(255,214,140', '#e8c46a', 'obenY', 'fillRect(x - 3'].every((t) => liftCode.includes(t)));
+
+  for (const el of level.elevators) {
+    const marken = level.spawns.filter((s) => s.kind === 'decor' && s.marke === el.name);
+    const nah = marken.filter((s) => Math.abs(s.tx - el.tx) <= 4);
+    const amEnde = nah.filter((s) => s.walkRow + 1 === el.topRow || s.walkRow + 1 === el.bottomRow);
+    const spriteOk = amEnde.length > 0 && amEnde.every((s) => {
+      const m = SPRITES[s.spr];
+      return Array.isArray(m) && m.length >= 8
+        && Math.max(...m.map((z) => z.length)) >= 16
+        && m.some((z) => z.includes('y'));
+    });
+    check(`Versenkung ${el.name}: benannt, beschildert und gezeichnet`,
+      typeof el.name === 'string' && el.name.length >= 8
+      && nah.length >= 1 && amEnde.length === nah.length && spriteOk,
+      JSON.stringify({ name: el.name, marken: marken.length, nah: nah.length, amEnde: amEnde.length, spriteOk }));
+  }
+
+  // Die Schilder stehen im Spiel auch wirklich als Objekte im Raum.
+  const probe = makeGame();
+  const markerEnts = probe.game.entities.filter((e) => e.kind === 'decor' && e.marke);
+  const erwartet = level.spawns.filter((s) => s.kind === 'decor' && s.marke).length;
+  check('jedes Schild steht als Objekt im Raum',
+    markerEnts.length === erwartet && markerEnts.every((e) => Array.isArray(SPRITES[e.spr])),
+    `${markerEnts.length}/${erwartet}`);
+  const obenMarker = markerEnts.filter((e) => e.marke === level.elevators[0].name);
+  check('die Hauptversenkung ist unten im Graben und oben am Steg beschildert',
+    obenMarker.length === 2
+    && obenMarker.some((e) => e.y + e.h === level.elevators[0].bottomRow * TILE)
+    && obenMarker.some((e) => e.y + e.h === level.elevators[0].topRow * TILE),
+    JSON.stringify(obenMarker.map((e) => `${e.x}/${e.y + e.h}`)));
+
+  // Wegführung vor der Versenkung: ein Kontexttip nennt Ziel und Richtung,
+  // lange bevor der Schacht in Sicht kommt.
+  const haupt = level.elevators[0];
+  check('ein Wegweiser nennt die Hauptversenkung und die Richtung, bevor man davorsteht',
+    level.hints.some((h) => h.x < haupt.tx * TILE - 200
+      && /HAUPTVERSENKUNG/.test(h.text) && /RECHTS/.test(h.text)),
+    JSON.stringify(level.hints.map((h) => `${h.x}|${h.text.slice(0, 30)}`)));
+
+  const weit = makeGame();
+  const hauptEnt = weit.game.entities.find((e) => e.kind === 'lift' && e.name === haupt.name);
+  weit.game.player.x = hauptEnt.x - 200;
+  weit.game.player.y = haupt.bottomRow * TILE - PHYS.playerH;
+  weit.game.player.vx = 0; weit.game.player.vy = 0;
+  weit.game.update(1 / 60);
+  check('aus der Entfernung wird die Richtung zur Versenkung gemeldet',
+    /HAUPTVERSENKUNG/.test(hinweise(weit.game)) && /RECHTS/.test(hinweise(weit.game)),
+    hinweise(weit.game).slice(0, 160));
+  check('weit weg gibt es noch kein Namensschild an der Versenkung',
+    weit.game.hud.label === null, JSON.stringify(weit.game.hud.label));
+
+  const davor = makeGame();
+  const hauptDavor = davor.game.entities.find((e) => e.kind === 'lift' && e.name === haupt.name);
+  davor.game.player.x = hauptDavor.x - 20;
+  davor.game.player.y = haupt.bottomRow * TILE - PHYS.playerH;
+  davor.game.player.vx = 0; davor.game.player.vy = 0;
+  davor.game.update(1 / 60);
+  check('davorstehend wird die Versenkung benannt — ohne Aktionsknopf',
+    davor.game.hud.label?.text === haupt.name && davor.game.hud.label.action === false,
+    JSON.stringify(davor.game.hud.label));
 }
 
 console.log(results.join('\n'));

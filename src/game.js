@@ -144,7 +144,7 @@ export class Game {
   makeLift(el) {
     const top = el.topRow * TILE, bottom = el.bottomRow * TILE;
     return {
-      kind: 'lift', x: el.tx * TILE, y: bottom, w: el.w * TILE, h: 8,
+      kind: 'lift', name: el.name || 'VERSENKUNG', x: el.tx * TILE, y: bottom, w: el.w * TILE, h: 8,
       top, bottom, period: el.period || 10, phase: el.phase || 0, dy: 0, alive: true,
     };
   }
@@ -330,6 +330,16 @@ export class Game {
       const ny = Math.round(en.bottom + (en.top - en.bottom) * k);
       en.dy = ny - en.y;
       en.y = ny;
+      // Weit vor der Versenkung die Richtung nennen, nicht erst am Schacht
+      // (Playtest-Befund Akt 4: „ich finde keine Versenkung"). Nur auf der
+      // Etage, auf der sie unten ankommt, und nur einmal je Versenkung.
+      const dx = (en.x + en.w / 2) - (p.x + p.w / 2);
+      const abstand = Math.abs(dx);
+      if (!en.gemeldet && abstand > 96 && abstand < 22 * TILE
+          && Math.abs((p.y + p.h) - en.bottom) < 6 * TILE) {
+        en.gemeldet = true;
+        this.message(`${en.name}: ${dx > 0 ? 'RECHTS' : 'LINKS'} — DEM SCHACHT MIT DER LEUCHTE FOLGEN.`, 6, 0);
+      }
       const oben = p.y + p.h;
       if (p.x + p.w > en.x + 1 && p.x < en.x + en.w - 1
           && oben >= en.y - 3 && oben <= en.y + 8 && p.vy >= -1) {
@@ -1389,6 +1399,18 @@ export class Game {
         if (d < bestD - 8) { bestD = d; best = { text: 'SPEICHERPUNKT', x: en.x + 8, y: en.y - 4 }; }
       }
     }
+    // Versenkungen (Akt 4) tragen ihren Namen wie der Materialaufzug in Akt 1:
+    // wer davorsteht, liest, wovor er steht. Ohne Aktionsknopf — der Aufstieg
+    // bleibt ein simpler Schritt auf die Plattform.
+    if (!best) {
+      for (const en of this.entities) {
+        if (en.kind !== 'lift' || !en.alive || !en.name) continue;
+        if (Math.abs((en.x + en.w / 2) - cx) > en.w / 2 + 28) continue;
+        if (Math.abs(en.y - (p.y + p.h)) > 26) continue;
+        best = { text: en.name, x: en.x + en.w / 2, y: en.y - 6 };
+        break;
+      }
+    }
     const stand = this.nearStand();
     if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
     const npc = this.entities.find((en) => en.kind === 'npc' && en.near);
@@ -2170,6 +2192,53 @@ export class Game {
             ctx.fillStyle = 'rgba(93,224,207,0.8)';
             ctx.fillRect(x + Math.max(1, Math.floor(en.w / 2) - 3), y - 7, 7, 2);
           }
+          break;
+        }
+        case 'lift': {
+          // Versenkung (Akt 4): Metallplattform mit Warnstreifen, Schienen und
+          // eigener Leuchte. Ohne diesen Fall waren beide Versenkungen
+          // unsichtbar — der einzige Weg nach oben stand als Plattform da, die
+          // es nicht zu sehen gab (Playtest-Befund Akt 4).
+          const obenY = Math.round(en.top - camY);
+          const fahrt = Math.round(en.bottom - en.top) + 4;
+          // Schienen über die ganze Fahrstrecke, mit Sprossen
+          ctx.fillStyle = '#2a2a38';
+          ctx.fillRect(x - 3, obenY - 2, 3, fahrt);
+          ctx.fillRect(x + en.w, obenY - 2, 3, fahrt);
+          ctx.fillStyle = '#6b6480';
+          ctx.fillRect(x - 2, obenY - 2, 1, fahrt);
+          ctx.fillRect(x + en.w + 1, obenY - 2, 1, fahrt);
+          ctx.fillStyle = '#3a3a4a';
+          for (let sy = obenY; sy < obenY + fahrt; sy += TILE) {
+            ctx.fillRect(x - 3, sy, 3, 1);
+            ctx.fillRect(x + en.w, sy, 3, 1);
+          }
+          // Plattform: helle Trittkante, Warnstreifen, dunkler Abschluss
+          ctx.fillStyle = '#8e8e9c';
+          ctx.fillRect(x, y, en.w, en.h);
+          ctx.fillStyle = '#c4c4d0';
+          ctx.fillRect(x, y, en.w, 2);
+          for (let i = 0; i < en.w - 1; i += 4) {
+            ctx.fillStyle = ((i / 4) % 2 === 0) ? '#e8c46a' : '#20202a';
+            ctx.fillRect(x + i, y + 2, 2, 2);
+          }
+          ctx.fillStyle = '#20202a';
+          ctx.fillRect(x, y + en.h - 2, en.w, 2);
+          // Pfeil auf dem Blech: die Fahrtrichtung ist am Korb ablesbar
+          const mx = x + Math.round(en.w / 2);
+          ctx.fillStyle = '#f0eee4';
+          ctx.fillRect(mx - 1, y + 3, 2, 3);
+          ctx.fillRect(mx - 3, y + 5, 6, 1);
+          // Eigene Leuchte am Korbrand: im dunklen Graben das, was auffällt
+          const lampe = 0.5 + Math.sin(this.time * 2.2) * 0.5;
+          ctx.fillStyle = `rgba(255,214,140,${(0.12 + lampe * 0.12).toFixed(3)})`;
+          ctx.fillRect(x - 8, y - 14, en.w + 16, 18);
+          ctx.fillStyle = '#3a3238';
+          ctx.fillRect(x + en.w - 4, y - 9, 2, 9);
+          ctx.fillStyle = '#ffd68c';
+          ctx.fillRect(x + en.w - 6, y - 12, 5, 4);
+          ctx.fillStyle = '#fff3cf';
+          ctx.fillRect(x + en.w - 5, y - 11, 3, 2);
           break;
         }
         case 'decor': {
