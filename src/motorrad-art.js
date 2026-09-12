@@ -1,0 +1,156 @@
+// Original night pixel art for the motorcycle journey. Local matrices only.
+import { hash2 } from './render.js';
+import { journeySection, drivingCue } from './cabrio-drive.js';
+
+export const MOTORRAD_PALETTE = {
+  '.':'#101623', d:'#243040', g:'#3d4c5e', G:'#8b9bab', w:'#e8e2cd',
+  r:'#7e2f36', R:'#c8504f', c:'#ff9d6e', y:'#ffd675', a:'#5e7482',
+  b:'#2e4a56', B:'#6fa3a8', s:'#c9a173', h:'#c7d1cf', H:'#edf1df',
+  e:'#0f1f22', E:'#1d3a34', f:'#2c5a48', F:'#4d8a68', m:'#4a3f35',
+  M:'#7a6350', t:'#9fd8d2', o:'#5c4a3c', O:'#8a6f52', p:'#7a5a7e',
+};
+function pixel(w,h,paint) {
+  const rows = Array.from({length:h}, () => Array(w).fill(' '));
+  const rect = (x,y,width,height,c) => {
+    for (let j=Math.max(0,y);j<Math.min(h,y+height);j++)
+      for (let i=Math.max(0,x);i<Math.min(w,x+width);i++) rows[j][i]=c;
+  };
+  paint(rect);
+  return rows.map(row=>row.join(''));
+}
+function bike(braking=false) {
+  return pixel(30,26,q=>{
+    q(4,20,4,6,'.'); q(22,20,4,6,'.');
+    q(2,17,26,3,'d'); q(3,15,24,2,'g');
+    // Low night machine with rider: helmet, coat, red taillight.
+    q(11,4,7,6,'h'); q(12,5,5,3,'H'); q(11,3,7,2,'r');
+    q(9,10,11,6,'m'); q(10,10,9,2,'M'); q(13,12,4,6,'d');
+    q(6,13,18,4,'R'); q(6,13,18,1,'c');
+    q(24,14,3,3,braking?'y':'R'); q(25,15,1,1,braking?'w':'c');
+    q(3,14,2,2,'y'); q(20,21,3,1,'G');
+    q(12,18,6,2,'w');
+  });
+}
+function nightTraffic(front=false) {
+  return pixel(30,23,q=>{
+    q(5,2,20,2,'a'); q(3,4,24,10,'d'); q(5,4,20,6,'b');
+    q(7,4,16,1,'B'); q(14,4,1,6,'a');
+    q(2,13,26,6,front?'G':'b'); q(3,13,24,2,front?'a':'B');
+    q(3,19,24,2,'d'); q(1,17,5,6,'.'); q(24,17,5,6,'.');
+    q(3,17,6,2,front?'y':'R'); q(21,17,6,2,front?'y':'R');
+    // Headlights cut the dark; taillights glow ahead.
+    if (front) { q(8,10,5,2,'y'); q(17,10,5,2,'y'); }
+    else { q(4,14,3,2,'R'); q(23,14,3,2,'R'); }
+    q(10,17,10,2,'d'); q(12,19,6,1,'w');
+  });
+}
+export const MOTORRAD_SPRITES = {
+  motorrad:bike(), motorrad_brake:bike(true), auto:nightTraffic(), oncoming:nightTraffic(true),
+  lkw:pixel(34,42,q=>{q(3,1,28,34,'d');q(5,3,24,31,'g');q(16,3,2,31,'b');q(6,30,22,2,'a');q(1,34,7,8,'.');q(26,34,7,8,'.');q(3,35,28,3,'g');q(4,36,5,2,'R');q(25,36,5,2,'R');q(8,10,6,4,'y');}),
+  house_night:pixel(48,55,q=>{q(5,18,38,37,'o');for(let i=0;i<10;i++)q(4+i,16-i,40-i*2,2,'d');q(10,5,4,9,'m');q(7,19,34,2,'O');q(7,21,34,29,'O');for(let y=25;y<46;y+=12)for(let x=11;x<36;x+=12){q(x,y,7,8,'d');q(x+1,y+1,5,5,'y');}q(20,44,8,11,'m');q(2,51,44,4,'m');}),
+  pine:pixel(26,62,q=>{q(12,34,3,28,'m');q(8,20,11,26,'e');q(6,26,15,20,'E');q(10,8,7,28,'f');q(7,16,13,20,'E');q(11,2,5,22,'F');q(8,30,11,8,'e');}),
+  reed:pixel(30,34,q=>{for(let i=0;i<7;i++){const x=2+i*4,h=14+Math.round(hash2(i,3)*16);q(x,34-h,2,h,i%2?'F':'f');q(x,34-h,2,2,'y');}q(0,32,30,2,'e');}),
+  lamp:pixel(8,40,q=>{q(3,0,2,40,'g');q(1,0,6,4,'d');q(2,4,4,3,'y');q(2,7,4,8,'y');}),
+  home:pixel(60,58,q=>{q(8,20,44,38,'o');for(let i=0;i<12;i++)q(6+i,18-i,48-i*2,2,'r');q(26,4,5,12,'m');q(8,22,44,2,'O');q(8,24,44,30,'O');for(let x=13;x<48;x+=12){q(x,28,8,10,'d');q(x+1,29,6,8,'y');}q(26,46,9,12,'m');q(27,47,7,10,'y');q(2,54,56,4,'m');}),
+  post:pixel(5,16,q=>{q(1,1,3,15,'w');q(1,4,3,5,'.');q(2,5,1,2,'y');}),
+  arrow:pixel(24,25,q=>{q(3,14,2,11,'g');q(19,14,2,11,'g');q(0,0,24,15,'w');q(1,1,22,13,'r');for(let y=2;y<13;y++){const x=5+Math.min(y-2,12-y);q(x,y,5,1,'w');}}),
+  schlagloch:pixel(24,10,q=>{q(4,0,14,2,'G');q(1,2,22,6,'g');q(4,3,15,5,'.');q(7,8,12,2,'d');}),
+};
+
+export const NIGHT_SCENES = {
+  plaza:{ sky:['#0a0e22','#1a2040','#3a3050','#6b4a5a'], fog:'#2a2438', far:'#232038', near:'#171726', grass:['#1c2a24','#1a271f'],road:['#2c2f3a','#2a2d36'] },
+  river:{ sky:['#060a1c','#141c38','#2c3a5e','#4a5a7a'], fog:'#232c44', far:'#1c2640', near:'#121a2c', grass:['#16241e','#142019'],road:['#282c38','#262a34'] },
+  tunnel:{ sky:['#050507','#0a0a0e','#141418','#1e1e26'], fog:'#101014', far:'#0c0c12', near:'#08080c', grass:['#101418','#0e1216'],road:['#23262e','#20232a'] },
+  forest:{ sky:['#070c1a','#121a30','#24344c','#3c4c5e'], fog:'#1c2636', far:'#182234', near:'#101828', grass:['#14231c','#122018'],road:['#252b36','#232933'] },
+  village:{ sky:['#0a0e20','#1c2444','#40365a','#7a5a60'], fog:'#2c263e', far:'#262040', near:'#1a1828', grass:['#1e2c26','#1c2921'],road:['#2e313c','#2b2e38'] },
+};
+export function nightSceneFor(r) { return NIGHT_SCENES[journeySection(r).theme]; }
+function poly(ctx, points, color) {
+  ctx.fillStyle=color;ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();
+}
+export function drawNightSky(r,ctx) {
+  const {vw:w,vh:h}=r, horizon=Math.ceil(h/2);
+  if (r.imTunnel()) {
+    ctx.fillStyle='#060609';ctx.fillRect(0,0,w,horizon+2);
+    ctx.fillStyle='#2c2820';ctx.fillRect(0,horizon-12,w,12);
+    const off=(r.position*0.4)%110;
+    for(let i=-1;i<w/110+2;i++){
+      const lx=Math.round(i*110-off);
+      ctx.fillStyle='#ffe2a8';ctx.fillRect(lx+40,horizon-11,30,3);
+      ctx.fillStyle='rgba(255,226,168,0.10)';ctx.fillRect(lx+32,horizon-8,46,26);
+    }
+    ctx.fillStyle='#0c0c12';ctx.fillRect(0,horizon,w,2);
+    return;
+  }
+  const s=nightSceneFor(r);
+  for(let i=0;i<4;i++){ctx.fillStyle=s.sky[i];ctx.fillRect(0,Math.floor(i*horizon/4),w,Math.ceil(horizon/4)+1);}
+  ctx.fillStyle='rgba(226,232,255,0.8)';
+  for(let i=0;i<30;i++){
+    const sx=Math.round((hash2(i,7,3)*w+r.time*1.2)%w), sy=Math.round(hash2(i,11,5)*(horizon-14));
+    ctx.fillRect(sx,sy,1,1);
+  }
+  ctx.fillStyle='rgba(223,232,255,0.25)';ctx.fillRect(Math.round(w*.2)-11,14,22,22);
+  ctx.fillStyle='#dfe8ff';ctx.fillRect(Math.round(w*.2)-7,18,14,14);
+  if(journeySection(r).theme==='river'){
+    ctx.fillStyle='#31435f';ctx.fillRect(0,horizon-8,w,8);
+    ctx.fillStyle='rgba(223,232,255,0.35)';ctx.fillRect(Math.round(w*.2)-4,horizon-7,8,2);
+    for(let i=0;i<8;i++){const x=Math.round((hash2(i,5)*w+r.time*4)%w);ctx.fillStyle='rgba(190,210,230,0.25)';ctx.fillRect(x,horizon-6,10,1);}
+  }
+  for(let layer=0;layer<2;layer++){
+    const points=[[0,horizon+3]], shift=r.playerX*(layer?9:4);
+    for(let x=-24;x<=w+24;x+=12){
+      const y=horizon-5-layer*2-Math.round((Math.sin((x+shift)*.024+layer)*.5+.5)*(layer?10:20));points.push([x,y]);
+    }
+    points.push([w+24,horizon+3]);poly(ctx,points,layer?s.near:s.far);
+  }
+  ctx.fillStyle=s.grass[0];ctx.fillRect(0,horizon,w,h-horizon);
+}
+export function drawNightSegment(r,ctx,seg) {
+  const s=nightSceneFor(r), dark=Math.floor(seg.index/3)%2===0;
+  const a=seg.p1.screen,b=seg.p2.screen;
+  ctx.fillStyle=s.grass[dark?0:1];ctx.fillRect(0,b.y,r.vw,a.y-b.y);
+  const band=(lo,hi,color)=>poly(ctx,[[a.x+a.w*lo,a.y],[a.x+a.w*hi,a.y],[b.x+b.w*hi,b.y],[b.x+b.w*lo,b.y]],color);
+  band(-1.07,1.07,'#6e6a58');
+  band(-1,1,s.road[dark?0:1]);
+  band(-.975,-.96,'#c9cfae');band(.96,.975,'#c9cfae');
+  if(dark)band(-.012,.012,'#d8cf8e');
+  if(r.rain&&dark){ctx.globalAlpha=.14;band(.12,.26,'#9fc0cc');ctx.globalAlpha=1;}
+  ctx.globalAlpha=(1-seg.fog)*.85;ctx.fillStyle=s.fog;ctx.fillRect(0,b.y,r.vw,a.y-b.y);ctx.globalAlpha=1;
+}
+export function drawNightBike(r,ctx) {
+  const spr=r.sprite(r.input.action()?'motorrad_brake':'motorrad');
+  const w=Math.round(r.vw*.20), h=Math.round(w*spr.h/spr.w);
+  const x=Math.round(r.vw/2-w/2), y=r.vh-8-h;
+  // Headlight cone ahead; red glow behind when braking.
+  ctx.fillStyle='rgba(255,232,180,0.10)';
+  for(let i=0;i<30;i++){
+    const t=i/29, yy=Math.round(y-h*.2-t*(y-h*.2-r.vh*.42)), breite=Math.round(14+t*r.vw*.55);
+    ctx.fillRect(Math.round(r.vw/2-breite/2),yy,breite,2);
+  }
+  ctx.fillStyle='rgba(14,24,30,.4)';ctx.fillRect(x+3,r.vh-11,w-6,5);
+  const turn=Math.round((r.lenkung||0)*3);
+  ctx.drawImage(spr.canvas,0,0,spr.w,spr.h,x+turn,y,w,h);
+  if(r.panneTimer>0){ctx.fillStyle='#ffd675';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText('KURZE PAUSE',r.vw/2,y-4);ctx.textAlign='left';}
+}
+export function drawNightHud(r,ctx) {
+  // Same journey HUD contract as the Cabrio; shared layout, night tint.
+  const d=drivingCue(r), sections=r.level.journey.sections, j=r.journeyState;
+  const index=sections.findIndex(s=>s.id===d.sectionId), compact=r.vw<320;
+  const box=compact?121:151, right=compact?91:118;
+  ctx.fillStyle='rgba(10,16,34,.9)';ctx.fillRect(5,5,box,29);ctx.fillRect(r.vw-right-5,5,right,29);
+  ctx.fillStyle='#e9e4cf';ctx.font=`bold ${compact?7:8}px monospace`;ctx.textAlign='left';
+  ctx.fillText(`${index+1} / 5  ${d.section}`,10,15);
+  for(let i=0;i<sections.length;i++){
+    const x=10+i*(box-10)/5;
+    ctx.fillStyle=i<j.results.length?(j.results[i].clean?'#85d6c6':'#dfac81'):i===index?'#ffdc8b':'#3a4a5c';
+    ctx.fillRect(Math.round(x),22,Math.floor((box-18)/5),3);
+  }
+  const rx=r.vw-right;
+  ctx.fillStyle=d.braking?'#ffad83':'#9cdbd3';ctx.font=`bold ${compact?7:8}px monospace`;
+  ctx.fillText(d.braking?'BREMSE':d.direction==='straight'?'GERADEAUS':d.direction==='right'?'RECHTS >':'< LINKS',rx,15);
+  ctx.fillStyle='#e8d5a8';ctx.font='6px monospace';
+  ctx.fillText(`RICHTTEMPO ${d.advisedSpeed}`,rx,26);
+  ctx.fillStyle='rgba(10,16,34,.82)';ctx.fillRect(5,37,compact?170:215,12);
+  ctx.fillStyle='#d8d4c2';ctx.font=compact?'6px monospace':'7px monospace';
+  ctx.fillText(d.cue,9,45);
+}

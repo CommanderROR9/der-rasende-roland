@@ -48,67 +48,8 @@ export { buildCabrio };
 // Nach der Oper geht es im Dunkeln nach Hause: Scheinwerferkegel, Tunnel,
 // nasses Laub in den Kurven. Die Nachtluft kühlt den Hitzebalken herunter.
 // ============================================================================
-export function buildMotorrad() {
-  const track = [];
-  const push = (curve, hill, len) => track.push({ curve, hill, len });
-  // Anfahren auf gerader Strecke
-  push(0, 0, 70);
-  push(0, 12, 40);
-  // Schnelle Wechselkurven am Fluss
-  push(-2, 0, 30); push(0, 0, 20);
-  push(3, -14, 26); push(0, 0, 14);
-  push(-3, 10, 26); push(0, 0, 16);
-  // Gerade vor dem Tunnel
-  push(0, 0, 50);
-  // Im Tunnel: kurvig, eng
-  push(2, 0, 30); push(-2, 0, 30); push(2, 8, 26); push(-1, -8, 24);
-  push(0, 0, 40);
-  // Waldstück mit nassem Laub
-  push(4, 0, 30); push(0, 0, 20);
-  push(-4, -10, 30); push(0, 0, 22);
-  push(3, 12, 24); push(-3, 0, 24);
-  push(0, 0, 40);
-  // Schlusskurve und Zielgerade
-  push(-2, 0, 26); push(2, 0, 26);
-  push(0, 0, 90);
-
-  // Tunnelbereich in Segmenten (nach dem Aufbau berechnet)
-  const segmente = [[0, 0]];
-  const segSum = (liste) => liste.reduce((s, t) => s + t.len, 0);
-  let idx = 0;
-  const tunnel = [];
-  for (const t of track) {
-    if (idx === 0) { /* Start */ }
-    idx += t.len;
-  }
-  const gesamt = segSum(track);
-  const tunnelVon = 70 + 40 + 30 + 20 + 26 + 14 + 26 + 16 + 50;
-  const tunnelBis = tunnelVon + 30 + 30 + 26 + 24 + 40;
-  tunnel.push({ from: tunnelVon, to: tunnelBis });
-
-  const wetter = [
-    { at: 0.02, rain: true, label: 'NIESELREGEN — DIE STRASSE GLÄNZT' },
-    { at: 0.78, rain: false, label: 'DER REGEN HÖRT AUF. GUTE NACHT.' },
-  ];
-
-  return {
-    id: 'motorrad',
-    mode: 'racer',
-    fahrzeug: 'motorrad',
-    nacht: true,
-    name: 'INTERLUDIUM — MOTORRAD NACH HAUSE',
-    subtitle: 'Nach der Oper. Scheinwerfer, Tunnel, nasses Laub. Und endlich kühle Luft.',
-    bpm: 112,
-    track,
-    gesamt,
-    tunnel,
-    weather: wetter,
-    traffic: 26,
-    roadside: 210,
-    laub: 30,
-    goalText: 'ZU HAUSE ANGEKOMMEN',
-  };
-}
+import { buildMotorradJourney as buildMotorrad } from './motorrad.js';
+export { buildMotorrad };
 
 // ============================================================================
 // AKT 5 — DIE BÜHNE (DAS FINALE)

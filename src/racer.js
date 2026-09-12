@@ -7,6 +7,15 @@ import { SPRITES } from './sprites.js';
 import { spriteCanvas, hash2 } from './render.js';
 import { drivingCue, resetJourney, updateJourney, finishJourney } from './cabrio-drive.js';
 import { CABRIO_SPRITES, CABRIO_PALETTE, drawJourneySky, drawJourneySegment, drawJourneyCar, drawJourneyHud } from './cabrio-art.js';
+import { MOTORRAD_SPRITES, MOTORRAD_PALETTE, drawNightSky, drawNightSegment, drawNightBike, drawNightHud } from './motorrad-art.js';
+// Journey art is per vehicle so the night ride never borrows daylight sprites.
+const JOURNEY_ART = {
+  cabrio: { sprites: CABRIO_SPRITES, palette: CABRIO_PALETTE,
+    sky: drawJourneySky, segment: drawJourneySegment, car: drawJourneyCar, hud: drawJourneyHud },
+  motorrad: { sprites: MOTORRAD_SPRITES, palette: MOTORRAD_PALETTE,
+    sky: drawNightSky, segment: drawNightSegment, car: drawNightBike, hud: drawNightHud },
+};
+const journeyArt = (level) => (level.journey && JOURNEY_ART[level.journey.art]) || null;
 
 export const SEG_LEN = 200;      // Länge eines Segments in Welteinheiten
 export const ROAD_W = 2000;      // halbe Straßenbreite
@@ -93,8 +102,10 @@ export class Racer {
 
   sprite(name) {
     if (!this.spr.has(name)) {
-      const custom = this.level.journey && CABRIO_SPRITES[name];
-      this.spr.set(name, spriteCanvas(custom ? `cabrio-${name}` : name, custom || SPRITES[name], custom ? CABRIO_PALETTE : undefined));
+      const art = journeyArt(this.level);
+      const custom = art && art.sprites[name];
+      const tag = this.level.journey ? `${this.level.journey.art}-${name}` : name;
+      this.spr.set(name, spriteCanvas(custom ? tag : name, custom || SPRITES[name], custom ? art.palette : undefined));
     }
     return this.spr.get(name);
   }
@@ -425,7 +436,7 @@ export class Racer {
       bpm: this.bpm,
       beatPhase: this.beatPhase,
       hint: this.hint ? this.hint.text : null,
-      ziel: this.level.journey ? `${drivingCue(this).section} — DIE MAPPE ZUR BÜHNE BRINGEN` : (this.level && this.level.ziel) || null,
+      ziel: this.level.journey ? `${drivingCue(this).section} — ${this.level.journey.goalSuffix || 'ANS ZIEL BRINGEN'}` : (this.level && this.level.ziel) || null,
       label: null,
       state: this.state,
     };
@@ -470,7 +481,7 @@ export class Racer {
 
     const drawList = [];
     const alle = [];
-    const sceneryWidth = {house:.85,oak:.8,poplar:.36,stage:2.25,pennant:.25,post:.035,arrow:.22};
+    const sceneryWidth = {house:.85,house_night:.85,oak:.8,pine:.5,poplar:.36,reed:.4,lamp:.1,stage:2.25,home:1.2,pennant:.25,post:.035,arrow:.22};
     for (const r of this.roadside) alle.push({ z: r.z, kind: r.kind, xf: r.x, flip:r.flip, breite: sceneryWidth[r.kind] || SPRITE_F[r.kind] || 0.2 });
     for (const c of this.traffic) alle.push({ z: c.z, kind: c.kind, sprite: this.level.journey && c.speed<0 ? 'oncoming' : c.kind, xf: c.lane, breite: SPRITE_F[c.kind] || 0.3 });
     for (const h of this.potholes) alle.push({ z: h.z, kind: 'schlagloch', xf: h.lane, breite: SPRITE_F.schlagloch });
@@ -505,7 +516,7 @@ export class Racer {
     this.drawCar(ctx);
     if (this.rain) this.drawRain(ctx);
     this.drawFx(ctx);
-    if(this.level.journey) drawJourneyHud(this,ctx);
+    { const art = journeyArt(this.level); if (art) art.hud(this,ctx); }
   }
 
   /** Ist der Wagen gerade im Tunnel? */
@@ -515,7 +526,7 @@ export class Racer {
   }
 
   drawSky(ctx) {
-    if(this.level.journey) return drawJourneySky(this,ctx);
+    { const art = journeyArt(this.level); if (art) return art.sky(this,ctx); }
     const vw = this.vw, vh = this.vh;
     if (this.imTunnel()) {
       ctx.fillStyle = '#08060c';
@@ -588,7 +599,7 @@ export class Racer {
   }
 
   drawSegment(ctx, vw, seg) {
-    if(this.level.journey) return drawJourneySegment(this,ctx,seg);
+    { const art = journeyArt(this.level); if (art) return art.segment(this,ctx,seg); }
     const dunkel = Math.floor(seg.index / 3) % 2 === 0;
     const nachtF = this.nacht && !this.imTunnel();
     const gras = nachtF ? (dunkel ? '#0b1016' : '#090e13')
@@ -651,7 +662,7 @@ export class Racer {
   }
 
   drawCar(ctx) {
-    if(this.level.journey) return drawJourneyCar(this,ctx);
+    { const art = journeyArt(this.level); if (art) return art.car(this,ctx); }
     const spr = this.sprite(this.fahrzeug);
     const scale = (this.vh / 216) * 2.3;
     const w = Math.round(spr.w * scale);

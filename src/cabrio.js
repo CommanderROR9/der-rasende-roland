@@ -23,7 +23,12 @@ export function buildCabrioJourney() {
     name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR',
     subtitle: 'Die Mappe fährt mit. Lenken und vor engen Kurven bremsen.',
     bpm: 104, track,
-    journey: { version: 1, sections, cruise: 10800 },
+    journey: { version: 1, art: 'cabrio', sections, cruise: 10800,
+      arrival: ['ANGEKOMMEN', 'DIE MAPPE IST AN DER BÜHNE.'],
+      arrivalCue: 'ZUR BÜHNE · RUHIG ANKOMMEN',
+      goalSuffix: 'DIE MAPPE ZUR BÜHNE BRINGEN',
+      scenery: { town: 'house', fields: null, rain: null, festival: 'pennant' },
+      finale: 'stage', features: {} },
     weather: [
       { at: sections[2].from / cursor, rain: true, label: 'REGENSCHAUER — FRÜHER BREMSEN' },
       { at: sections[3].from / cursor, rain: false, label: 'DIE BÜHNE IN SICHT — GLEICH GESCHAFFT' },
