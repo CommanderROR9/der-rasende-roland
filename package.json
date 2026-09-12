@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Pixel-Art-Sidescroller: vom zweiten Untergeschoss in den Kleingarten.",
   "scripts": {
-    "test": "node tests/smoke.test.mjs && node tests/act1-template.test.mjs && node tests/act1-hazard-route.test.mjs && node tests/anna-kompat.test.mjs && node tests/act2-template.test.mjs && node tests/act2-hazard-route.test.mjs && node tests/act3-template.test.mjs && node tests/act3-hazard-route.test.mjs",
+    "test": "node tests/smoke.test.mjs && node tests/act1-template.test.mjs && node tests/act1-hazard-route.test.mjs && node tests/anna-kompat.test.mjs && node tests/act2-template.test.mjs && node tests/act2-hazard-route.test.mjs && node tests/act3-template.test.mjs && node tests/act3-hazard-route.test.mjs && node tests/cabrio.test.mjs",
     "browser": "node tests/browser-smoke.mjs",
     "serve": "python3 -m http.server 8123"
   }

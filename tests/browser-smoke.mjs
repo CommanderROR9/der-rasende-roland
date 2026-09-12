@@ -931,6 +931,16 @@ try {
     maxObjekte >= 2 && maxFahrzeuge >= 1,
     `max ${maxObjekte} Objekte, ${maxFahrzeuge} Fahrzeuge, Arten: ${[...gesehen].join(',')}`);
 
+  // Cabrio-Journey: Abschnitts-HUD mit Fahrhinweis (vier Abschnitte, Mappe fährt mit)
+  const journey = JSON.parse(await evaluate(`JSON.stringify({
+    section: window.__roland.aktiv.hud.drive?.section || null,
+    cue: window.__roland.aktiv.hud.drive?.cue || null,
+    ziel: window.__roland.aktiv.hud.ziel
+  })`));
+  check('Cabrio zeigt Abschnitt und Fahrhinweis',
+    journey.section === 'STADTAUSFAHRT' && !!journey.cue && journey.ziel.includes('MAPPE'),
+    JSON.stringify(journey));
+
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Akt 3 Open Air: Wetter im Browser ----------------------------------
