@@ -127,7 +127,11 @@ try {
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(400);
   const options = await evaluate("JSON.stringify([...document.querySelectorAll('#gardeCards button .title')].map(e=>e.textContent))");
-  check('Kleiderwahl zeigt drei Klüfte', JSON.parse(options).length === 3, options);
+  // Seit dem Epilog-Auftrag E1 gibt es vier Klüfte (ZIVIL kam dazu).
+  const optionListe = JSON.parse(options);
+  check('Kleiderwahl zeigt alle vier Klüfte', optionListe.length === 4
+    && ['SCHWARZES HEMD', 'ANZUG + KRAWATTE', 'FRACK', 'SHORTS + HAWAII-HEMD'].every((k) => optionListe.includes(k)),
+    options);
   check('Meldet SCHWARZ, ANZUG und FRACK',
     ['SCHWARZ', 'ANZUG', 'FRACK'].every((k) => options.includes(k)), options);
 
@@ -300,7 +304,8 @@ try {
   })`));
   check('Aktionstaste öffnet die Umkleide', wardrobeState.state === 'paused' && wardrobeState.reason === 'stand',
     JSON.stringify(wardrobeState));
-  check('Umkleide zeigt die Klüfte zur Wahl', wardrobeState.options.length === 3,
+  check('Umkleide zeigt alle vier Klüfte zur Wahl', wardrobeState.options.length === 4
+    && wardrobeState.options.includes('SHORTS + HAWAII-HEMD'),
     JSON.stringify(wardrobeState.options));
 
   await evaluate("document.querySelectorAll('#gardeCards button')[1].click()");
