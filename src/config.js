@@ -76,6 +76,19 @@ export const OUTFITS = {
     pros: ['öffnet Absperrbänder', 'FRACK-OFF als Rettung'],
     cons: ['langsam', 'Hitze steigt schnell', 'Glanzalarm'],
   },
+  zivil: {
+    id: 'zivil',
+    label: 'SHORTS + HAWAII-HEMD',
+    short: 'ZIVIL',
+    speed: 110,
+    jump: -180,
+    detect: 0.75,
+    heatBase: 0,
+    lightHeat: 0,
+    blurb: 'Shorts und Hawaii-Hemd. Für den Garten gemacht.',
+    pros: ['keine Hitze', 'kein Glanzalarm'],
+    cons: [],
+  },
 };
 
 export const PHYS = {

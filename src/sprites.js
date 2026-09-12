@@ -1160,6 +1160,10 @@ export const OUTFIT_PALETTES = {
     '.': '#0b0810', h: '#cfcfd8', H: '#ffffff', s: '#e8b98a', S: '#c19063',
     a: '#191622', w: '#f0eee4', r: '#e8e6dc', b: '#0b0810',
   },
+  zivil: {
+    '.': '#0b0810', h: '#c9c9d2', H: '#ffffff', s: '#e8b98a', S: '#c19063',
+    a: '#4a5a3a', w: '#2fbfae', r: '#ef8f3a', b: '#14141c',
+  },
 };
 
 // Die Fahrzeug- und Szenensprites für die Interludien kommen in Phase P3.
