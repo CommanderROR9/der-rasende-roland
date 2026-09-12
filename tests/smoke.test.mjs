@@ -71,7 +71,8 @@ function place(game, px, py) {
   check('goal inside level', level.goal.x + level.goal.w <= level.w * TILE);
   check('vertical range is real',
     level.spawns.some((s) => s.kind === 'spawn' && s.walkRow === 24)
-    && level.spawns.some((s) => s.kind === 'item' && s.item === 'mappe' && s.walkRow === 12));
+    && level.goal.y <= 12 * TILE
+    && level.spawns.filter((s) => s.kind === 'item' && s.item === 'stimmblatt').length === 3);
   // Der Kern des Levelbaus: kein Abkürzungsweg am Boden entlang
   check('no ground-level bypass under the upper corridor',
     level.grid[24][26] === 1 && level.grid[24][30] === 1 && level.grid[24][40] === 1);

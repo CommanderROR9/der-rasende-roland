@@ -9,6 +9,7 @@ const ITEM_DEFS = {
   ohropax: { spr: 'ohropax', w: 8, h: 6, label: 'OHROPAX' },
   wasser: { spr: 'wasser', w: 6, h: 10, label: 'WASSERFLASCHE' },
   mappe: { spr: 'mappe', w: 12, h: 12, label: 'NOTENMAPPE' },
+  stimmblatt: { spr: 'stimmblatt', w: 10, h: 12, label: 'STIMMBLATT' },
   brezel: { spr: 'brezel', w: 10, h: 7, label: 'BREZEL' },
   bier: { spr: 'bier', w: 10, h: 13, label: 'FEIERABENDBIER' },
 };
@@ -75,6 +76,9 @@ export class Game {
     this.frackOffUsed = false;
     this.frackAbgelegt = false;   // Frack wirklich ausgezogen (Befund D4)
     this.setzen = false;          // im Kleingarten auf der Bank Platz genommen
+    this.stimmblaetter = 0;       // gesammelte Stimmblätter (DRR-04)
+    this.stimmblaetterNoetig = this.level.stimmblaetterNoetig || 0;
+    this.einsatzGelungen = false; // erster gemeinsamer Einsatz in Akt 2 (DRR-04)
     this.frackBoost = 0;
     this.taktHits = 0;
     this.deckel = 0;
@@ -162,6 +166,8 @@ export class Game {
         return { kind: 'grill', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 20, h: 12, alive: true, near: false };
       case 'schrank':
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
+      case 'pult':
+        return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3 };
       case 'koffer':
         return { kind: 'koffer', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 16, h: 12, patrol: s.patrol, dir: 1, alive: true, stun: 0, flash: 0, bob: 0, wait: 0 };
       default:
@@ -206,6 +212,7 @@ export class Game {
     if (g.frackOff && !this.frackOffUsed) return false;
     if (g.need === 'ablegen') return this.frackAbgelegt;
     if (g.need === 'setzen') return !!this.setzen;
+    if (g.need === 'einsatz') return !!this.einsatzGelungen;
     if (!g.need) return true;
     if (g.need === 'mappe') return !!this.hasMappe;
     return this.outfit.id === g.need;
@@ -404,7 +411,8 @@ export class Game {
     const actPressed = actNow && !this.prevAction;
     this.wantInteract = actPressed;
     // Am Kleiderständer ist der Druck zum Umziehen gedacht, nicht zum Tritt.
-    if (actPressed && !this.nearStand()) {
+    // Am Dirigentenpult wird der Einsatz gegeben (DRR-04).
+    if (actPressed && !this.nearStand() && !this.nearPult()) {
       if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
       else this.tryTritt();
     }
@@ -978,6 +986,16 @@ export class Game {
       }
     }
 
+    // Das Dirigentenpult: hier wird der erste gemeinsame Einsatz gespielt (DRR-04).
+    for (const en of this.entities) {
+      if (en.kind !== 'pult') continue;
+      const nah = overlap(p, this.standSlot(en));
+      en.near = nah;
+      if (!nah || !this.wantInteract) continue;
+      this.wantInteract = false;
+      this.einsatzVersuch();
+    }
+
     // Der Schrank der Laube: hier hängt der Frack. Wer ihn noch trägt, legt ihn
     // hier ab — danach bleibt er im Schrank (Befund D4 / DRR-06).
     for (const en of this.entities) {
@@ -1074,6 +1092,43 @@ export class Game {
     return null;
   }
 
+  /** Das Dirigentenpult: hier wird der erste gemeinsame Einsatz gespielt (DRR-04). */
+  nearPult() {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'pult') continue;
+      if (overlap(p, this.standSlot(en))) return en;
+    }
+    return null;
+  }
+
+  /**
+   * Ein Versuch am Pult. Nur im Takt gezählt — gelungene Teile bleiben erhalten,
+   * ein danebengegangener Versuch kostet nichts (DRR-04).
+   */
+  einsatzVersuch() {
+    const pult = this.nearPult();
+    if (!pult) return;
+    if (this.beatAccuracy() > this.diff.trittWindow) {
+      this.message('DANEBEN. DER TAKT IST DIE MITTE DES PULSES.', 4.5, 2);
+      return;
+    }
+    pult.teil += 1;
+    this.audio.play('beat');
+    this.shake = Math.max(this.shake, 2);
+    for (let i = 0; i < 10; i++) this.burst(pult.x + 8, pult.y, '#e8c46a', 1);
+    // Der Dirigent hält kurz inne: der Einsatz hat ihn erreicht.
+    for (const en of this.entities) if (en.kind === 'dirigent' && en.alive) en.stun = Math.max(en.stun, 1.0);
+    if (pult.teil >= pult.noetig) {
+      this.einsatzGelungen = true;
+      this.audio.play('applaus') ;
+      this.message('DER EINSATZ SITZT. DAS ORCHESTER ZIEHT MIT.', 6, 2);
+      this.events({ type: 'einsatz' });
+    } else {
+      this.message(`TEIL ${pult.teil}/${pult.noetig} — DAS ORCHESTER ZIEHT MIT`, 4.5, 2);
+    }
+  }
+
   /** Name des nächsten Objekts (für das Schild über dem Fundstück). */
   nearestLabel() {
     const p = this.player;
@@ -1104,15 +1159,25 @@ export class Game {
         action: traegtFrack, key: 'E', x: schrank.x + 8, y: schrank.y - 6,
       };
     }
+    const pult = this.entities.find((en) => en.kind === 'pult' && en.near);
+    if (pult) {
+      const fertig = pult.teil >= pult.noetig;
+      best = {
+        text: fertig ? `EINSATZ SITZT (${pult.teil}/${pult.noetig})`
+          : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`,
+        action: !fertig, key: 'E', x: pult.x + 8, y: pult.y - 20,
+      };
+    }
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
     const zielFrei = this.goalErfuellt();
     const grund = (g.applaus && this.applaus < g.applaus) ? `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`
       : (g.need === 'ablegen') ? 'FRACK ABLEGEN'
         : (g.need === 'setzen') ? 'HINSETZEN'
-          : (g.frackOff && !this.frackOffUsed) ? 'KRAGEN AUFREISSEN (E)'
-            : g.need === 'frack' ? 'NUR IM FRACK'
-              : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
+          : (g.need === 'einsatz') ? 'ERST DER EINSATZ AM PULT (E)'
+            : (g.frackOff && !this.frackOffUsed) ? 'KRAGEN AUFREISSEN (E)'
+              : g.need === 'frack' ? 'NUR IM FRACK'
+                : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
     const zielAktion = g.need === 'ablegen' || g.need === 'setzen';
     if (dg < 96) {
       best = {
@@ -1149,6 +1214,19 @@ export class Game {
         this.audio.play('pickup');
         this.message('NOTENMAPPE GESICHERT. JETZT ZUM AUFZUG.', 4.5, 2);
         break;
+      case 'stimmblatt': {
+        // Ein Blatt allein ist kein Auftritt: erst drei Blätter ergeben die Mappe.
+        this.stimmblaetter += 1;
+        this.audio.play('pickup');
+        const noetig = this.stimmblaetterNoetig || 3;
+        if (this.stimmblaetter >= noetig) {
+          this.hasMappe = true;
+          this.message('DIE NOTENMAPPE IST VOLLSTÄNDIG. JETZT ZUM AUFZUG.', 5.5, 2);
+        } else {
+          this.message(`STIMMBLATT ${this.stimmblaetter}/${noetig} — DIE MAPPE FÜLLT SICH`, 4.5, 2);
+        }
+        break;
+      }
       case 'brezel':
         this.nerves = Math.min(this.maxNerves, this.nerves + 1);
         this.audio.play('pickup');
@@ -1241,6 +1319,14 @@ export class Game {
     if (this.level.ruhig) {
       return this.setzen ? 'SITZEN UND ANKOMMEN' : 'DIE BANK UNTER DER LAUBE: HINSETZEN (E)';
     }
+    if (this.stimmblaetterNoetig) {
+      return `${basis} · STIMMBLÄTTER ${this.stimmblaetter}/${this.stimmblaetterNoetig}`;
+    }
+    if (g.need === 'einsatz') {
+      const pult = this.entities.find((en) => en.kind === 'pult');
+      const teil = pult ? pult.teil : 0;
+      return `${basis} · EINSATZ ${teil}/${pult ? pult.noetig : 3}`;
+    }
     if (g.applaus) return `${basis} · APPLAUS ${Math.round(this.applaus)}/${g.applaus}`;
     return basis;
   }
@@ -1266,6 +1352,8 @@ export class Game {
       setzen: !!this.setzen,
       ruhig: !!this.level.ruhig,
       ziel: this.zielText(),
+      stimmblaetter: this.stimmblaetter,
+      stimmblaetterNoetig: this.stimmblaetterNoetig,
       hint: this.hint ? this.hint.text : null,
       state: this.state,
       hasMappe: this.hasMappe,
@@ -1744,6 +1832,20 @@ export class Game {
             // dezente Markierung: hier ist eine Aktion möglich
             ctx.fillStyle = 'rgba(93,224,207,0.75)';
             ctx.fillRect(x + 5, y - 10, 6, 2);
+          }
+          break;
+        }
+        case 'pult': {
+          const spr = this.spr('notenstaender');
+          blit(ctx, spr, x, y + en.h - spr.h, false, 0);
+          // Fortschritt des Einsatzes: drei Punkte über dem Pult (DRR-04).
+          for (let i = 0; i < en.noetig; i++) {
+            ctx.fillStyle = i < en.teil ? '#e8c46a' : '#4a4458';
+            ctx.fillRect(x + 3 + i * 4, y - 8, 3, 3);
+          }
+          if (en.near) {
+            ctx.fillStyle = 'rgba(93,224,207,0.75)';
+            ctx.fillRect(x + 5, y - 14, 6, 2);
           }
           break;
         }

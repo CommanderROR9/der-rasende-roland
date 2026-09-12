@@ -640,6 +640,22 @@ export const SPRITES = {
     'LL            LL',
   ],
 
+  // Stimmblätter der Notenmappe (DRR-04): ein Blatt allein ist kein Auftritt.
+  stimmblatt: [
+    'LLLLLLLLLL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LLLLLLLLLL',
+  ],
+
   // Bank der Laube im Kleingarten: Holzlatten, zwei Beine, 32x10.
   bank: [
     '  MMMMMMMMMMMMMMMMMMMMMMMMMMMM  ',

@@ -93,6 +93,8 @@ export function buildAkt1() {
   lamp(30, 14);
   e('koffer', 34, 17, { patrol: [32, 41] });
   e('item', 38, 17, { item: 'bierdeckel' });
+  // Stimmblatt 1: gleich im ersten Gang — damit die Aufgabe früh klar ist.
+  e('item', 30, 17, { item: 'stimmblatt' });
 
   // C: unterer Gang
   e('checkpoint', 47, 25, { id: 'nach-der-luke' });
@@ -101,6 +103,8 @@ export function buildAkt1() {
   e('sopran', 58, 25, { dir: -1 });
   alcove(63, 24);
   e('item', 66, 25, { item: 'wasser' });
+  // Stimmblatt 2: mitten im dunklen Gang, wo der Tenor das Tempo zieht.
+  e('item', 60, 25, { item: 'stimmblatt' });
   // Optionale Risiko-Kante: morsche Notenblätter mit Bierdeckel als Lohn
   rect(65, 23, 3, 1, 'x');
   e('item', 66, 23, { item: 'bierdeckel' });
@@ -114,6 +118,8 @@ export function buildAkt1() {
 
   // D: Archiv
   e('item', 95, 19, { item: 'wasser' });
+  // Stimmblatt 3: hinter der Diensttür — der Anzug zahlt sich hier aus.
+  e('item', 93, 19, { item: 'stimmblatt' });
   e('stand', 96, 19);
   lamp(98, 16);
   e('item', 99, 19, { item: 'bierdeckel' });
@@ -124,7 +130,6 @@ export function buildAkt1() {
   // E: Endgang, Obermaschinerie
   e('checkpoint', 119, 13, { id: 'obermaschinerie' });
   lamp(118, 10);
-  e('item', 120, 13, { item: 'mappe' });
   e('stand', 121, 13);
   alcove(123, 12);
   e('sopran', 125, 13, { dir: -1 });
@@ -143,13 +148,14 @@ export function buildAkt1() {
   tip(9, 'KLEIDERSTÄNDER: DAVORSTELLEN UND E DRÜCKEN (HANDY: TRITT-KNOPF)');
   tip(12, 'JEDE STUFE IST SPRUNGHÖHE. NACH OBEN GEHT ES NUR HIER');
   tip(24, 'PICCOLO: SCHRILL UND GEMEIN. IM TAKT GETROFFEN WIRD ES STILL');
+  tip(29, 'STIMMBLATT 1/3. DREI BLÄTTER ERGEBEN DIE NOTENMAPPE');
   tip(45, 'LUKE. ACHTUNG: ABSTIEG IST EINWEG — SPEICHERPUNKT UNTEN');
   tip(50, 'OHROPAX EINGESAMMELT. GEGEN EIN SOPRAN HILFT SONST NUR DECKUNG');
   tip(63, 'MORSCHE NOTENBLÄTTER: SCHNELL ZUGREIFEN, DANN BRICHT ES WEG');
   tip(69, 'TENOR: ZIEHT DAS TEMPO RUNTER. ALLES WIRD ZÄH');
   tip(83, 'DIENSTTÜR: NUR MIT ANZUG UND KRAWATTE');
   tip(100, 'ABSPERRBAND: NUR DER FRACK ÖFFNET SOWAS');
-  tip(115, 'NOTENMAPPE MITNEHMEN — OHNE SIE FÄHRT DER AUFZUG NICHT');
+  tip(115, 'OHNE VOLLSTÄNDIGE NOTENMAPPE FÄHRT DER AUFZUG NICHT');
   tip(126, 'AUFZUG NACH OBEN. ENDE AKT 1');
 
   return {
@@ -159,6 +165,7 @@ export function buildAkt1() {
     subtitle: '2. Untergeschoss. Es riecht nach Staub und Notenpapier.',
     w: W, h: H,
     grid, spawns, gates, lights, alcoves, hints, goal,
+    stimmblaetterNoetig: 3,
     deckelTotal: spawns.filter((s) => s.kind === 'item' && s.item === 'bierdeckel').length,
   };
 }
