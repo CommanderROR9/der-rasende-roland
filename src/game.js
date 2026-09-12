@@ -3,6 +3,8 @@
 import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, DIFFICULTY, BPM_BASE, BPM_TENOR } from './config.js';
 import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
 import { spriteCanvas, blit, hash2 } from './render.js';
+// Das Probenmotiv aus Akt 2 wird im Finale gespielt (Zugabe, Auftrag A5).
+import { PROBEN_MOTIV } from './act2.js';
 
 const ITEM_DEFS = {
   bierdeckel: { spr: 'bierdeckel', w: 8, h: 8, label: 'BIERDECKEL' },
@@ -105,6 +107,11 @@ export class Game {
     // Wetter (Akt 3): Sonne, Wind, Regen, Kälte im Wechsel
     this.dunkel = this.level.dark ? (this.difficulty === 'gemuetlich' ? 0.80 : 0.90) : 0;
     this.applaus = 0;
+    // Zugabe (Akt 5): der Applaus entsteht aus der Aufführung am Pult, nicht aus
+    // betäubten Musikern, und er verfällt nicht mehr von selbst (Auftrag A5).
+    this.zugabeFertig = false;
+    this.zugabeSchritt = 0;
+    this.zugabePuls = 0;
     this.movingLights = (this.level.movingLights || []).map((l) => ({ ...l }));
     this.grillFrei = 0;
     this.spuk = (this.level.spooks || []).map((sp) => ({ ...sp, done: false }));
@@ -179,7 +186,12 @@ export class Game {
       case 'schrank':
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
       case 'pult':
-        return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3, flag: s.flag, aktion: s.aktion };
+        return {
+          kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16,
+          alive: true, near: false, teil: 0, noetig: s.noetig || 3, flag: s.flag,
+          aktion: s.aktion, zugabe: !!s.zugabe, proSchritt: s.proSchritt || 12,
+          motiv: s.motiv || null, gemeldet: false,
+        };
       case 'kiste': {
         // Rolfs Lampenkiste: bleibt als Objekt in der Welt, auch beim Tragen
         // (alive=false), damit Absetzen und Wiederaufnehmen verlustfrei sind.
@@ -290,7 +302,10 @@ export class Game {
       if (l.x < l.x0) { l.x = l.x0; l.speed = Math.abs(l.speed); }
       if (l.x > l.x1) { l.x = l.x1; l.speed = -Math.abs(l.speed); }
     }
-    if (this.level.applaus) this.applaus = Math.max(0, this.applaus - 3.5 * dt);
+    // Der Applaus verfällt nicht mehr von selbst (Auftrag A5): er entsteht aus
+    // der Zugabe und bleibt stehen, damit niemand beim Suchen verliert.
+    // Der Puls ist nur die sichtbare Stufe der Zugabe.
+    if (this.zugabePuls > 0) this.zugabePuls = Math.max(0, this.zugabePuls - dt);
     if (this.grillFrei > 0) this.grillFrei -= dt;
     this.updateLifts(dt);
     this.updatePlayer(dt);
@@ -470,7 +485,7 @@ export class Game {
       if (kiste && !this.traegt) {
         // Aufnehmen hat Vorrang: die Kiste steht sonst als Requisite im Weg.
         this.kisteAufnehmen(kiste);
-      } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc()) {
+      } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc() && !this.nearZielAktion()) {
         if (this.traegt && inp.down()) this.kisteAbsetzen();
         else if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
         else this.tryTritt();
@@ -762,32 +777,34 @@ export class Game {
     for (let i = 0; i < 6; i++) {
       this.burst(p.x + p.w / 2, p.y + p.h - 1, '#6b6152', 1);
     }
-    let hits = 0, gewertet = 0;
+    let hits = 0, frisch = 0;
     for (const en of this.entities) {
       if (!en.alive || !ENEMY_KINDS.has(en.kind)) continue;
       const dx = Math.abs((en.x + en.w / 2) - (p.x + p.w / 2));
       const dy = Math.abs((en.y + en.h / 2) - (p.y + p.h / 2));
       if (dx < TUNE.trittRange && dy < 34) {
         if (inTakt) {
-          // Applaus gibt es nur für einen echten Treffer: ein bereits
-          // betäubter Gegner in Reichweite ist kein zweites Mal wert
+          // Ein bereits betäubter Gegner in Reichweite ist kein zweites Mal wert
           // (Befund D3 — vorher waren sechs Wertungen pro Gegner möglich).
-          if (en.stun <= 0 && !en.imTaktGewertet) { en.imTaktGewertet = true; gewertet++; }
+          if (en.stun <= 0 && !en.imTaktGewertet) { en.imTaktGewertet = true; frisch++; }
           en.stun = TUNE.trittStun; en.flash = 0.3; hits++;
         }
       }
     }
-    if (inTakt && gewertet > 0 && this.level.applaus) this.applaus = Math.min(100, this.applaus + 12);
-    if (inTakt && hits > 0) {
-      this.taktHits += hits;
+    // Applaus gibt es hier nicht mehr: er entsteht aus der Zugabe am Pult
+    // (Auftrag A5). Der Tritt bleibt Waffe und Taktübung — nicht Applaus-Motor.
+    if (inTakt && frisch > 0) {
+      this.taktHits += frisch;
       this.heat = Math.max(0, this.heat - 4);
-      this.message(`IM TAKT! ${hits} GERADE AUS DEM KONZEPT`, 4.5, 2);
+      this.message(`IM TAKT! ${frisch} GERADE AUS DEM KONZEPT`, 4.5, 2);
+    } else if (inTakt && hits > 0) {
+      this.message('IM TAKT — ABER ER IST SCHON AUS DEM KONZEPT', 4.5, 2);
     } else if (inTakt) {
       this.message('IM TAKT — ABER NIEMAND IN REICHWEITE', 4.5, 2);
     } else {
       this.message('DANEBEN. DER TAKT IST DIE MITTE DES PULSES', 4.5, 2);
     }
-    this.lastTritt = { inTakt, hits };
+    this.lastTritt = { inTakt, hits, frisch };
   }
 
   /** Notfall auf der Bühne: Kragen auf, Ärmel hoch. Der Frack bleibt dabei an —
@@ -1089,14 +1106,23 @@ export class Game {
       }
     }
 
-    // Das Dirigentenpult: hier wird der erste gemeinsame Einsatz gespielt (DRR-04).
+    // Das Dirigentenpult: hier wird der erste gemeinsame Einsatz gespielt
+    // (DRR-04). In Akt 5 steht das Pult für die Zugabe (Auftrag A5) — dort
+    // wächst der Applaus, nicht am betäubten Musiker.
     for (const en of this.entities) {
       if (en.kind !== 'pult') continue;
       const nah = overlap(p, this.standSlot(en));
       en.near = nah;
+      // Einmalige Erklärung, sobald man am Zugabe-Pult steht: Taste, Takt, Ziel.
+      // (Akt 2 und 3 haben ihre eigenen Hinweise am Weg und bleiben unberührt.)
+      if (nah && !en.gemeldet && en.zugabe) {
+        en.gemeldet = true;
+        this.message('DIE ZUGABE. AM PULT STEHEN UND IM TAKT E DRÜCKEN — FÜNF EINSÄTZE, DANN STEHT DER APPLAUS.', 7, 1);
+      }
       if (!nah || !this.wantInteract) continue;
       this.wantInteract = false;
-      this.einsatzVersuch();
+      if (en.zugabe) this.zugabeVersuch(en);
+      else this.einsatzVersuch();
     }
 
     // Der Schrank der Laube: hier hängt der Frack. Wer ihn noch trägt, legt ihn
@@ -1217,6 +1243,18 @@ export class Game {
     return null;
   }
 
+  /**
+   * Steht der Spieler in einem Ziel, das eine bewusste Aktion verlangt
+   * ('ablegen', 'setzen')? Dort gehört E der Zielaktion — nicht dem Frack-Off
+   * und nicht dem Tritt. Damit hängt „FRACK ABLEGEN" an keiner Hitze und an
+   * keinem Takt (Auftrag A5).
+   */
+  nearZielAktion() {
+    const g = this.level.goal;
+    if (!g || (g.need !== 'ablegen' && g.need !== 'setzen')) return false;
+    return overlap(this.player, g);
+  }
+
   /** Rolfs Lampenkiste in Reichweite — aufnehmen oder wieder aufnehmen. */
   nearKiste() {
     const p = this.player;
@@ -1334,7 +1372,52 @@ export class Game {
   }
 
   /**
-   * Ein Versuch am Pult. Nur im Takt gezählt — gelungene Teile bleiben erhalten,
+   * Die Zugabe (Akt 5, Auftrag A5): am Pult am Bühnenrand wird das in Akt 2
+   * gelernte Probenmotiv gespielt. Jeder Einsatz im Takt lässt den Applaus um
+   * eine klare Stufe steigen; das Ensemble antwortet und hält kurz inne. Ein
+   * danebengegangener Einsatz kostet nichts, der Applaus verfällt nicht.
+   */
+  zugabeVersuch(pult = null) {
+    const p = pult || this.nearPult();
+    if (!p || !p.zugabe) return false;
+    if (p.teil >= p.noetig) {
+      this.message('DIE ZUGABE STEHT. JETZT ZUM VORHANG UND DEN FRACK ABLEGEN (E).', 6, 2);
+      return false;
+    }
+    if (this.beatAccuracy() > this.diff.trittWindow) {
+      this.message('DANEBEN. DAS ENSEMBLE WARTET AUF DEN EINSATZ — IM TAKT NOCH EINMAL (E).', 5, 2);
+      return false;
+    }
+    p.teil += 1;
+    this.zugabeSchritt = p.teil;
+    this.zugabePuls = 0.75;                       // sichtbare Stufe (HUD und Bühne)
+    this.applaus = Math.min(100, this.applaus + p.proSchritt);
+    this.audio.play('beat');
+    this.shake = Math.max(this.shake, 2);
+    for (let i = 0; i < 10; i++) this.burst(p.x + 8, p.y - 2, i % 2 ? '#e8c46a' : '#f0eee4', 1);
+    // Das Ensemble antwortet: die Musiker halten mit (sie fallen nicht aus dem
+    // Level, der Takt bekommt sie kurz).
+    for (const en of this.entities) {
+      if (en.alive && ENEMY_KINDS.has(en.kind) && en.stun <= 0) en.stun = Math.max(en.stun, 0.6);
+    }
+    const ziel = this.level.goal.applaus || 0;
+    if (p.teil >= p.noetig) {
+      this.zugabeFertig = true;
+      this.storyFlags.add('zugabe_gespielt');
+      this.applaus = Math.max(this.applaus, ziel);
+      this.audio.play('applaus');
+      for (let i = 0; i < 30; i++) this.burst(p.x + 8, p.y - 10, i % 2 ? '#5de0cf' : '#e8c46a', 1);
+      this.message('DIE ZUGABE STEHT. DAS HAUS KLATSCHT — JETZT ZUM VORHANG: FRACK ABLEGEN (E).', 7, 2);
+      this.events({ type: 'zugabe', schritte: p.teil, applaus: Math.round(this.applaus) });
+    } else if (p.teil <= PROBEN_MOTIV.teile) {
+      this.message(`DAS MOTIV VON DER PROBE — TAKT ${p.teil}/${PROBEN_MOTIV.teile}. DAS ENSEMBLE ZIEHT MIT. APPLAUS ${Math.round(this.applaus)}/${ziel}`, 5, 2);
+    } else {
+      this.message(`ZUGABE! DAS HAUS WILL MEHR — ${p.teil}/${p.noetig}. APPLAUS ${Math.round(this.applaus)}/${ziel}`, 5, 2);
+    }
+    return true;
+  }
+
+  /** Ein Versuch am Pult. Nur im Takt gezählt — gelungene Teile bleiben erhalten,
    * ein danebengegangener Versuch kostet nichts (DRR-04).
    */
   einsatzVersuch() {
@@ -1438,7 +1521,9 @@ export class Game {
       const mappe = this.hasMappe && !this.mappeAbgegeben;
       // Ein Pult mit eigener Aktion (Akt 3: sichern statt Einsatz spielen)
       // beschriftet sich selbst; ohne Aktion gilt die Akt-2-Beschriftung.
+      // Die Zugabe (Akt 5) nennt ihren Stand und danach den Weg zum Vorhang.
       const text = mappe ? 'NOTENMAPPE AUF DAS PULT LEGEN'
+        : pult.zugabe ? (fertig ? 'ZUGABE STEHT — ZUM VORHANG (RECHTS)' : `ZUGABE SPIELEN (${pult.teil}/${pult.noetig})`)
         : pult.aktion ? (fertig ? `${pult.aktion} — FERTIG` : `${pult.aktion} (${pult.teil}/${pult.noetig})`)
           : fertig ? `EINSATZ SITZT (${pult.teil}/${pult.noetig})`
             : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`;
@@ -1652,7 +1737,7 @@ export class Game {
       if (this.hasMappe && !this.mappeAbgegeben) return `${basis} · MAPPE AUF DAS PULT LEGEN (E)`;
       return `${basis} · EINSATZ ${teil}/${pult ? pult.noetig : 3}`;
     }
-    if (g.applaus) return `${basis} · APPLAUS ${Math.round(this.applaus)}/${g.applaus}`;
+    if (g.applaus) return basis ? `${basis} · APPLAUS ${Math.round(this.applaus)}/${g.applaus}` : `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`;
     return basis;
   }
 
@@ -1688,6 +1773,12 @@ export class Game {
       friedlich: !!this.frieden,
       applaus: this.level.applaus ? Math.round(this.applaus) : null,
       applausZiel: this.level.applaus ? this.level.goal.applaus : null,
+      // Sichtbare Stufen der Zugabe (Auftrag A5): Stand, Anzahl und ein kurzer
+      // Puls, damit der Applaus nicht als stiller Zahlenwert wächst.
+      applausPuls: this.zugabePuls > 0,
+      zugabeSchritt: this.level.zugabe ? this.zugabeSchritt : null,
+      zugabeNoetig: this.level.zugabe ? this.level.zugabe.noetig : null,
+      zugabeFertig: !!this.zugabeFertig,
       label: this.nearestLabel(),
       standNear: !!this.nearStand(),
       wetter: this.wetterKind,
@@ -2171,6 +2262,14 @@ export class Game {
           for (let i = 0; i < en.noetig; i++) {
             ctx.fillStyle = i < en.teil ? '#e8c46a' : '#4a4458';
             ctx.fillRect(x + 3 + i * 4, y - 8, 3, 3);
+          }
+          // Die Zugabe (Akt 5) pulsiert in Stufen: jeder Einsatz ist auch am
+          // Pult sichtbar, nicht nur als Zahl im HUD (Auftrag A5).
+          if (en.zugabe && this.zugabePuls > 0) {
+            const k = this.zugabePuls / 0.75;
+            ctx.fillStyle = `rgba(232,196,106,${(0.3 + 0.6 * k).toFixed(3)})`;
+            ctx.fillRect(x - 8, y - 14, en.w + 16, 2);
+            ctx.fillRect(x - 4, y - 17, en.w + 8, 1);
           }
           if (en.near) {
             ctx.fillStyle = 'rgba(93,224,207,0.75)';
