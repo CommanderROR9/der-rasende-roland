@@ -1487,18 +1487,37 @@ try {
   const zust4 = async (ausdruck) => JSON.parse(await evaluate(`JSON.stringify(${ausdruck})`));
   const kiste4 = 'window.__roland.game.entities.find((e) => e.kind === \'kiste\')';
   const lift4 = 'window.__roland.game.entities.find((e) => e.kind === \'lift\')';
+  // Messfenster dieser Pruefung: genau das Rechteck, in dem drawPlayer die
+  // getragene Kiste zeichnet (lampenkiste 16x14, ueber dem Kopf, an derselben
+  // Stelle wie die Figur). Vorher war es ein breiter Streifen um Kopf und
+  // Schultern (22x18) — darin liegt Szene, die mit dem Tragen nichts zu tun hat,
+  // und ein Kameraversatz um ein Pixel kippt den ganzen Ausschnitt.
+  // Das Fenster wird mit der Formel des Zeichners selbst berechnet: so sitzt es
+  // auch bei einem Pixel Versatz auf der Kiste statt daneben.
   const kopf4 = `(() => {
     const c = document.getElementById('game');
     const g = window.__roland.game;
-    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    const p = g.player;
+    const figur = g.spr('roland_idle');
+    const kiste = g.spr('lampenkiste');
+    const bx = Math.round(p.x - g.cam.x - 2) - 2;
+    const by = Math.round(p.y - g.cam.y + p.h - figur.h) - 13;
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     const out = [];
-    for (let y = Math.max(0, py - 16); y < Math.min(c.height, py + 2); y++)
-      for (let x = Math.max(0, px - 6); x < Math.min(c.width, px + 16); x++) {
+    for (let y = Math.max(0, by); y < Math.min(c.height, by + kiste.h); y++)
+      for (let x = Math.max(0, bx); x < Math.min(c.width, bx + kiste.w); x++) {
         const i = (y * c.width + x) * 4;
         out.push(d[i], d[i + 1], d[i + 2]);
       }
-    return JSON.stringify(out);
+    return JSON.stringify({
+      pix: out,
+      zustand: {
+        traegt: g.traegt === true, state: g.state, h: p.h, dir: p.dir,
+        vx: p.vx, onGround: p.onGround === true, invuln: p.invuln, flash: p.flash,
+        px: Math.round(p.x - g.cam.x), py: Math.round(p.y - g.cam.y),
+        camx: g.cam.x, camy: g.cam.y, t: g.time, b: kiste.w * kiste.h, bx, by
+      }
+    });
   })()`;
   const punkte4 = (a, b) => {
     let n = 0;
@@ -1516,6 +1535,62 @@ try {
     writeFileSync(pfad, Buffer.from(shot.data, 'base64'));
     check(`Akt-4-Bild ${name} geschrieben`, existsSync(pfad));
   };
+
+  // Aufnahme unter gleichen Bedingungen (Auftrag A4j Punkt 1): gemessen wird
+  // erst, wenn zwei unmittelbar aufeinander folgende Bilder des Kistenfensters
+  // pixelgleich sind UND die Figur dabei ruhig steht (kein Laufen, auf dem Boden,
+  // kein Trefferblitz, gleiche Standhoehe und Blickrichtung wie das Vorbild).
+  // Vorher hiess "Aufnahme" nur "450 ms gewartet": die Kamera laeuft in der Zeit
+  // noch aus und springt dabei um ganze Pixel — ein solcher Sprung sieht im
+  // Vergleich aus wie ein Unterschied von 236 Punkten, ist aber keiner.
+  // Findet sich in der Frist kein ruhiges Doppelbild, wird das gemeldet, nicht
+  // versteckt (dann scheitert die Pruefung mit Begruendung).
+  const kisteBild4 = async (traegt, maxVersuche = 16) => {
+    let vor = null;
+    let letzte = null;
+    for (let i = 0; i < maxVersuche; i++) {
+      const s = JSON.parse(await evaluate(kopf4));
+      const z = s.zustand;
+      letzte = s;
+      const ruhig = z.state === 'play' && z.vx === 0 && z.onGround === true
+        && !(z.invuln > 0) && !(z.flash > 0) && z.traegt === traegt;
+      if (ruhig && vor && vor.zustand.h === z.h && vor.zustand.dir === z.dir
+        && punkte4(vor.pix, s.pix) === 0) {
+        return { pix: s.pix, zustand: z, versuche: i + 1, stabil: true };
+      }
+      vor = ruhig ? s : null;
+      await sleep(150);
+    }
+    return {
+      pix: letzte.pix, zustand: letzte.zustand, versuche: maxVersuche,
+      stabil: false, traegt: letzte.zustand.traegt, warum: 'kein ruhiges Doppelbild in der Frist',
+    };
+  };
+
+  // Gegenprobe (Auftrag A4j Punkt 4): der Test muss sich selbst rot stellen
+  // koennen. Mit DRR_GEGENPROBE_KISTE=1 wird fuer die Dauer der vier Aufnahmen
+  // das Zeichnen der getragenen Kiste im Browser abgeschaltet — zur Laufzeit,
+  // nur in dieser Pruefung, src/** bleibt unberuehrt. Bleibt die Pruefung dabei
+  // gruen, ist sie wertlos.
+  const gegenprobe4 = process.env.DRR_GEGENPROBE_KISTE === '1';
+  const kisteAus4 = async (aus) => evaluate(`(() => {
+    const g = window.__roland.game;
+    if (${aus ? 'true' : 'false'}) {
+      if (g.__kisteAus) return 'war schon aus';
+      g.__kisteOrigDraw = Object.getPrototypeOf(g).drawPlayer;
+      g.drawPlayer = function (ctx, camX, camY) {
+        const t = this.traegt; this.traegt = false;
+        try { return g.__kisteOrigDraw.call(this, ctx, camX, camY); }
+        finally { this.traegt = t; }
+      };
+      g.__kisteAus = true;
+      return 'aus';
+    }
+    if (!g.__kisteAus) return 'war schon an';
+    delete g.drawPlayer;                  // wieder die Methode des Spiels
+    g.__kisteAus = false;
+    return 'an';
+  })()`);
 
   const grabA = await zust4(`{
     name: window.__roland.level.name,
@@ -1576,7 +1651,11 @@ try {
   // 3) Aufnehmen ueber die Aktionstaste — und der Tragezustand ist am Spieler
   //    zu sehen (Kopfbereich), nachgewiesen gegen zwei Kontrollbilder.
   await sleep(500);
-  const blockLeer = JSON.parse(await evaluate(kopf4));
+  if (gegenprobe4) {
+    results.push(`GEGENPROBE aktiv: Zeichnen der getragenen Kiste abgeschaltet (${await kisteAus4(true)})`
+      + ' — die Pruefung "die getragene Kiste ist am Spieler sichtbar" MUSS jetzt rot werden');
+  }
+  const bildLeerA = await kisteBild4(false);
   await bild4('akt4-tragezustand-vorher.png');
   await key('KeyE', 'keyDown'); await sleep(70);
   await key('KeyE', 'keyUp'); await sleep(450);
@@ -1587,7 +1666,7 @@ try {
     ziel: window.__roland.game.hud.ziel,
     label: window.__roland.game.hud.label
   }`);
-  const blockTraegt = JSON.parse(await evaluate(kopf4));
+  const bildTraegtA = await kisteBild4(true);
   check('Akt 4: die Aktionstaste nimmt die Lampenkiste auf',
     nachAufnahme.traegt === true && nachAufnahme.kisteAusDerWelt === true && nachAufnahme.flag === true
     && /HOCHFAHREN/.test(nachAufnahme.ziel || ''), JSON.stringify(nachAufnahme));
@@ -1607,22 +1686,42 @@ try {
     kisteFuss: (() => { const k = ${kiste4}; return Math.round(k.y + k.h); })(),
     flag: window.__roland.game.storyFlags.has('kiste_aufgenommen')
   }`);
-  const blockLeer2 = JSON.parse(await evaluate(kopf4));
+  const bildLeerB = await kisteBild4(false);
   check('Akt 4: DUCKEN + E setzt die Kiste ab, sie liegt wieder in der Welt',
     abgesetzt.traegt === false && abgesetzt.kisteAlive === true && abgesetzt.kisteNear === true
     && Math.abs(abgesetzt.kisteFuss - 400) < 3 && abgesetzt.flag === true, JSON.stringify(abgesetzt));
   await key('KeyE', 'keyDown'); await sleep(70);
   await key('KeyE', 'keyUp'); await sleep(450);
-  const blockTraegt2 = JSON.parse(await evaluate(kopf4));
+  const bildTraegtB = await kisteBild4(true);
+  if (gegenprobe4) {
+    results.push(`GEGENPROBE Ende: Zeichnen der getragenen Kiste zurueck auf Normal (${await kisteAus4(false)})`);
+  }
+  const flaeche4 = bildTraegtA.zustand.b;              // Groesse des Messfensters in Pixeln
+  const signal4 = Math.round(0.5 * flaeche4);          // gefordert: mindestens halbes Fenster kippt um
+  const rausch4 = Math.round(0.1 * flaeche4);          // erlaubt: hoechstens ein Zehntel Rauschen
+  const lageOk4 = [bildLeerA, bildTraegtA, bildLeerB, bildTraegtB].every((b) =>
+    b.zustand.state === 'play' && b.zustand.h === bildTraegtA.zustand.h
+    && b.zustand.dir === bildTraegtA.zustand.dir
+    && b.zustand.traegt === (b === bildTraegtA || b === bildTraegtB));
+  const stabilOk4 = [bildLeerA, bildTraegtA, bildLeerB, bildTraegtB].every((b) => b.stabil === true);
   const pixel4 = {
-    auf: punkte4(blockLeer, blockTraegt),
-    auf2: punkte4(blockLeer2, blockTraegt2),
-    kontrolle1: punkte4(blockLeer, blockLeer2),
-    kontrolle2: punkte4(blockTraegt, blockTraegt2),
+    auf: punkte4(bildLeerA.pix, bildTraegtA.pix),
+    auf2: punkte4(bildLeerB.pix, bildTraegtB.pix),
+    kontrolle1: punkte4(bildLeerA.pix, bildLeerB.pix),
+    kontrolle2: punkte4(bildTraegtA.pix, bildTraegtB.pix),
+    fenster: flaeche4, gefordert: signal4, rauschgrenze: rausch4,
+    lage: [bildLeerA, bildTraegtA, bildLeerB, bildTraegtB].map((b) => b.zustand.px + ',' + b.zustand.py),
+    stand: [bildLeerA, bildTraegtA, bildLeerB, bildTraegtB].map((b) => b.zustand.h + '/' + b.zustand.dir),
+    versuche: [bildLeerA, bildTraegtA, bildLeerB, bildTraegtB].map((b) => b.versuche),
+    stabil: stabilOk4, gleicheLage: lageOk4,
   };
   check('Akt 4: die getragene Kiste ist am Spieler sichtbar (Kopfbereich, gegen Kontrollbilder geprueft)',
-    pixel4.auf >= 24 && pixel4.auf2 >= 24
-    && pixel4.auf >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1), JSON.stringify(pixel4));
+    stabilOk4 && lageOk4
+    && pixel4.auf >= signal4 && pixel4.auf2 >= signal4
+    && pixel4.kontrolle1 <= rausch4 && pixel4.kontrolle2 <= rausch4
+    && pixel4.auf >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1)
+    && pixel4.auf2 >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1),
+    JSON.stringify(pixel4));
 
   // 5) Im Tragen bleiben Taktaktionen moeglich (Tritt statt Ablegen).
   const vorTritt = await evaluate('JSON.stringify(window.__roland.game.lastTritt)');
