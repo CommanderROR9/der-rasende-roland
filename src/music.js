@@ -166,19 +166,33 @@ export function createMusik({ audio = null } = {}) {
   let bus = null;
   let pegel = null;
   let shaper = null;
+  // Lebende Noten als {n: Node, g: Hüllkurve, weitere: []}: so lassen sie sich
+  // beim Stationswechsel weich ausblenden und wirklich freigeben, statt als
+  // hängende Nodes auf eine lange Fläche zu warten.
   const knoten = new Set();
+  // True, sobald je ein Kontext bestand: vorher keine Rampen anfassen, damit
+  // allein das Laden (Stummschaltung aus dem Spielstand) keinen
+  // AudioContext vor der ersten Nutzeraktion erzeugt.
+  let bereit = false;
 
   function kontext() {
+    let ctx = null;
     if (audio && typeof audio.musikKontext === 'function') {
-      try { return audio.musikKontext(); } catch { return null; }
+      try { ctx = audio.musikKontext(); } catch { ctx = null; }
+    } else {
+      const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+      if (!AC) return null;
+      try {
+        if (!kontext.eigen) kontext.eigen = new AC();
+        ctx = kontext.eigen;
+      } catch { return null; }
     }
-    const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
-    if (!AC) return null;
-    try {
-      if (!kontext.eigen) kontext.eigen = new AC();
-      return kontext.eigen;
-    } catch { return null; }
+    if (ctx) bereit = true;
+    return ctx;
   }
+
+  /** Kontext nur, wenn schon einer besteht — erzeugt nie einen. */
+  function vorhandenerKontext() { return bereit ? kontext() : null; }
 
   function musikBus(ctx) {
     if (audio && typeof audio.musikBus === 'function') {
@@ -220,20 +234,39 @@ export function createMusik({ audio = null } = {}) {
     } catch { /* still weiter */ }
   }
 
-  function aufraeumen(ctx) {
-    for (const n of knoten) {
-      try { n.stop && n.stop(); } catch { /* schon aus */ }
-      try { n.disconnect && n.disconnect(); } catch { /* schon weg */ }
+  /**
+   * Alle klingenden Noten weich freigeben (Ausblenden statt Abschneiden).
+   * `knoten` ist danach leer — es bleiben keine Nodes stehen.
+   */
+  function knotenAusblenden(ctx, dauer = 0.05) {
+    const t0 = ctx ? ctx.currentTime : 0;
+    for (const e of knoten) {
+      try {
+        e.g.gain.cancelScheduledValues(t0);
+        e.g.gain.setValueAtTime(Math.max(0.0001, e.g.gain.value), t0);
+        e.g.gain.exponentialRampToValueAtTime(0.0001, t0 + dauer);
+      } catch { /* egal */ }
+      try { if (e.n.stop) e.n.stop(t0 + dauer + 0.02); } catch { /* schon aus */ }
     }
     knoten.clear();
-    if (shaper) { try { shaper.disconnect(); } catch { /* egal */ } shaper = null; }
-    if (pegel) { try { pegel.disconnect(); } catch { /* egal */ } pegel = null; }
-    void ctx;
+  }
+
+  /** Eine Note anmelden: gibt den Eintrag zurück, damit das Ende ihn abräumt. */
+  function merken(n, g, weitere = []) {
+    const e = { n, g, weitere };
+    knoten.add(e);
+    n.onended = () => {
+      knoten.delete(e);
+      try { g.disconnect(); } catch { /* egal */ }
+      for (const w of weitere) { try { w.disconnect(); } catch { /* egal */ } }
+    };
+    return e;
   }
 
   function ton(ctx, ziel, { midi, zeit, dauer, typ = 'sine', pegel = 0.2, industrial = false }) {
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
+    let filter = null;
     osc.type = typ;
     osc.frequency.setValueAtTime(midiZuFreq(midi), zeit);
     g.gain.setValueAtTime(0.0001, zeit);
@@ -244,15 +277,14 @@ export function createMusik({ audio = null } = {}) {
         shaper = verzerrungsKurve(ctx, motiv && motiv.id === 'motorrad' ? 5 : 3.2);
         shaper.connect(ziel);
       }
-      const filter = ctx.createBiquadFilter();
+      filter = ctx.createBiquadFilter();
       filter.type = 'lowpass'; filter.frequency.value = 2400;
       osc.connect(g); g.connect(filter); filter.connect(shaper);
     } else {
       osc.connect(g); g.connect(ziel);
     }
     try { osc.start(zeit); osc.stop(zeit + dauer + 0.03); } catch { /* egal */ }
-    knoten.add(osc);
-    osc.onended = () => { knoten.delete(osc); try { g.disconnect(); } catch { /* egal */ } };
+    merken(osc, g, filter ? [filter] : []);
   }
 
   function flaeche(ctx, ziel, zeit, dauer, grundMidi) {
@@ -269,8 +301,7 @@ export function createMusik({ audio = null } = {}) {
       g.gain.exponentialRampToValueAtTime(0.0001, zeit + dauer);
       osc.connect(filter); filter.connect(g); g.connect(ziel);
       try { osc.start(zeit); osc.stop(zeit + dauer + 0.03); } catch { /* egal */ }
-      knoten.add(osc);
-      osc.onended = () => { knoten.delete(osc); try { g.disconnect(); } catch { /* egal */ } };
+      merken(osc, g, [filter]);
     }
   }
 
@@ -284,8 +315,7 @@ export function createMusik({ audio = null } = {}) {
       g.gain.exponentialRampToValueAtTime(0.0001, zeit + 0.09);
       osc.connect(g); g.connect(ziel);
       try { osc.start(zeit); osc.stop(zeit + 0.12); } catch { /* egal */ }
-      knoten.add(osc);
-      osc.onended = () => { knoten.delete(osc); try { g.disconnect(); } catch { /* egal */ } };
+      merken(osc, g);
       return;
     }
     if (art === 'tick' || art === 'tick-marsch' || art === 'tick-fanfare') {
@@ -299,8 +329,7 @@ export function createMusik({ audio = null } = {}) {
       g.gain.exponentialRampToValueAtTime(0.0001, zeit + 0.05);
       osc.connect(g); g.connect(ziel);
       try { osc.start(zeit); osc.stop(zeit + 0.08); } catch { /* egal */ }
-      knoten.add(osc);
-      osc.onended = () => { knoten.delete(osc); try { g.disconnect(); } catch { /* egal */ } };
+      merken(osc, g);
       return;
     }
     // Industrial-Drums: Kick (Sinus-Drop) und Hat (Rauschen).
@@ -314,8 +343,7 @@ export function createMusik({ audio = null } = {}) {
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
       osc.connect(g); g.connect(ziel);
       try { osc.start(t); osc.stop(t + 0.17); } catch { /* egal */ }
-      knoten.add(osc);
-      osc.onended = () => { knoten.delete(osc); try { g.disconnect(); } catch { /* egal */ } };
+      merken(osc, g);
     };
     const hat = (t, offen = false) => {
       const len = Math.floor(ctx.sampleRate * (offen ? 0.06 : 0.03));
@@ -327,8 +355,7 @@ export function createMusik({ audio = null } = {}) {
       const g = ctx.createGain(); g.gain.value = 0.12;
       src.connect(f); f.connect(g); g.connect(ziel);
       try { src.start(t); } catch { /* egal */ }
-      knoten.add(src);
-      src.onended = () => { knoten.delete(src); try { g.disconnect(); } catch { /* egal */ } };
+      merken(src, g, [f]);
     };
     if (art === 'kick-hat') { kick(zeit); hat(zeit + 0.0); }
     else if (art === 'double-kick') { kick(zeit, 0.55); kick(zeit + 0.09, 0.4); hat(zeit, true); }
@@ -423,7 +450,11 @@ export function createMusik({ audio = null } = {}) {
         motiv = MOTIVE[neu];
         return stationId;
       }
+      const wechsel = spielt && !!stationId && stationId !== neu;
       const ctx = kontext();
+      // Stationswechsel: alte Noten weich ausblenden, statt sie in die neue
+      // Station hineinklingen zu lassen (oder als Nodes hängen zu lassen).
+      if (ctx && wechsel) knotenAusblenden(ctx, 0.06);
       stationId = neu;
       motiv = MOTIVE[neu];
       schritt = 0;
@@ -441,7 +472,9 @@ export function createMusik({ audio = null } = {}) {
 
     /** Weicher Übergang ohne Krachen; Knoten werden wirklich aufgeräumt. */
     stop({ fade = 0.08 } = {}) {
-      const ctx = kontext();
+      // Nur ein schon bestehender Kontext darf angefasst werden — `stop` soll
+      // nie einen AudioContext erzeugen (kein Ton vor der ersten Nutzeraktion).
+      const ctx = vorhandenerKontext();
       timerStop();
       if (ctx) {
         const ziel = pegelKnoten(ctx);
@@ -453,8 +486,12 @@ export function createMusik({ audio = null } = {}) {
             ziel.gain.exponentialRampToValueAtTime(0.0001, t + fade);
           } catch { /* still weiter */ }
         }
+        knotenAusblenden(ctx, fade);
+      } else {
+        knoten.clear();
       }
-      aufraeumen(ctx);
+      // Der Pegel-Knoten bleibt am Bus hängen und wird beim nächsten Start
+      // wiederverwendet: ein einzelner Knoten, kein Wachstum pro Station.
       spielt = false;
       pausiert = false;
       geduckt = false;
@@ -463,39 +500,42 @@ export function createMusik({ audio = null } = {}) {
     },
 
     setPaused(p) {
-      const ctx = kontext();
       pausiert = !!p;
+      const ctx = vorhandenerKontext();
       if (!spielt) return;
       if (ctx) {
         const ziel = pegelKnoten(ctx);
         if (ziel) pegelAnfahren(ctx, ziel, 0.12);
         if (pausiert) timerStop();
         else { naechsteZeit = ctx.currentTime + 0.08; timerStart(); }
-      }
+      } else if (!pausiert) timerStop();
     },
 
     /** Leiser hinter Dialogtexten (beide Werte sind in Ordnung, Hauptsache nicht laut). */
     setDucked(d) {
       geduckt = !!d;
-      const ctx = kontext();
+      const ctx = vorhandenerKontext();
       if (ctx && spielt) {
         const ziel = pegelKnoten(ctx);
         if (ziel) pegelAnfahren(ctx, ziel, 0.2);
       }
     },
 
-    setMuted(m) { stumm = !!m; const ctx = kontext(); if (ctx && spielt) { const z = pegelKnoten(ctx); if (z) pegelAnfahren(ctx, z, 0.08); } },
+    setMuted(m) { stumm = !!m; const ctx = vorhandenerKontext(); if (ctx && spielt) { const z = pegelKnoten(ctx); if (z) pegelAnfahren(ctx, z, 0.08); } },
     setVolume(v) {
       laut = clamp01(Number(v));
       if (!Number.isFinite(laut)) laut = 0.8;
-      const ctx = kontext();
+      const ctx = vorhandenerKontext();
       if (ctx && spielt) { const z = pegelKnoten(ctx); if (z) pegelAnfahren(ctx, z, 0.08); }
     },
 
-    /** Für die Browserprüfung: Zustand des Teilkontexts. */
+    /** Für die Browserprüfung: Zustand des Teilkontexts (erzeugt keinen). */
     kontextZustand() {
-      const ctx = kontext();
+      const ctx = vorhandenerKontext();
       return ctx ? ctx.state : 'kein-kontext';
     },
+
+    /** Zahl der klingenden Nodes — muss klein bleiben (keine hängenden Nodes). */
+    offeneKnoten() { return knoten.size; },
   };
 }

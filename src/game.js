@@ -228,6 +228,8 @@ export class Game {
   }
   pause(reason = 'user') { if (this.state === 'play') { this.state = 'paused'; this.pauseReason = reason; } }
   resume() { if (this.state === 'paused') { this.state = 'play'; this.pauseReason = null; } }
+  /** Dialogtext sichtbar (NPC-Zeilen, Prio 3): die Musik tritt dann zurück. */
+  dialogAktiv() { return !!(this.hint && this.time <= this.hint.until && this.hint.prio >= 3); }
   respawnFromCheckpoint() {
     const p = this.player;
     p.x = this.checkpoint.x; p.y = this.checkpoint.y;
@@ -1678,6 +1680,7 @@ export class Game {
       stimmblaetter: this.stimmblaetter,
       stimmblaetterNoetig: this.stimmblaetterNoetig,
       hint: this.hint ? this.hint.text : null,
+      hintPrio: this.hint ? this.hint.prio : 0,
       state: this.state,
       hasMappe: this.hasMappe,
       traegt: !!this.traegt,

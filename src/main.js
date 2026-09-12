@@ -4,6 +4,7 @@ import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
+import { createMusik } from './music.js';
 import { LEVELS } from './world.js';
 import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.js';
 import { Game } from './game.js';
@@ -47,6 +48,8 @@ let scaleNow = 1;
 
 const input = createInput(window);
 const audio = createAudio();
+// Musik je Station: eigener Bus, erst nach Nutzeraktion (Startknopf) hörbar.
+const musik = createMusik({ audio });
 // Akte der Reihe nach: jeder Akt ist ein eigenes Levelmodul.
 let aktIndex = 0;
 let LEVEL = LEVELS[0].build();
@@ -247,6 +250,7 @@ function frame(now) {
     hudAcc += dt;
     if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
   }
+  syncMusik();
 }
 // Die Knoepfe heissen in jedem Modus anders — sonst luegen sie (Review Befund 8).
 function setzeKnopfBeschriftung() {
@@ -415,9 +419,54 @@ function applySound() {
 }
 ui.soundBtn.onclick = () => { soundOn = !soundOn; writeSave({ sound: soundOn }); applySound(); };
 applySound();
+// Musik je Station: getrennt stumm und laut, Zustand im Spielstand.
+// Knöpfe entstehen hier, damit index.html unangetastet bleibt.
+ui.musikBtn = document.createElement('button');
+ui.musikBtn.type = 'button'; ui.musikBtn.className = 'ghost'; ui.musikBtn.id = 'musikBtn';
+ui.soundBtn.after(ui.musikBtn);
+ui.musikVol = document.createElement('input');
+ui.musikVol.type = 'range'; ui.musikVol.min = '0'; ui.musikVol.max = '100'; ui.musikVol.id = 'musikVol';
+ui.musikVol.title = 'MUSIKLAUTSTÄRKE';
+ui.musikBtn.after(ui.musikVol);
+let musikAn = loadSave().musik !== false;
+let musikLaut = Number(loadSave().musikLaut);
+if (!Number.isFinite(musikLaut)) musikLaut = 0.8;
+musikLaut = Math.max(0, Math.min(1, musikLaut));
+function applyMusik() {
+  audio.setMusicEnabled(musikAn); audio.setMusicVolume(musikLaut);
+  musik.setMuted(!musikAn); musik.setVolume(musikLaut);
+  ui.musikBtn.textContent = 'MUSIK: ' + (musikAn ? 'AN' : 'AUS');
+  ui.musikVol.value = String(Math.round(musikLaut * 100));
+}
+ui.musikBtn.onclick = () => { musikAn = !musikAn; writeSave({ musik: musikAn }); applyMusik(); };
+ui.musikVol.oninput = () => { musikLaut = Math.max(0, Math.min(1, Number(ui.musikVol.value) / 100)); writeSave({ musikLaut }); applyMusik(); };
+applyMusik();
+// Live-Tempo für die Musik: Taktwechsel wirken sofort, ohne Neustart.
+function liveBpm() { const a = aktiv(); const b = a && a.bpm; return b || LEVEL.bpm || 100; }
+function musikStarten() { try { musik.playStation(LEVEL.id, { getBpm: liveBpm }); } catch { /* still weiter */ } }
+// „Kein Ton vor der ersten Nutzeraktion": Musik entsteht nur über einen Klick
+// (Startknopf oder Stationsknopf). Beim Laden des Spielstands bleibt es still —
+// die Schalter unten fassen deshalb nur bestehende Knoten an.
+let musikBereit = false;
+function starteMusik() { musikBereit = true; musikStarten(); }
+function syncMusik() {
+  if (!musikBereit) return;
+  const a = aktiv();
+  if (!a) return;                 // Garderobe/Übergang: Musik läuft weiter
+  try {
+    if (musik.aktuellesMotiv() !== LEVEL.id) musik.playStation(LEVEL.id, { getBpm: liveBpm });
+    const sollPause = a.state === 'paused' || a.state === 'collapse';
+    if (musik.istPausiert() !== sollPause) musik.setPaused(sollPause);
+    const dlg = a.dialogAktiv ? a.dialogAktiv() : ((a.hud && a.hud.hintPrio) || 0) >= 3;
+    const sollDuck = !!dlg && !sollPause;
+    if (musik.istGeduckt() !== sollDuck) musik.setDucked(sollDuck);
+  } catch { /* still weiter */ }
+}
+/** Musik verstummen lassen (Zurück ins Menü) — ohne neuen Kontext zu bauen. */
+function musikAnhalten() { try { musik.stop(); } catch { /* still weiter */ } }
 applyDifficulty();
 ui.resumeBtn.onclick = () => { const a = aktivModus(); if (a && a.resume) a.resume(); hideAll(); };
-ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); show('title'); };
+ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); musikAnhalten(); show('title'); };
 ui.collapseBtn.onclick = () => { if (game) game.respawnFromCheckpoint(); hideAll(); };
 ui.rewardBtn.onclick = () => {
   if (ui.rewardBtn.dataset.modus === 'grill') {
@@ -435,7 +484,7 @@ ui.rewardBtn.onclick = () => {
   for (const h of LEVEL.hints || []) h.shown = false;   // Fahr-Level haben keine
   startLevel();
 };
-ui.rewardQuit.onclick = () => { game = null; hudPrev = ''; show('title'); };
+ui.rewardQuit.onclick = () => { game = null; hudPrev = ''; musikAnhalten(); show('title'); };
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'Escape') {
@@ -499,6 +548,8 @@ loadAct(stationIndex(loadSave()));
 /** Startet die aktuell geladene Station — Racer sofort, Seitenscroller über die Garderobe. */
 function startLevel() {
   audio.resume();
+  // Erste Nutzeraktion: ab hier darf Musik entstehen (siehe musikBereit).
+  starteMusik();
   if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }
   renderGarde('start');
 }
@@ -536,5 +587,6 @@ window.__roland = {
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
   get levelCount() { return LEVELS.length; },
   get levelIds() { return LEVELS.map((l) => l.id); },
+  get musik() { return musik; }, get musikBereit() { return musikBereit; },
   loadAct, input, get scale() { return scaleNow; },
 };
