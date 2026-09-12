@@ -640,8 +640,9 @@ export const SPRITES = {
     'LL            LL',
   ],
 
-  // Ada ist eine fiktive Bühnenkollegin. Türkise Strickjacke, dunkler Bob und
+  // Anna ist die Konzertmeisterin. Türkise Strickjacke, dunkler Bob und
   // die goldene Stimmgabel unterscheiden sie auch bei 1x-Pixelauflösung.
+  // Der Sprite-Schlüssel 'ada' bleibt aus Kompatibilitätsgründen stabil.
   ada: [
     '    dddddd    ',
     '   dddddddd   ',

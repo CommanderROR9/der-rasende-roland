@@ -1288,7 +1288,7 @@ export class Game {
                 : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
     const zielAktion = g.need === 'ablegen' || g.need === 'setzen';
     // Ein bewusst ausführbares Gespräch ist wichtiger als das danebenliegende
-    // Ziel. Sonst sagt der Touch-Knopf ausgerechnet bei Ada wieder „TRITT“.
+    // Ziel. Sonst sagt der Touch-Knopf ausgerechnet bei Anna wieder „TRITT“.
     if (dg < 96 && !npc) {
       best = {
         text: zielFrei ? `${g.name}: WEITER` : `${g.name}: ${grund}`,
