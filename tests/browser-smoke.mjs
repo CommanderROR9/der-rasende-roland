@@ -1349,6 +1349,7 @@ try {
   // die Sprungtaste so lange gehalten wie im Gefahrenlauf) und faengt einen
   // Kollaps mit dem Knopf des Spiels ab, damit der Weg weitergeht.
   let kollaps4 = 0;
+  const kollaps4Orte = [];          // Wo der Lauf zusammengebrochen ist (Nachweis)
   let abgang4 = 'zeit';             // Warum endete der letzte Lauf? (Nachweis unten)
   const gehe4 = async (code, bedingung, maxMs) => {
     await key(code, 'keyDown');
@@ -1363,6 +1364,7 @@ try {
         'JSON.stringify({x: window.__roland.game.player.x, state: window.__roland.game.state})'));
       if (stand.state === 'collapse') {
         kollaps4++;
+        kollaps4Orte.push(Math.round(stand.x));
         await evaluate("document.getElementById('collapseBtn').click()");
         await sleep(450);
         letzteX = await evaluate('window.__roland.game.player.x');
@@ -1594,7 +1596,22 @@ try {
   await bild4('akt4-mitfahrt.png');
 
   // 8) Uebergabe an Rolf oben: die Pflicht endet, das Ziel gibt frei.
-  const zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 5000);
+  //    Rolf verlangt zwei Gespraeche. Ein Tastendruck kann im Auslauf des Laufs
+  //    oder durch einen Rueckstoss verloren gehen: die Aktionstaste wird deshalb
+  //    bei Rolf wiederholt (und der Weg notfalls erneut gegangen), bis die
+  //    Uebergabe wirklich im Spiel steht. Nicht der Druck ist die Pruefung,
+  //    sondern die Uebergabe selbst.
+  let zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 6000);
+  let uebergabeVersuche = 0;
+  for (let i = 0; i < 12; i++) {
+    if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
+    if (!(await evaluate(nah4('nimmt', 'kiste')))) {
+      zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 3000) || zuRolfOben;
+    }
+    uebergabeVersuche += 1;
+    await key('KeyE', 'keyDown'); await sleep(90);
+    await key('KeyE', 'keyUp'); await sleep(260);
+  }
   const obenBeiRolf = await zust4(`{
     label: window.__roland.game.hud.label,
     ziel: window.__roland.game.hud.ziel,
@@ -1607,11 +1624,6 @@ try {
   check('Akt 4: das Ziel ist vor der Uebergabe gesperrt',
     obenBeiRolf.zielFrei === false && /KISTE \u00dcBERGEBEN/.test(obenBeiRolf.ziel || ''),
     JSON.stringify(obenBeiRolf));
-
-  for (let i = 0; i < 2; i++) {
-    await key('KeyE', 'keyDown'); await sleep(80);
-    await key('KeyE', 'keyUp'); await sleep(220);
-  }
   const uebergabe = await zust4(`{
     flag: window.__roland.game.storyFlags.has('kiste_uebergeben'),
     traegt: window.__roland.game.traegt,
@@ -1797,7 +1809,8 @@ try {
   check('Akt 4: der ganze Weg durch den Graben bleibt ohne Konsolenfehler',
     auftritt.errors.length === 0, JSON.stringify(auftritt.errors));
   await bild4('akt4-auftritt.png');
-  results.push(`AKT4 Weg ohne Positionssetzung, Kollapse mit Spiel-Neustart: ${kollaps4}`);
+  results.push(`AKT4 Weg ohne Positionssetzung, ${kollaps4} Kollapse mit Spiel-Neustart`
+    + ` bei x=[${kollaps4Orte.join(', ')}], Uebergabe-Drucke: ${uebergabeVersuche}`);
   results.push(`AKT4 ${results.filter((r) => /^PASS Akt 4/.test(r)).length} Akt-4-Pruefungen bestanden`
     + ` (${results.filter((r) => /^FAIL Akt 4/.test(r)).length} offen)`);
 
