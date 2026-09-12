@@ -133,6 +133,173 @@ export function beschreibeMotiv(stationId) {
   return `${m.titel}: ${m.charakter} (${m.taktart}, ${m.puls}). ${m.skizze}`;
 }
 
+// ============================================================================
+// FORM UND REGIE — aus dem Snippet wird Musik
+//
+// Jede Station hat eine 16-taktige Form in vier Teilen (A – A' – B – A). Die
+// Akkordfolge steht als eigene Tabelle (ein Halbton-Offset je Takt zum
+// Grundton), die Melodie entsteht daraus: das Motiv-Zellenmaterial wird in die
+// jeweilige Akkordlage gesetzt und je Teil verschoben (A' = Variante, B =
+// Kontrastlage, Schluss-A = Reprise). Zwei aufeinanderfolgende Takte sind nie
+// gleich: die Akkordfolge wechselt in jedem Takt, dazu kommen Verzierungen und
+// gelegentliche Füllfiguren auf Nebenzeit — der Puls bleibt davon frei.
+// ============================================================================
+
+/** Akkordfolge je Station: 16 Takte, Halbton-Offsets zum Grundton. */
+export const AKKORDE = {
+  akt1: [0, -4, -2, -5, 0, -4, -2, -5, 3, -2, 0, -5, -2, -4, 3, -5],
+  akt2: [0, -4, 5, -2, 0, 5, -4, -2, 7, 5, 3, -2, -4, 0, 5, -2],
+  cabrio: [0, -2, 0, 5, -2, -4, 0, 3, 5, 3, 0, -2, -4, -2, 0, 5],
+  akt3: [0, 5, -2, 3, 7, 5, -4, -2, 3, 5, 7, -4, 0, 5, -4, -2],
+  akt4: [0, -5, 0, -2, -4, -5, -4, 0, 3, 0, -2, -5, 0, -4, -2, -5],
+  akt5: [0, 7, 0, 12, 7, 5, 3, -5, 0, 7, 5, 3, -2, -5, -2, 7],
+  motorrad: [0, -2, 0, -4, -2, 0, -5, -4, 0, -2, 5, 3, -2, -4, 0, -5],
+  epilog: [0, -2, 0, -4, -5, 0, -2, -4, 0, -2, -5, -4, -2, 0, -4, -5],
+};
+
+/** Takte je Form — die kürzeste Station trägt 16 Takte, nicht zwei. */
+export const FORMTAKTE = 16;
+
+/** Formteile: A – A' – B – A. `versatz` verschiebt die Motivzelle, `oktav` die Lage. */
+export const FORMTEILE = [
+  { name: 'A', von: 0, takte: 4, versatz: 0, oktav: 0, figur: null, lage: 'grund' },
+  { name: "A'", von: 4, takte: 4, versatz: 4, oktav: 0, figur: 'lauf', lage: 'grund' },
+  { name: 'B', von: 8, takte: 4, versatz: 2, oktav: 12, figur: 'halt', lage: 'kontrast' },
+  { name: 'A', von: 12, takte: 4, versatz: 8, oktav: 0, figur: 'schluss', lage: 'reprise' },
+];
+
+/** Feinschliff je Station: eigene Lage und Verschiebung des B-Teils. */
+export const FORMVARIANTEN = {
+  akt1: { oktavB: 12, versatzB: 2 },
+  akt2: { oktavB: 12, versatzB: 3 },
+  cabrio: { oktavB: 0, versatzB: 0 },
+  akt3: { oktavB: 12, versatzB: 8 },
+  akt4: { oktavB: 12, versatzB: 2 },
+  akt5: { oktavB: 12, versatzB: 4 },
+  motorrad: { oktavB: -12, versatzB: 0 },
+  epilog: { oktavB: 12, versatzB: 6 },
+};
+
+/** Schritte je Takt (Sechzehntel): 4/4 sechzehn, 3/4 zwölf. */
+export function schritteProTakt(m) { return m.taktart === '3/4' ? 12 : 16; }
+
+/** Die fertige 16-taktige Form einer Station (Grundform plus Feinschliff). */
+export function formFuer(stationId) {
+  const m = motifFuer(stationId);
+  const v = FORMVARIANTEN[m.id] || {};
+  const teile = FORMTEILE.map((t) => {
+    const b = t.von === 8;
+    return {
+      ...t,
+      versatz: b ? (v.versatzB !== undefined ? v.versatzB : t.versatz) : t.versatz,
+      oktav: b ? (v.oktavB !== undefined ? v.oktavB : t.oktav) : t.oktav,
+    };
+  });
+  const b = teile.find((t) => t.name === 'B');
+  return {
+    id: m.id, takte: FORMTAKTE, teile,
+    bTeil: { von: b.von, takte: b.takte, oktav: b.oktav },
+  };
+}
+
+/** Kopfdaten einer Station für Tests und Bericht (Motivtabelle). */
+export function formInfo(stationId) {
+  const m = motifFuer(stationId);
+  const f = formFuer(stationId);
+  const akk = AKKORDE[m.id] || AKKORDE.epilog;
+  return {
+    id: m.id, titel: m.titel, charakter: m.charakter, taktart: m.taktart, haerte: m.haerte,
+    takte: f.takte, bTakt: f.bTeil.von + 1, bOktav: f.bTeil.oktav,
+    form: f.teile.map((t) => `${t.name}/${t.takte}`).join(' — '),
+    teile: f.teile.map((t) => ({ name: t.name, von: t.von + 1, takte: t.takte })),
+    akkorde: akk.slice(),
+  };
+}
+
+/**
+ * Ein Takt der Form als reine Daten (ohne Audio): je Sechzehntel die Stimmen.
+ * Prüfbar in Node und im Browser — der Spieler plant dieselben Ereignisse ein.
+ */
+export function taktplanFuer(stationId, taktIndex) {
+  const m = motifFuer(stationId);
+  const f = formFuer(stationId);
+  const akk = AKKORDE[m.id] || AKKORDE.epilog;
+  const b = ((Math.floor(taktIndex) % f.takte) + f.takte) % f.takte;
+  const teil = f.teile.find((t) => b >= t.von && b < t.von + t.takte) || f.teile[0];
+  const akkord = akk[b];
+  const spt = schritteProTakt(m);
+  const nLead = m.lead.length, nBass = m.bass.length;
+  const halt = teil.figur === 'halt';
+  const schritte = [];
+  for (let i = 0; i < spt; i++) {
+    const rohLead = m.lead[(i + teil.versatz) % nLead];
+    const rohBass = m.bass[(i + teil.versatz) % nBass];
+    const leer = rohLead === null || rohLead === undefined;
+    // Der B-Teil atmet: auf den Nebenachteln bleibt die Melodie stehen.
+    const lead = (leer || (halt && i % 2 === 1)) ? null
+      : m.grund + 12 + teil.oktav + akkord + rohLead;
+    const bass = (rohBass === null || rohBass === undefined) ? null
+      : m.grund - 12 + akkord + rohBass;
+    schritte.push({
+      lead,
+      bass,
+      gegen: lead === null ? null : lead + (teil.lage === 'kontrast' ? -12 : 12),
+      flaeche: i === 0 && m.art !== 'industrial' ? m.grund - 12 + akkord : null,
+      fuell: null,
+      // Der Puls der Mechanik liegt auf jedem Viertel — in der Form verankert,
+      // damit „im Takt treffen“ auch bei voller Fülle hörbar bleibt.
+      puls: i % 4 === 0,
+    });
+  }
+  // Füllfiguren: nur gelegentlich und immer auf einer Nebenzeit (nie auf dem Puls).
+  if (teil.figur === 'lauf' && b % 4 === 3) {
+    schritte[spt - 2].fuell = m.grund + 12 + teil.oktav + akkord + 7;
+    schritte[spt - 1].fuell = m.grund + 12 + teil.oktav + akkord + 12;
+  } else if (teil.figur === 'schluss' && b % 2 === 0) {
+    schritte[spt - 1].fuell = m.grund + 12 + akkord + 2; // Vorhalt in den nächsten Durchlauf
+  } else if (teil.figur === 'halt' && b % 2 === 1) {
+    schritte[2].fuell = m.grund + 12 + teil.oktav + akkord + 12; // Ruf in der Kontrastlage
+  }
+  return { takt: b, teil: teil.name, lage: teil.lage, akkord, taktart: m.taktart, schritte };
+}
+
+/** Fünf Abschnitte je Fahrt — die Musik schaltet Abschnitt für Abschnitt zu. */
+export const ABSCHNITTE = 5;
+
+/** Abschnitt (0–4) aus dem Streckenfortschritt (0–1). */
+export function abschnittAusStrecke(strecke) {
+  const s = typeof strecke === 'number' && Number.isFinite(strecke) ? strecke : 0;
+  const k = Math.max(0, Math.min(0.999999, s));
+  return Math.min(ABSCHNITTE - 1, Math.floor(k * ABSCHNITTE));
+}
+
+/**
+ * Regie je Abschnitt: jeder neue Abschnitt bringt eine hörbare Schicht dazu —
+ * erst trägt der Puls mit Bass und Fläche, dann kommt die Melodie, dann eine
+ * Gegenstimme, dann Füllfiguren und die höhere Oktavlage, zuletzt die Breite.
+ * Beim Wechsel in einen neuen Abschnitt geht die Musik in den B-Teil über.
+ */
+export function regie(abschnitt) {
+  const a = Math.max(0, Math.min(ABSCHNITTE - 1, Math.floor(Number(abschnitt) || 0)));
+  return {
+    abschnitt: a,
+    lead: a >= 1,
+    gegen: a >= 2,
+    fuell: a >= 3,
+    breit: a >= 4,
+    oktavLead: a >= 3 ? 12 : 0,
+    sprung: a >= 1 ? 'B' : null,
+    // Der Puls wird von keiner Regie abgeschaltet: „im Takt treffen“ gilt weiter.
+    puls: true,
+  };
+}
+
+/** Kurztext der Form je Station (für Bericht und Prüfungen). */
+export function beschreibeForm(stationId) {
+  const i = formInfo(stationId);
+  return `${i.titel}: ${i.takte} Takte (${i.form}), ${i.taktart}, B-Teil ab Takt ${i.bTakt}`;
+}
+
 const midiZuFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -155,6 +322,7 @@ export function createMusik({ audio = null } = {}) {
   let stationId = null;
   let motiv = null;
   let getBpm = null;
+  let getAbschnitt = null;
   let spielt = false;
   let pausiert = false;
   let geduckt = false;
@@ -166,6 +334,15 @@ export function createMusik({ audio = null } = {}) {
   let bus = null;
   let pegel = null;
   let shaper = null;
+  // Form-Zustand: laufender Takt, Regie des Abschnitts und ein wartender
+  // Übergang in den B-Teil. Die Taktpläne werden einmal je Station gebaut
+  // (16 Takte) und danach nur noch gelesen — der Frame-Takt bleibt billig.
+  let takt = 0;
+  let abschnitt = 0;
+  let reg = regie(0);
+  let sprung = false;
+  let zielTakt = null;
+  let plaene = new Map();
   // Lebende Noten als {n: Node, g: Hüllkurve, weitere: []}: so lassen sie sich
   // beim Stationswechsel weich ausblenden und wirklich freigeben, statt als
   // hängende Nodes auf eine lange Fläche zu warten.
@@ -361,37 +538,81 @@ export function createMusik({ audio = null } = {}) {
     else if (art === 'double-kick') { kick(zeit, 0.55); kick(zeit + 0.09, 0.4); hat(zeit, true); }
   }
 
+  /** Taktplan der Form — je Station einmal gebaut, danach nur gelesen. */
+  function taktplan(taktIndex) {
+    const key = ((Math.floor(taktIndex) % FORMTAKTE) + FORMTAKTE) % FORMTAKTE;
+    let p = plaene.get(key);
+    if (!p) { p = taktplanFuer(stationId, key); plaene.set(key, p); }
+    return p;
+  }
+
   function schrittEinplanen(ctx, ziel, sechezehntel, zeit, sechzehntelDauer, bpm) {
     const m = motiv;
-    const n = m.lead.length;
-    const i = ((sechezehntel % n) + n) % n;
     const industrial = m.art === 'industrial';
-    const schritteProTakt = m.taktart === '3/4' ? 12 : 16;
-    const imTakt = sechezehntel % schritteProTakt;
-    // Streicherfläche zu Taktbeginn (nur klassisch/ruhig).
-    if (m.art !== 'industrial' && imTakt === 0) {
-      flaeche(ctx, ziel, zeit, (60 / bpm) * (m.taktart === '3/4' ? 3 : 4), m.grund - 12);
+    const spt = schritteProTakt(m);
+    const imTakt = sechezehntel % spt;
+    // Taktgrenze: weiterzählen und einen wartenden Übergang in den B-Teil
+    // vollziehen — der Abschnittswechsel ist so hörbar, nicht nur zu spüren.
+    if (imTakt === 0) {
+      if (sechezehntel > 0) takt += 1;
+      if (sprung) { takt = zielTakt === null ? takt : zielTakt; sprung = false; zielTakt = null; }
+    }
+    const s = taktplan(takt).schritte[imTakt];
+    // Streicherfläche zu Taktbeginn (nur klassisch/ruhig) — wie in M1.
+    if (s.flaeche !== null && s.flaeche !== undefined) {
+      flaeche(ctx, ziel, zeit, (60 / bpm) * (m.taktart === '3/4' ? 3 : 4), s.flaeche);
+      if (reg.breit) flaeche(ctx, ziel, zeit, (60 / bpm) * (m.taktart === '3/4' ? 3 : 4), s.flaeche + 12);
     }
     // Bass auf den Vierteln.
-    if (sechezehntel % 4 === 0) {
-      const b = m.bass[i];
-      if (b !== null && b !== undefined) {
-        ton(ctx, ziel, { midi: m.grund - 12 + b, zeit, dauer: sechzehntelDauer * 3.2, typ: 'triangle', pegel: 0.22, industrial: false });
-      }
+    if (imTakt % 4 === 0 && s.bass !== null && s.bass !== undefined) {
+      ton(ctx, ziel, { midi: s.bass, zeit, dauer: sechzehntelDauer * 3.2, typ: 'triangle', pegel: 0.22, industrial: false });
     }
     // Lead (Charakter-Lautheit je Motiv: der Garten bleibt fast stumm).
-    const l = m.lead[i];
-    if (l !== null && l !== undefined) {
+    if (reg.lead && s.lead !== null && s.lead !== undefined) {
       ton(ctx, ziel, {
-        midi: m.grund + 12 + l, zeit, dauer: sechzehntelDauer * 2.2,
+        midi: s.lead + reg.oktavLead, zeit, dauer: sechzehntelDauer * 2.2,
         typ: industrial ? 'sawtooth' : m.leadWave,
         pegel: (industrial ? 0.30 : 0.16) * (m.ducker || 1),
         industrial,
       });
     }
+    // Gegenstimme: dieselbe Linie in der Nachbaroktave, leiser — die zweite Schicht.
+    if (reg.gegen && s.gegen !== null && s.gegen !== undefined) {
+      ton(ctx, ziel, {
+        midi: s.gegen + reg.oktavLead, zeit, dauer: sechzehntelDauer * 3,
+        typ: industrial ? 'sawtooth' : m.leadWave,
+        pegel: (industrial ? 0.14 : 0.09) * (m.ducker || 1),
+        industrial,
+      });
+    }
+    // Füllfigur: kurz, auf Nebenzeit, immer unter dem Puls.
+    if (reg.fuell && s.fuell !== null && s.fuell !== undefined) {
+      ton(ctx, ziel, {
+        midi: s.fuell + reg.oktavLead, zeit, dauer: sechzehntelDauer * 1.2,
+        typ: industrial ? 'sawtooth' : m.leadWave,
+        pegel: (industrial ? 0.16 : 0.10) * (m.ducker || 1),
+        industrial,
+      });
+    }
     // Puls der Mechanik: auf jedem Viertel hörbar, nie übertönt.
-    if (sechezehntel % 4 === 0) schlag(ctx, ziel, zeit, m.drums);
-    else if (m.drums === 'double-kick' && sechezehntel % 4 === 2) schlag(ctx, ziel, zeit, 'kick-hat');
+    if (s.puls) schlag(ctx, ziel, zeit, m.drums);
+    else if (m.drums === 'double-kick' && imTakt % 4 === 2) schlag(ctx, ziel, zeit, 'kick-hat');
+  }
+
+  /** Abschnitt aus der Strecke; ohne Angabe trägt die mittlere Regie das volle Motiv. */
+  function regieGrundwert() {
+    const roh = typeof getAbschnitt === 'function' ? getAbschnitt() : null;
+    return (roh === null || roh === undefined) ? 2 : abschnittAusStrecke(roh);
+  }
+
+  /** Abschnittswechsel aus der Strecke: neue Schicht und Übergang in den B-Teil. */
+  function regieNachfuehren() {
+    const neu = regieGrundwert();
+    if (neu === abschnitt) return;
+    abschnitt = neu;
+    reg = regie(abschnitt);
+    // Beim Wechsel in einen neuen Abschnitt geht es hörbar in den B-Teil.
+    if (reg.sprung) { sprung = true; zielTakt = formFuer(stationId).bTeil.von; }
   }
 
   function planen() {
@@ -399,6 +620,7 @@ export function createMusik({ audio = null } = {}) {
     if (!ctx || !spielt || pausiert || !motiv) return;
     const ziel = pegelKnoten(ctx);
     if (!ziel) return;
+    regieNachfuehren();
     const bpm = Math.max(40, Math.min(220, (typeof getBpm === 'function' ? getBpm() : null) || 100));
     const sechzehntelDauer = 60 / bpm / 4;
     let guard = 0;
@@ -427,6 +649,16 @@ export function createMusik({ audio = null } = {}) {
     motifFuer,
     effektivesTempo,
     beschreibeMotiv,
+    // Form und Regie sind reine Daten: Tests prüfen dieselben Funktionen,
+    // die der Scheduler benutzt.
+    formFuer,
+    formInfo,
+    taktplanFuer,
+    regie,
+    abschnittAusStrecke,
+    beschreibeForm,
+    FORMTEILEN: FORMTEILE,
+    FORMTAKTE,
 
     aktuellesMotiv() { return stationId; },
     laeuft() { return spielt && !pausiert; },
@@ -434,6 +666,9 @@ export function createMusik({ audio = null } = {}) {
     lautstaerke() { return laut; },
     istGeduckt() { return geduckt; },
     istPausiert() { return pausiert; },
+    /** Aktueller Abschnitt (0–4) und seine Regie — für Bericht und Prüfungen. */
+    abschnitt() { return { ...reg }; },
+    aktuellerTakt() { return takt; },
     effektiveLautstaerke() {
       if (stumm || pausiert || !spielt) return 0;
       return Math.max(0, Math.min(1, laut * (geduckt ? 0.25 : 1)));
@@ -441,11 +676,12 @@ export function createMusik({ audio = null } = {}) {
 
     /**
      * Musik einer Station starten. Gleiche Station bei laufender Musik ist
-     * kein Neustart (nur der Tempo-Callback wird frisch verdrahtet).
+     * kein Neustart (nur die Callbacks werden frisch verdrahtet).
      */
-    playStation(id, { getBpm: bpmFn = null } = {}) {
+    playStation(id, { getBpm: bpmFn = null, getAbschnitt: abschnittFn = null } = {}) {
       const neu = MOTIVE[id] ? id : 'epilog';
       if (typeof bpmFn === 'function') getBpm = bpmFn;
+      if (typeof abschnittFn === 'function') getAbschnitt = abschnittFn;
       if (spielt && stationId === neu && !pausiert) {
         motiv = MOTIVE[neu];
         return stationId;
@@ -458,6 +694,13 @@ export function createMusik({ audio = null } = {}) {
       stationId = neu;
       motiv = MOTIVE[neu];
       schritt = 0;
+      // Form von vorn: Takt 1 des A-Teils, die Regie stellt `planen` nach.
+      takt = 0;
+      sprung = false;
+      zielTakt = null;
+      plaene.clear();
+      abschnitt = regieGrundwert();
+      reg = regie(abschnitt);
       spielt = true;
       pausiert = false;
       if (ctx) {
@@ -497,6 +740,14 @@ export function createMusik({ audio = null } = {}) {
       geduckt = false;
       stationId = null;
       motiv = null;
+      // Form-Zustand mit aufräumen: kein wartender Übergang, kein Plan-Rest.
+      takt = 0;
+      sprung = false;
+      zielTakt = null;
+      plaene.clear();
+      abschnitt = 0;
+      reg = regie(0);
+      getAbschnitt = null;
     },
 
     setPaused(p) {

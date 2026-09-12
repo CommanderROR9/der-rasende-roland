@@ -1,5 +1,5 @@
 // main.js — Verkabelung: DOM, Canvas-Skalierung, Overlays, Speicherung.
-import { OUTFITS, DIFFICULTY, pickView } from './config.js';
+import { OUTFITS, DIFFICULTY, pickView, TILE } from './config.js';
 import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
@@ -443,7 +443,19 @@ ui.musikVol.oninput = () => { musikLaut = Math.max(0, Math.min(1, Number(ui.musi
 applyMusik();
 // Live-Tempo für die Musik: Taktwechsel wirken sofort, ohne Neustart.
 function liveBpm() { const a = aktiv(); const b = a && a.bpm; return b || LEVEL.bpm || 100; }
-function musikStarten() { try { musik.playStation(LEVEL.id, { getBpm: liveBpm }); } catch { /* still weiter */ } }
+// Live-Fortschritt (0–1): die Musik schaltet je Abschnitt eine hörbare Schicht
+// zu. Fahrten liefern ihren Streckenanteil, die Akte die Position im Level.
+function liveStrecke() {
+  const a = aktiv();
+  if (!a) return null;
+  if (a.hud && typeof a.hud.strecke === 'number') return a.hud.strecke;
+  const p = a.player, lv = a.level || LEVEL;
+  if (p && lv && lv.w) return Math.max(0, Math.min(1, p.x / (lv.w * TILE)));
+  return null;
+}
+function musikStarten() {
+  try { musik.playStation(LEVEL.id, { getBpm: liveBpm, getAbschnitt: liveStrecke }); } catch { /* still weiter */ }
+}
 // „Kein Ton vor der ersten Nutzeraktion": Musik entsteht nur über einen Klick
 // (Startknopf oder Stationsknopf). Beim Laden des Spielstands bleibt es still —
 // die Schalter unten fassen deshalb nur bestehende Knoten an.
@@ -454,7 +466,7 @@ function syncMusik() {
   const a = aktiv();
   if (!a) return;                 // Garderobe/Übergang: Musik läuft weiter
   try {
-    if (musik.aktuellesMotiv() !== LEVEL.id) musik.playStation(LEVEL.id, { getBpm: liveBpm });
+    if (musik.aktuellesMotiv() !== LEVEL.id) musik.playStation(LEVEL.id, { getBpm: liveBpm, getAbschnitt: liveStrecke });
     const sollPause = a.state === 'paused' || a.state === 'collapse';
     if (musik.istPausiert() !== sollPause) musik.setPaused(sollPause);
     const dlg = a.dialogAktiv ? a.dialogAktiv() : ((a.hud && a.hud.hintPrio) || 0) >= 3;
