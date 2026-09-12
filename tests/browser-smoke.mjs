@@ -650,8 +650,9 @@ try {
   const a2x1 = await evaluate('window.__roland.game.player.x');
   check('Akt 2: Spieler läuft im Probenraum', a2x1 - a2x0 > 60, `dx=${(a2x1 - a2x0).toFixed(0)}`);
 
-  // Das Dirigentenpult (DRR-04): drei Takte im Takt ergeben den ersten Einsatz, und
-  // erst danach gibt die Bühnentür den Akt frei.
+  // Das Dirigentenpult (DRR-04): drei Takte im Takt ergeben den ersten Einsatz.
+  // Die Buehnentuer gibt erst Einsatz + Anna-Abschied frei (Vertrag act2-template:
+  // goal need=einsatz + flags probe_abgenommen) — der Abschied folgt weiter unten.
   const pult = JSON.parse(await evaluate(`(() => {
     const g = window.__roland.game;
     const p = g.entities.find((en) => en.kind === 'pult');
@@ -682,7 +683,7 @@ try {
   })`));
   check('Akt 2: drei Takte im Takt ergeben den Einsatz',
     einsatz.teil === 3 && einsatz.gelungen === true, JSON.stringify(einsatz));
-  check('Akt 2: danach gibt die Bühnentür den Akt frei', einsatz.zielFrei === true, JSON.stringify(einsatz));
+  check('Akt 2: nach dem Einsatz allein bleibt die Bühnentür bis zum Abschied gesperrt', einsatz.zielFrei === false, JSON.stringify(einsatz));
 
   // Taktwechsel beim Durchschreiten (Spieler hinter den Wechselpunkt setzen)
   await evaluate(`(() => {
@@ -717,6 +718,19 @@ try {
   await sleep(300);
   await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
   await sleep(800);
+  // Vertrag: Journal startet mit Anna, erst nach dem Briefing nennt es die Mappe
+  // (act2-template „starts with Anna“ / „advances to mappe“). Also Briefing zuerst.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const a = g.entities.find((e) => e.kind === 'npc' && e.flag === 'probe_beauftragt');
+    g.player.x = a.x - 18; g.player.y = a.y + a.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(250);
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(100);
+  }
   const vorAbgabe = JSON.parse(await evaluate(`(() => {
     const g = window.__roland.game;
     const p = g.entities.find((en) => en.kind === 'pult');
