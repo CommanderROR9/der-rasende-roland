@@ -1197,9 +1197,7 @@ export class Game {
       if (erfuellt) this.complete();
       else if (this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
-        this.message(fehltFlag
-          ? (goal.flagLocked || goal.locked || 'HIER GEHT ES NICHT WEITER.')
-          : (goal.needLocked || goal.locked || 'HIER GEHT ES NICHT WEITER.'), 4.5, 2);
+        this.message(goal.locked || 'HIER GEHT ES NICHT WEITER.', 4.5, 2);
       }
     }
     // Taktwechsel: der Dirigent bestimmt das Tempo

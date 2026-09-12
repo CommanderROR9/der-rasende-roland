@@ -1659,8 +1659,9 @@ function place(game, px, py) {
   const lv = buildAkt5();
   check('Akt 5: Buehne im Theaterschwarz', lv.setting === 'buehne', String(lv.setting));
   check('Akt 5: drei Verfolgerscheinwerfer', (lv.movingLights || []).length === 3);
-  check('Akt 5: Ziel verlangt Applaus und den abgelegten Frack',
-    lv.goal.applaus === 60 && lv.goal.need === 'ablegen' && lv.goal.frackOff === undefined,
+  check('Akt 5: Ziel verlangt Applaus, die Zugabe und den abgelegten Frack',
+    lv.goal.applaus === 60 && lv.goal.need === 'ablegen' && lv.goal.frackOff === undefined
+    && (lv.goal.flags || []).includes('zugabe_gespielt'),
     JSON.stringify(lv.goal));
   check('Akt 5: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
 
@@ -1681,8 +1682,9 @@ function place(game, px, py) {
   check('Akt 5: Verfolgerlicht wandert', Math.abs(g5.movingLights[0].x - x0) > 3,
     `${x0.toFixed(1)} -> ${g5.movingLights[0].x.toFixed(1)}`);
 
-  // Applaus waechst nur im Takt und faellt sonst
-  const { game: gA, input: iA } = { game: mk5(), input: null };
+  // Auftrag A5: der Applaus kommt aus der Zugabe am Pult, nicht aus Treffern,
+  // und er verfaellt nicht mehr von selbst.
+  const { game: gA } = { game: mk5(), input: null };
   check('Akt 5: Applaus startet bei null', gA.applaus === 0);
   step(gA, 2);
   check('Akt 5: Applaus bleibt ohne Auftritt bei null', gA.applaus === 0, String(gA.applaus));
@@ -1691,18 +1693,22 @@ function place(game, px, py) {
   const pic = gB.entities.find((e) => e.kind === 'piccolo');
   place(gB, pic.x - 40, pic.y);
   gB.beatPhase = 0.02;
+  const taktHitsVorher = gB.taktHits;
   gB.tryTritt();
-  check('Akt 5: Treffer im Takt gibt Applaus', gB.applaus > 0, String(gB.applaus));
+  check('Akt 5: ein Treffer im Takt gibt keinen Applaus mehr (A5)',
+    gB.applaus === 0 && gB.taktHits === taktHitsVorher + 1,
+    `applaus=${gB.applaus} hits=${gB.taktHits - taktHitsVorher}`);
   // Befund D3: derselbe, noch betaeubte Gegner darf nicht erneut zaehlen.
-  const vorDoppel = gB.applaus;
   gB.tryTritt();
-  check('Akt 5: kein zweiter Applaus fuer denselben betaeubten Gegner',
-    gB.applaus === vorDoppel, `${vorDoppel} -> ${gB.applaus}`);
+  check('Akt 5: kein zweiter Trefferwert fuer denselben betaeubten Gegner (D3)',
+    gB.applaus === 0 && gB.taktHits === taktHitsVorher + 1 && gB.lastTritt.frisch === 0,
+    `applaus=${gB.applaus} hits=${gB.taktHits - taktHitsVorher} frisch=${gB.lastTritt.frisch}`);
   const vorher = gB.applaus;
   step(gB, 3);
-  check('Akt 5: Applaus faellt ohne weiteren Auftritt', gB.applaus < vorher, `${vorher.toFixed(1)} -> ${gB.applaus.toFixed(1)}`);
+  check('Akt 5: Applaus faellt nicht mehr von selbst (A5)',
+    gB.applaus === vorher, `${vorher.toFixed(1)} -> ${gB.applaus.toFixed(1)}`);
 
-  // Ziel gating
+  // Ziel gating: erst die Zugabe, dann der Frack — ohne Hitze.
   const { game: gZ } = { game: mk5() };
   gZ.setOutfit('frack');
   gZ.applaus = 70;
@@ -1711,7 +1717,9 @@ function place(game, px, py) {
   gZ.frackAbgelegt = true;
   check('Akt 5: ohne Applaus geht der Vorhang nicht', gZ.goalErfuellt() === false);
   gZ.applaus = 70;
-  check('Akt 5: Applaus plus abgelegter Frack oeffnen den Vorhang', gZ.goalErfuellt() === true);
+  check('Akt 5: ohne gespielte Zugabe geht der Vorhang nicht', gZ.goalErfuellt() === false);
+  gZ.storyFlags.add('zugabe_gespielt');
+  check('Akt 5: Zugabe plus abgelegter Frack oeffnen den Vorhang', gZ.goalErfuellt() === true);
 
   // Befund D4: Frack-Off laesst den Frack an, Ablegen wirkt sichtbar.
   const gF = mk5();

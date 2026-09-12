@@ -147,8 +147,8 @@ export function buildAkt5() {
     // Der Vorhang verlangt die gespielte Zugabe (Auftrag A5), nicht Applaus aus
     // betäubten Musikern. Hitze kommt hier nirgends vor: Ablegen ist ein Schritt.
     flags: ['zugabe_gespielt'],
-    flagLocked: 'ERST DIE ZUGABE SPIELEN — AM PULT, IM TAKT (E).',
-    locked: 'ERST DIE ZUGABE SPIELEN — OHNE AUFTRITT GEHT DER VORHANG NICHT AUF.',
+    flagLocked: 'ERST DIE ZUGABE SPIELEN — AM PULT, IM TAKT (E) — UND DER FRACK MUSS AM VORHANG FALLEN.',
+    locked: 'DER VORHANG GEHT NUR AUF, WENN DIE ZUGABE GESPIELT IST UND DER FRACK FÄLLT.',
     needLocked: 'OHNE FRACK KEIN AUFTRITT. NUR IM FRACK GEHT DER VORHANG AUF.',
   };
 
