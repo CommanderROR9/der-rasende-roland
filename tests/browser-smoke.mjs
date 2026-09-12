@@ -1601,19 +1601,32 @@ try {
   //    bei Rolf wiederholt (und der Weg notfalls erneut gegangen), bis die
   //    Uebergabe wirklich im Spiel steht. Nicht der Druck ist die Pruefung,
   //    sondern die Uebergabe selbst.
+  //    Der Weg zu Rolf endet am Rand seines Sprechfensters; der Nachlauf des
+  //    Laufs schiebt den Spieler wieder heraus, dann kommt kein Gespraech mehr
+  //    zustande (gemessen: nach dem ersten Druck war Rolf nicht mehr in
+  //    Reichweite). Deshalb wird der Nachlauf abgefangen und der Spieler mit
+  //    echten Tasten mittig vor Rolf gestellt, bevor gedrueckt wird.
+  const mitteRolf4 = `(() => {
+    const g = window.__roland.game;
+    const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
+    const c = g.player.x + g.player.w / 2;
+    return Math.abs(c - (e.x + e.w / 2)) < 12;
+  })()`;
+  const seiteRolf4 = `(() => {
+    const g = window.__roland.game;
+    const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
+    return Math.round((g.player.x + g.player.w / 2) - (e.x + e.w / 2));
+  })()`;
   let zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 6000);
-  let uebergabeVersuche = 0, anmarsch4 = 0;
+  let seite4 = await evaluate(seiteRolf4);
+  if (seite4 < -12) zuRolfOben = await gehe4('KeyD', mitteRolf4, 2500) || zuRolfOben;
+  else if (seite4 > 12) zuRolfOben = await gehe4('KeyA', mitteRolf4, 2500) || zuRolfOben;
+  const uebergabeVersuche = [];
   for (let i = 0; i < 5; i++) {
     if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
-    if (!(await evaluate(nah4('nimmt', 'kiste')))) {
-      // Nicht bei Rolf: hoechstens zweimal erneut anmarschieren, sonst keine
-      // Blinddrucke und kein Weiterlaufen in die falsche Richtung.
-      if (anmarsch4 >= 2) break;
-      anmarsch4 += 1;
-      zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 2500) || zuRolfOben;
-      if (!(await evaluate(nah4('nimmt', 'kiste')))) break;
-    }
-    uebergabeVersuche += 1;
+    const beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    uebergabeVersuche.push(`${i + 1}:${beiRolf ? 'an' : 'ab'}`);
+    if (!beiRolf) break;          // nicht bei Rolf: kein Blinddruck
     await key('KeyE', 'keyDown'); await sleep(90);
     await key('KeyE', 'keyUp'); await sleep(260);
   }
