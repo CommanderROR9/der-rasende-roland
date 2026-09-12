@@ -252,7 +252,10 @@ function frame(now) {
 function setzeKnopfBeschriftung() {
   const modus = grill ? 'grill' : racer ? 'racer' : 'lauf';
   const jump = modus === 'lauf' ? 'SPRUNG' : '—';
-  const akt = modus === 'racer' ? 'BREMSE' : modus === 'grill' ? 'WENDEN' : 'TRITT';
+  // E ist im Laufmodus kontextsensitiv. Bei einer Figur oder einem Gegenstand
+  // darf die Touch-Oberfläche nicht weiter behaupten, man würde zutreten.
+  const hatAktion = modus === 'lauf' && !!(game?.hud?.label?.action);
+  const akt = modus === 'racer' ? 'BREMSE' : modus === 'grill' ? 'WENDEN' : hatAktion ? 'AKTION' : 'TRITT';
   if (ui.btnJump.textContent !== jump) ui.btnJump.textContent = jump;
   if (ui.btnAction.textContent !== akt) ui.btnAction.textContent = akt;
   ui.btnJump.style.opacity = modus === 'lauf' ? '' : '0.3';
@@ -359,7 +362,7 @@ function updateWorldLabel() {
     if (labelPrev !== '') { labelPrev = ''; ui.worldlabel.classList.add('hidden'); }
     return;
   }
-  const text = l.action ? `${l.text} · ${IS_TOUCH ? 'TRITT-KNOPF' : l.key || 'E'}` : l.text;
+  const text = l.action ? `${l.text} · ${IS_TOUCH ? 'AKTION-KNOPF' : l.key || 'E'}` : l.text;
   const r = ui.canvas.getBoundingClientRect();
   const base = ui.stage.getBoundingClientRect();
   const x = Math.round((r.left - base.left) + l.sx * scaleNow);

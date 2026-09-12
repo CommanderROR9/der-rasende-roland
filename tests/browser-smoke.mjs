@@ -145,6 +145,86 @@ try {
   check('Kluft ist schwarz', st.kluft === 'schwarz', st.kluft);
   check('Drei Nerven, fünf Bierdeckel', st.nerven === 3 && st.deckelTotal === 5);
 
+  // Akt-1-Musterstrecke im echten Browser: Daten, sichtbarer NPC und echte
+  // E-Tastendrücke. Die direkte Positionierung ist ein instrumentierter Probe-
+  // Schritt; Interaktion und Frame-Updates laufen danach über den normalen Pfad.
+  const akt1Data = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const npcs = g.entities.filter((e) => e.kind === 'npc');
+    const decor = g.entities.filter((e) => e.kind === 'decor');
+    const sheets = g.entities.filter((e) => e.kind === 'item' && e.item === 'stimmblatt');
+    const ada = npcs.find((e) => e.flag === 'ada_beauftragt');
+    g.player.x = ada.x - 18;
+    g.player.y = ada.y + ada.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    return JSON.stringify({ npcs: npcs.length, decor: new Set(decor.map((e) => e.spr)).size,
+      sheets: new Set(sheets.map((e) => e.spr)).size });
+  })()`));
+  await sleep(250);
+  check('Akt 1 rendert zwei Ada-Begegnungen', akt1Data.npcs === 2, JSON.stringify(akt1Data));
+  check('Akt 1 hat mindestens fünf unterschiedliche Raumrequisiten', akt1Data.decor >= 5, JSON.stringify(akt1Data));
+  check('Akt 1 rendert drei unterscheidbare Stimmen', akt1Data.sheets === 3, JSON.stringify(akt1Data));
+  const adaLabel = await evaluate("(window.__roland.game.hud.label || {}).text || ''");
+  check('Ada wird im Browser als Interaktion beschriftet', adaLabel.includes('ADA'), adaLabel);
+  check('Touch-Aktion heißt bei Ada nicht Tritt',
+    (await evaluate("document.getElementById('btnAction').textContent")) === 'AKTION');
+  check('Adas Weltschild verweist auf die Aktionstaste',
+    (await evaluate("document.getElementById('worldlabel').textContent")).includes('AKTION-KNOPF'));
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(100);
+  }
+  const adaState = JSON.parse(await evaluate(`JSON.stringify({
+    flag: window.__roland.game.storyFlags.has('ada_beauftragt'),
+    ziel: window.__roland.game.hud.ziel,
+    hint: window.__roland.game.hud.hint
+  })`));
+  check('Drei echte E-Tastendrücke schließen Adas Auftrag ab', adaState.flag === true, JSON.stringify(adaState));
+  check('Das Journal wechselt danach zu den drei Stimmen', adaState.ziel.includes('STIMMBLÄTTER'), adaState.ziel);
+  const act1Shot = await send('Page.captureScreenshot', { format: 'png' });
+  const act1ShotDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(act1ShotDir, { recursive: true });
+  const act1ShotPath = join(act1ShotDir, 'akt1-garderobe.png');
+  writeFileSync(act1ShotPath, Buffer.from(act1Shot.data, 'base64'));
+  check('Akt-1-Garderobenbild geschrieben', existsSync(act1ShotPath));
+  results.push(`AKT1-SCREENSHOT ${act1ShotPath}`);
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const gate = g.gates.find((e) => e.flag === 'ada_beauftragt');
+    g.player.x = gate.tx * 16 - g.player.w + 2;
+    g.player.y = 25 * 16 - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(200);
+  check('Adas Auftrag öffnet die Garderobentür im Browser',
+    (await evaluate("window.__roland.game.gates.find((e) => e.flag === 'ada_beauftragt').open")) === true);
+  // Visuelle Referenzbilder für die vier späteren Raumtypen. Direkte
+  // Positionierung dient nur der Aufnahme; die Route selbst prüft der Bot-Test.
+  const roomViews = [
+    ['stimmengang', 43, 19, 'schwarz', false, 0],
+    ['notenschacht', 72, 23, 'schwarz', false, 1],
+    ['archiv', 104, 19, 'anzug', false, 2],
+    ['maschinerie', 122, 13, 'frack', true, 3],
+  ];
+  for (const [name, tx, row, outfit, mappe, stimmen] of roomViews) {
+    await evaluate(`(() => {
+      const g=window.__roland.game;
+      g.setOutfit('${outfit}'); g.hasMappe=${mappe}; g.stimmblaetter=${stimmen};
+      g.storyFlags.add('ada_beauftragt');
+      g.player.x=${tx}*16; g.player.y=${row}*16-g.player.h;
+      g.player.vx=0; g.player.vy=0; g.hint=null; g.hintQueue=[];
+    })()`);
+    await sleep(240);
+    const roomShot = await send('Page.captureScreenshot', { format: 'png' });
+    const roomPath = join(act1ShotDir, `akt1-${name}.png`);
+    writeFileSync(roomPath, Buffer.from(roomShot.data, 'base64'));
+    check(`Akt-1-Raumbild ${name} geschrieben`, existsSync(roomPath));
+    results.push(`AKT1-ROOM ${roomPath}`);
+  }
+  // Für die bestehenden Lauf-/Umkleideproben frisch an den Spawn stellen.
+  await evaluate(`(() => { const g=window.__roland.game; g.reset('schwarz'); })()`);
+  await sleep(180);
+
   // Befund D2: Umziehen muss am Avatar sichtbar sein. Der Sprite-Cache
   // schlüsselte vorher nur auf die Palettenbuchstaben (".hHsSawrb") — die sind
   // bei allen drei Klüften gleich, also bekam jede dieselbe Zeichnung.

@@ -57,12 +57,12 @@ function place(game, px, py) {
   check('exactly one spawn', level.spawns.filter((s) => s.kind === 'spawn').length === 1);
   check('five Bierdeckel defined', level.deckelTotal === 5, `got ${level.deckelTotal}`);
   check('two checkpoints', level.spawns.filter((s) => s.kind === 'checkpoint').length === 2);
-  check('outfit stands exist', level.spawns.filter((s) => s.kind === 'stand').length >= 4);
+  check('three deliberately placed outfit stands exist', level.spawns.filter((s) => s.kind === 'stand').length === 3);
   check('three enemy types present',
     ['piccolo', 'sopran', 'tenor'].every((k) => level.spawns.some((s) => s.kind === k)));
-  check('two gates (Anzug + Frack)', level.gates.length === 2);
-  check('gates need anzug and frack',
-    level.gates.map((g) => g.need).sort().join(',') === 'anzug,frack');
+  check('two outfit gates plus one story gate', level.gates.length === 3);
+  check('outfit gates need anzug and frack',
+    level.gates.filter((g) => g.need).map((g) => g.need).sort().join(',') === 'anzug,frack');
   check('gates block the way while locked',
     level.gates.every((g) => level.grid[g.ty + g.th - 1][g.tx] === 1));
   check('lights and alcoves exist', level.lights.length >= 4 && level.alcoves.length >= 3);
@@ -73,11 +73,11 @@ function place(game, px, py) {
     level.spawns.some((s) => s.kind === 'spawn' && s.walkRow === 24)
     && level.goal.y <= 12 * TILE
     && level.spawns.filter((s) => s.kind === 'item' && s.item === 'stimmblatt').length === 3);
-  // Der Kern des Levelbaus: kein Abkürzungsweg am Boden entlang
-  check('no ground-level bypass under the upper corridor',
-    level.grid[24][26] === 1 && level.grid[24][30] === 1 && level.grid[24][40] === 1);
-  check('no ground-level bypass from the lower corridor to the finale',
-    level.grid[24][110] === 1 && level.grid[24][112] === 1);
+  // Der neue Kern des Levelbaus: keine verpassbare Stimme hinter einer Luke.
+  check('the central descent is explicitly reversible',
+    level.route?.reversible === true && level.route.returnStair.length >= 3);
+  check('archive and finale remain distinct gated rooms',
+    level.grid[24][90] === 1 && level.grid[24][111] === 1);
   check('climb spans at least 10 tiles of height',
     level.spawns.find((s) => s.isSpawn).walkRow - 12 >= 10);
 }
@@ -345,7 +345,7 @@ function place(game, px, py) {
 {
   const { game } = fresh('schwarz', { stands: false });
   const pic = game.entities.find((e) => e.kind === 'piccolo');
-  place(game, pic.x - 80, pic.y);
+  place(game, pic.x - 120, pic.y);
   step(game, 0.4);
   check('Erster Kontakt erklärt den Gegner',
     !!game.hud.hint && game.hud.hint.includes('SCHALLWELLEN'), `hint=${game.hud.hint}`);
@@ -385,19 +385,17 @@ function place(game, px, py) {
   // mitten im Anzug umziehen verliert den Durchgang nicht
   const { game: g2, input: i2 } = fresh('anzug', { stands: false });
   const band = g2.gates.find((g) => g.need === 'frack');
-  place(g2, 99 * TILE, 19 * TILE - PHYS.playerH);
+  place(g2, band.tx * TILE - 14, 25 * TILE - PHYS.playerH);
   step(g2, 0.2);
-  i2.setKey('right', true);
-  step(g2, 1.5);
   check('Absperrband stays shut in Anzug', band.open === false);
-  check('Absperrband is solid until opened', g2.grid[18][band.tx] === 1);
+  check('Absperrband is solid until opened', g2.grid[24][band.tx] === 1);
   // Direkte Rückmeldungen (z.B. Bierdeckel) stehen zuerst, danach kommt der Hinweis.
   step(g2, 5.5);
   check('Absperrband gives a hint', !!g2.hud.hint && g2.hud.hint.includes('FRACK'), `hint=${g2.hud.hint}`);
   g2.setOutfit('frack');
   step(g2, 0.3);
   check('Frack opens the Absperrband', band.open === true);
-  i2.setKey('right', false);
+
 }
 
 // ---------------------------------------------------------- Morsche Blätter --
@@ -462,7 +460,7 @@ function place(game, px, py) {
     JSON.stringify(game.hud.label));
   check('Schild hat Bildschirmkoordinaten',
     game.hud.label && Number.isFinite(game.hud.label.sx) && Number.isFinite(game.hud.label.sy));
-  place(game, 40, 25 * TILE - PHYS.playerH);
+  place(game, 300, 25 * TILE - PHYS.playerH);
   game.update(1 / 60);
   check('kein Schild ohne Objekt in Reichweite', game.hud.label === null || game.hud.label.text !== 'BIERDECKEL');
 }
@@ -485,10 +483,13 @@ function place(game, px, py) {
   place(game, goal.x, goal.y + goal.h - PHYS.playerH);
   game.update(1 / 60);
   check('lift refuses without the Notenmappe', game.state === 'play');
-  check('lift hints about the mappe', !!game.hud.hint && game.hud.hint.includes('NOTENMAPPE'), `hint=${game.hud.hint}`);
+  check('lift hints about the mappe', !!game.hud.hint && game.hud.hint.includes('MAPPE'), `hint=${game.hud.hint}`);
   game.hasMappe = true;
   game.update(1 / 60);
-  check('lift accepts with the Notenmappe', game.state === 'complete');
+  check('lift still waits for Ada after the mappe is complete', game.state === 'play');
+  game.storyFlags.add('ada_verabschiedet');
+  game.update(1 / 60);
+  check('lift accepts mappe plus Ada payoff', game.state === 'complete');
   check('reward beer appears', game.entities.some((e) => e.item === 'bier'));
   check('stats are recorded', game.stats.deckel === 0 && game.stats.time > 0);
 }
@@ -502,15 +503,21 @@ function place(game, px, py) {
   const { game, input } = fresh('schwarz', { stands: false });
   game.maxNerves = 99;
   game.nerves = 99;
+  // Dieser Bot beweist die Geometrie. Gegnerverhalten ist oben separat geprüft;
+  // hier würden Patrouillen den deterministischen Wegpunktlauf verfälschen.
+  const hostile = new Set(['piccolo', 'sopran', 'tenor', 'koffer', 'dirigent']);
+  game.entities = game.entities.filter((en) => !hostile.has(en.kind));
 
   const route = [
-    { wp: [10, 25] }, { wp: [14, 23] }, { wp: [19, 21] }, { wp: [14, 19] },
-    { wp: [24, 17] }, { wp: [43, 17] },
-    { wp: [47, 25] }, { wp: [62, 25] }, { wp: [84, 25] },
-    { outfit: 'anzug' },
-    { wp: [89, 23] }, { wp: [91, 21] }, { wp: [89, 19] }, { wp: [95, 19] }, { wp: [99, 19] },
-    { outfit: 'frack' },
-    { wp: [103, 19] }, { wp: [105, 17] }, { wp: [109, 15] }, { wp: [113, 14] }, { wp: [120, 13] }, { wp: [127, 13] },
+    { wp: [7, 25] }, { talk: 'ada_beauftragt' }, { wp: [16, 25] },
+    { wp: [19, 23] }, { wp: [23, 21] }, { wp: [28, 19] }, { wp: [38, 19] }, { wp: [50, 19] },
+    { wp: [54, 21] }, { wp: [58, 23] }, { wp: [63, 25] },
+    { wp: [68, 23] }, { wp: [72, 23] }, { wp: [88, 25] },
+    { outfit: 'anzug' }, { wp: [93, 23] }, { wp: [98, 21] }, { wp: [104, 19] },
+    { wp: [98, 21] }, { wp: [94, 23] }, { wp: [108, 25] },
+    { outfit: 'frack' }, { wp: [110, 25] }, { wp: [113, 23] }, { wp: [117, 21] },
+    { wp: [113, 19] }, { wp: [117, 17] }, { wp: [121, 15] }, { wp: [124, 13] },
+    { talk: 'ada_verabschiedet' }, { wp: [130, 13] },
   ];
 
   const failures = [];
@@ -521,6 +528,14 @@ function place(game, px, py) {
   game.wetterIdx = 0; game.wetterTimer = 9999; game.wetterKind = 'sonne';   // ruhiges Wetter: die Route prüft Geometrie, nicht Sturm
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    if (stepItem.talk) {
+      const npc = game.entities.find((en) => en.kind === 'npc' && en.flag === stepItem.talk);
+      for (let i = 0; i < npc.dialog.length; i++) {
+        input.setKey('action', true); game.update(1 / 60);
+        input.setKey('action', false); game.update(1 / 60);
+      }
+      continue;
+    }
     const [wx, row] = stepItem.wp;
     const tx = wx * TILE + 8;
     const feetY = row * TILE;
@@ -588,6 +603,8 @@ function place(game, px, py) {
   check('bot switches to the Frack for the Absperrband',
     game.gates.find((g) => g.need === 'frack').open === true);
   check('Notenmappe is collected on the way', game.hasMappe === true);
+  check('Ada frames the route at both ends',
+    game.storyFlags.has('ada_beauftragt') && game.storyFlags.has('ada_verabschiedet'));
   check('Bierdeckel are collected on the way', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
