@@ -13,11 +13,11 @@
 import { TILE } from './config.js';
 import { STATIONEN } from './story.js';
 import { buildAkt1 } from './act1.js';
-import { buildAkt2 } from './act2.js';
+import { buildAkt2, PROBEN_MOTIV } from './act2.js';
 import { buildAkt3 } from './act3.js';
 import { buildAkt4 } from './act4.js';
 export { buildAkt1 } from './act1.js';
-export { buildAkt2, PROBEN_MOTIV } from './act2.js';
+export { buildAkt2, PROBEN_MOTIV };
 export { buildAkt3 } from './act3.js';
 export { buildAkt4 } from './act4.js';
 
@@ -53,9 +53,13 @@ export { buildMotorrad };
 
 // ============================================================================
 // AKT 5 — DIE BÜHNE (DAS FINALE)
-// Auftritt. Frack, Verfolgerscheinwerfer wandern über die Bühne und heizen ein,
-// und der Applaus will verdient sein: im Takt getroffen wächst er, sonst fällt er.
-// Am Ende wartet der Vorhang — und der Frack muss fallen.
+// Auftritt im Frack, Verfolgerscheinwerfer wandern über die Bühne und heizen ein.
+// Der Applaus entsteht aus der Aufführung (Auftrag A5): am Pult am Bühnenrand
+// wird das in Akt 2 gelernte Probenmotiv gespielt, das Ensemble antwortet, der
+// Applaus steigt in klaren Stufen. Das Betäuben der Musiker trägt keinen Applaus
+// mehr ein, und der Applaus verfällt nicht mehr von selbst — wer noch sucht, was
+// zu tun ist, verliert nichts. Am Ende wartet der Vorhang: den Frack ablegen,
+// ohne künstliche Überhitzung.
 // ============================================================================
 export function buildAkt5() {
   const W = 140, H = 26;
@@ -122,6 +126,16 @@ export function buildAkt5() {
   alcove(105, 20);
   e('item', 104, 21, { item: 'bierdeckel' });
 
+  // Die Zugabe (Auftrag A5): am Bühnenrand steht das Pult. Hier wird das in
+  // Akt 2 gelernte Probenmotiv gespielt — im Takt, in fünf Einsätzen. Das
+  // Ensemble antwortet, der Applaus steigt in Stufen. Der erste Punkt, den der
+  // Spieler auf der Bühne erreicht, ist damit auch der erste Schritt des Finales.
+  const zugabe = { noetig: 5, proSchritt: 12, motiv: PROBEN_MOTIV.id, pultTx: 62 };
+  e('pult', zugabe.pultTx, 21, {
+    noetig: zugabe.noetig, proSchritt: zugabe.proSchritt, motiv: zugabe.motiv,
+    zugabe: true, aktion: 'ZUGABE',
+  });
+
   // Verfolgerscheinwerfer: wandern und heizen ein
   spot(19, 62, 90, 6);
   spot(17, 74, 106, -7);
@@ -130,7 +144,12 @@ export function buildAkt5() {
   const goal = {
     x: 112 * TILE, y: 19 * TILE, w: TILE, h: 3 * TILE,
     name: 'VORHANG', need: 'ablegen', applaus: 60,
-    locked: 'ZU WENIG APPLAUS. UND OHNE FRACK FÄLLT HIER NICHTS.',
+    // Der Vorhang verlangt die gespielte Zugabe (Auftrag A5), nicht Applaus aus
+    // betäubten Musikern. Hitze kommt hier nirgends vor: Ablegen ist ein Schritt.
+    flags: ['zugabe_gespielt'],
+    flagLocked: 'ERST DIE ZUGABE SPIELEN — AM PULT, IM TAKT (E) — UND DER FRACK MUSS AM VORHANG FALLEN.',
+    locked: 'DER VORHANG GEHT NUR AUF, WENN DIE ZUGABE GESPIELT IST UND DER FRACK FÄLLT.',
+    needLocked: 'OHNE FRACK KEIN AUFTRITT. NUR IM FRACK GEHT DER VORHANG AUF.',
   };
 
   const takts = [
@@ -139,24 +158,34 @@ export function buildAkt5() {
   ];
 
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
-  tip(2, 'AKT 5 — DIE BÜHNE. AUFTRITT IM FRACK, MEHR IST NICHT ZU TUN');
+  tip(2, 'AKT 5 — DIE BÜHNE. AUFTRITT IM FRACK: ZUGABE SPIELEN, DANN FRACK ABLEGEN');
   tip(20, 'KULISSEN. HINTER JEDER KANN EINER STEHEN');
   tip(44, 'SCHNÜRBODEN. VON HIER SIEHT MAN DIE GANZE BÜHNE');
+  tip(52, 'DER BÜHNENRAND: AM PULT STARTET DIE ZUGABE — IM TAKT E DRÜCKEN');
   tip(60, 'VERFOLGERSCHEINWERFER: IM LICHT WIRD DER FRACK ZUR HEIZUNG');
-  tip(84, 'APPLAUS: IM TAKT GETROFFEN WÄCHST ER. DAS IST DEIN AUFTRITT');
-  tip(110, 'DER VORHANG GEHT AUF, WENN DU DEN FRACK ABLEGST (E)');
+  tip(62, 'ZUGABE: AM PULT STEHEN UND IM TAKT E DRÜCKEN — FÜNF EINSÄTZE, DANN STEHT DER APPLAUS');
+  tip(84, 'APPLAUS KOMMT AUS DER ZUGABE. BETÄUBTE MUSIKER TRAGEN KEINEN BEI');
+  tip(110, 'DER VORHANG GEHT AUF, WENN DU DEN FRACK ABLEGST (E) — HITZE IST EGAL');
 
   return {
     id: 'akt5',
     name: 'AKT 5 — DIE BÜHNE',
-    subtitle: 'Das Finale. Frack, Verfolgerlicht und ein Applaus, der verdient sein will.',
+    subtitle: 'Das Finale. Frack, Verfolgerlicht — und eine Zugabe, die den Applaus verdient.',
     setting: 'buehne',
     applaus: true,
+    zugabe,
     bpm: 104,
     w: W, h: H,
     grid, spawns, gates, lights, alcoves, hints, shelters, movingLights, takts,
     deckelTotal: spawns.filter((sp) => sp.item === 'bierdeckel').length,
     goal,
+    // Das Journal führt Schritt für Schritt: erst die Zugabe (der Applaus-Stand
+    // ist der Zähler), dann der Vorhang. Kein Sammelziel — der Akt endet auch
+    // ohne einen einzigen Bierdeckel.
+    storySteps: [
+      { id: 'zugabe', text: 'DIE ZUGABE SPIELEN — AM PULT, IM TAKT (E)', counter: 'applaus', atLeast: 60 },
+      { id: 'vorhang', text: 'DEN FRACK AM VORHANG ABLEGEN (E)', goal: true },
+    ],
   };
 }
 

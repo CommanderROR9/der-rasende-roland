@@ -1430,6 +1430,130 @@ try {
   const spotB = await evaluate('window.__roland.game.movingLights[0].x');
   check('Verfolgerspots wandern', spotA !== spotB, `${spotA} -> ${spotB}`);
 
+  // --- Akt 5: die Zugabe mit echten Tasten (Auftrag A5) --------------------
+  // Gespielt wird mit echten Tasten. Nur der weite Bühnenweg ist abgekürzt —
+  // wie in den Akt-2-Abschnitten dieses Tests; die letzten Schritte ans Pult
+  // und an den Vorhang läuft die Figur selbst.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    g.setOutfit('frack');
+    const p = g.entities.find((e) => e.kind === 'pult' && e.zugabe);
+    g.player.x = p.x - 34; g.player.y = p.y + p.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    window.__errors.length = 0;
+  })()`);
+  await sleep(200);
+  await key('KeyD', 'keyDown');
+  for (let i = 0; i < 40; i++) {
+    if (await evaluate(`!!(window.__roland.game.hud.label && /ZUGABE/.test(window.__roland.game.hud.label.text))`)) break;
+    await sleep(80);
+  }
+  await key('KeyD', 'keyUp');
+  await sleep(250);
+  const pultAngebot = JSON.parse(await evaluate(`JSON.stringify({
+    label: window.__roland.game.hud.label && window.__roland.game.hud.label.text,
+    ziel: window.__roland.game.hud.ziel,
+    applaus: document.getElementById('applaus').textContent,
+    sichtbar: !document.getElementById('applausWrap').classList.contains('hidden')
+  })`));
+  check('Akt 5: die D-Taste bringt den Spieler ans Pult, das Schild bietet die Zugabe',
+    /ZUGABE/.test(pultAngebot.label || ''), JSON.stringify(pultAngebot));
+  check('Akt 5: das Journal fuehrt den Schritt „Zugabe spielen"',
+    /ZUGABE/.test(pultAngebot.ziel || ''), pultAngebot.ziel);
+  check('Akt 5: der Applaus-Stand steht sichtbar im HUD',
+    pultAngebot.sichtbar === true && pultAngebot.applaus === '0/60', JSON.stringify(pultAngebot));
+
+  // Fuenf echte E-Tastendruecke im Takt. Der Takt wird abgewartet und abgelesen,
+  // nicht gesetzt: danebengehen kostet nichts, trifft nur im Takt.
+  const stufen = [];
+  for (let versuch = 0; versuch < 40 && stufen.length < 5; versuch++) {
+    if (!(await evaluate('window.__roland.game.beatAccuracy() <= window.__roland.game.diff.trittWindow'))) {
+      await sleep(25);
+      continue;
+    }
+    await key('KeyE', 'keyDown'); await sleep(60);
+    await key('KeyE', 'keyUp'); await sleep(130);
+    const stand = JSON.parse(await evaluate(`JSON.stringify({
+      applaus: Math.round(window.__roland.game.applaus),
+      teil: window.__roland.game.entities.find((e) => e.kind === 'pult' && e.zugabe).teil,
+      hud: document.getElementById('applaus').textContent,
+      stufen: document.getElementById('applausStufen').textContent,
+      puls: window.__roland.game.hud.applausPuls,
+      klasse: document.getElementById('applaus').classList.contains('puls')
+    })`));
+    if (!stufen.length || stand.teil > stufen[stufen.length - 1].teil) stufen.push(stand);
+  }
+  check('Akt 5: fuenf echte Einsaetze im Takt lassen den Applaus in Stufen steigen',
+    stufen.map((s) => s.applaus).join(',') === '12,24,36,48,60'
+    && stufen.map((s) => s.hud).join(' ') === '12/60 24/60 36/60 48/60 60/60',
+    JSON.stringify(stufen.map((s) => `${s.applaus}:${s.hud}`)));
+  check('Akt 5: jede Stufe ist sichtbar (Puls am Zahlenwert, Balken waechst bis voll)',
+    stufen.every((s) => s.puls === true && s.klasse === true)
+    && stufen[stufen.length - 1].stufen === '▮▮▮▮▮' && stufen[0].stufen === '▮▯▯▯▯',
+    JSON.stringify(stufen.map((s) => s.stufen)));
+  const nachZugabe = JSON.parse(await evaluate(`JSON.stringify({
+    ziel: window.__roland.game.hud.ziel,
+    flag: window.__roland.game.storyFlags.has('zugabe_gespielt')
+  })`));
+  check('Akt 5: nach der Zugabe fuehrt das Journal zum Frack',
+    nachZugabe.flag === true && /FRACK/.test(nachZugabe.ziel || ''), JSON.stringify(nachZugabe));
+
+  const zugabeShot = await send('Page.captureScreenshot', { format: 'png' });
+  const zugabePath = join(act1ShotDir, 'act5-zugabe.png');
+  writeFileSync(zugabePath, Buffer.from(zugabeShot.data, 'base64'));
+  check('Akt-5-Zugabebild geschrieben', existsSync(zugabePath));
+  results.push(`AKT5-SCREENSHOT ${zugabePath}`);
+
+  // Frack ablegen am Vorhang: ohne Notgriff und ohne die Notgriff-Hitze, mit
+  // einer echten E-Taste. (Das Verfolgerlicht waermt den Frack nebenbei auf —
+  // das ist die Buehne, nicht die Bedingung des Ziels.)
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const z = g.level.goal;
+    g.player.x = z.x - 30; g.player.y = z.y + z.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(200);
+  await key('KeyD', 'keyDown');
+  for (let i = 0; i < 40; i++) {
+    // Erst anhalten, wenn das Ziel wirklich ueberlappt ist — das Schild steht
+    // auch schon 90 px vorher am Bildrand.
+    if (await evaluate(`(() => {
+      const g = window.__roland.game; const z = g.level.goal; const p = g.player;
+      return p.x + p.w > z.x && p.x < z.x + z.w;
+    })()`)) break;
+    await sleep(80);
+  }
+  await key('KeyD', 'keyUp');
+  await sleep(200);
+  const vorhangLage = JSON.parse(await evaluate(`JSON.stringify({
+    label: window.__roland.game.hud.label && window.__roland.game.hud.label.text,
+    imZiel: (() => {
+      const g = window.__roland.game; const z = g.level.goal; const p = g.player;
+      return p.x + p.w > z.x && p.x < z.x + z.w;
+    })(),
+    hitze: Math.round(window.__roland.game.heat),
+    notgriff: window.__roland.game.frackOffUsed,
+    state: window.__roland.game.state
+  })`));
+  check('Akt 5: am Vorhang steht „FRACK ABLEGEN" — im Ziel, ohne Notgriff, ohne Hitzezwang',
+    /ABLEGEN/.test(vorhangLage.label || '') && vorhangLage.imZiel === true
+    && vorhangLage.notgriff === false && vorhangLage.hitze < 20 && vorhangLage.state === 'play',
+    JSON.stringify(vorhangLage));
+  await key('KeyE', 'keyDown'); await sleep(60);
+  await key('KeyE', 'keyUp'); await sleep(500);
+  const finaleEnde = JSON.parse(await evaluate(`JSON.stringify({
+    state: window.__roland.game.state,
+    abgelegt: window.__roland.game.frackAbgelegt,
+    outfit: window.__roland.game.outfit.id,
+    fehler: window.__errors
+  })`));
+  check('Akt 5: ein echter E-Druck am Vorhang beendet den Akt',
+    finaleEnde.state === 'complete' && finaleEnde.abgelegt === true && finaleEnde.outfit === 'schwarz',
+    JSON.stringify(finaleEnde));
+  check('Akt 5: die ganze Zugabe laeuft ohne Konsolenfehler',
+    finaleEnde.fehler.length === 0, JSON.stringify(finaleEnde.fehler.slice(0, 3)));
+
   // --- Epilog: Kleingarten mit Ramona und Grill ----------------------------
   await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
   await evaluate("document.getElementById('startBtn').click()");
