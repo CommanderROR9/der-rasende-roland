@@ -1156,7 +1156,30 @@ function place(game, px, py) {
     && level.weather.map((w) => w.kind).join(',') === 'sonne,wind,regen,kaelte');
   check('Akt 3: Vordach als Schutz vorhanden', (level.shelters || []).length >= 1);
   check('Akt 3: Auftritt am Podium nur im Frack',
-    level.gates.length === 1 && level.gates[0].need === 'frack');
+    level.gates.some((g) => g.need === 'frack'));
+  check('Akt 3: Absperrband öffnet erst nach Rolfs Auftrag',
+    level.gates.some((g) => g.flag === 'openair_beauftragt'
+      && (g.locked || '').includes('ROLF') && (g.opened || '').includes('WIESE')));
+  check('Akt 3: Rolf führt Briefing und Payoff',
+    level.spawns.filter((s) => s.kind === 'npc' && s.npc === 'rolf').length === 2
+    && level.spawns.filter((s) => s.kind === 'npc').every((s) => s.name === 'ROLF'));
+  check('Akt 3: zwei Pulte mit je zwei Klammern und eigenem Flag',
+    level.spawns.filter((s) => s.kind === 'pult').length === 2
+    && level.spawns.filter((s) => s.kind === 'pult').every((s) => s.noetig === 2 && !!s.flag));
+  check('Akt 3: sichtbare Klammern an beiden Pulten',
+    level.spawns.filter((s) => s.kind === 'decor' && s.spr === 'klammer').length >= 2);
+  check('Akt 3: Storyschritte von Rolf bis Podium',
+    Array.isArray(level.storySteps) && level.storySteps.length >= 5
+    && level.storySteps[0].flag === 'openair_beauftragt');
+  check('Akt 3: Ziel verlangt beide Pulte und Rolfs Abschied',
+    level.goal.need === 'einsatz'
+    && (level.goal.flags || []).includes('pult_west_gesichert')
+    && (level.goal.flags || []).includes('pult_ost_gesichert')
+    && (level.goal.flags || []).includes('openair_abgenommen'));
+  check('Akt 3: zwei Speicherpunkte und Deckung an der Bühne',
+    level.spawns.filter((s) => s.kind === 'checkpoint').length >= 2
+    && level.alcoves.length >= 3);
+  check('Akt 3: zwei Taktwechsel', (level.takts || []).length === 2);
   check('Akt 3: Gerüst in Sprunghöhe (32 px)',
     level.grid[19][84] === 2 && level.grid[17][88] === 2
     && level.grid[15][84] === 2 && level.grid[13][88] === 2);
