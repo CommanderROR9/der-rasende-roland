@@ -79,7 +79,7 @@ export const MOTIVE = {
     drums: 'tick-fanfare', leadWave: 'triangle', ducker: 1.0,
   },
   motorrad: {
-    id: 'motorrad', titel: 'MOTORRAD — NACHTFahrt, HÄRTER',
+    id: 'motorrad', titel: 'MOTORRAD — NACHTFAHRT, HÄRTER',
     charakter: 'hart, schnell', vorlage: 'eigenes Industrial-Stück',
     art: 'industrial', taktart: '4/4', grund: 38, haerte: 9, puls: 'Double-Kick mit scharfem Hat',
     skizze: 'Eigenes tieferes Riff, Double-Kick, schärfere Verzerrung als das Cabrio.',
@@ -352,12 +352,13 @@ export function createMusik({ audio = null } = {}) {
         ton(ctx, ziel, { midi: m.grund - 12 + b, zeit, dauer: sechzehntelDauer * 3.2, typ: 'triangle', pegel: 0.22, industrial: false });
       }
     }
-    // Lead.
+    // Lead (Charakter-Lautheit je Motiv: der Garten bleibt fast stumm).
     const l = m.lead[i];
     if (l !== null && l !== undefined) {
       ton(ctx, ziel, {
         midi: m.grund + 12 + l, zeit, dauer: sechzehntelDauer * 2.2,
-        typ: industrial ? 'sawtooth' : m.leadWave, pegel: industrial ? 0.30 : 0.16,
+        typ: industrial ? 'sawtooth' : m.leadWave,
+        pegel: (industrial ? 0.30 : 0.16) * (m.ducker || 1),
         industrial,
       });
     }
