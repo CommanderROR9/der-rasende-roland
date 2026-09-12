@@ -718,6 +718,37 @@ export const SPRITES = {
     'LwL..........LwL',
     'LLLLLLLLLLLLLLLL',
   ],
+  // Rolfs Lampenkiste: Holzkiste mit leuchtendem Lampenfenster — das Ding, das
+  // im Orchestergraben steht und mit der Versenkung hochgefahren werden muss.
+  lampenkiste: [
+    'LLLLLLLLLLLLLLLL',
+    'LYYYYYYYYYYYYYYL',
+    'LYyyyyyyyyyyyyYL',
+    'LYyaaaaaaaayyYYL',
+    'LYyayyyyyyyayyYL',
+    'LYyayyLLLyyayyYL',
+    'LYyayyLLLyyayyYL',
+    'LYyayyyyyyyayyYL',
+    'LYyaaaaaaaayyYYL',
+    'LYyyyyyyyyyyyyYL',
+    'LYYYYYYYYYYYYYYL',
+    'LLLLLLLLLLLLLLLL',
+    'LL  LL  LL  LL  ',
+    'LL  LL  LL  LL  ',
+  ],
+  // Taktstock des Dirigenten: optionales Andenken, kein Pflichtstück.
+  taktstock: [
+    '      ww',
+    '     ww ',
+    '    ww  ',
+    '   ww   ',
+    '  ww    ',
+    ' ww     ',
+    'ww      ',
+    'w       ',
+    '        ',
+    '        ',
+  ],
   bauzaun: [
     'gGgGgGgGgGgGgGgGgGgGgGgGgGgGgGgG',
     'GgGgGgGgGgGgGgGgGgGgGgGgGgGgGgGg',
