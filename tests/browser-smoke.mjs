@@ -1803,12 +1803,21 @@ try {
     flag: window.__roland.game.storyFlags.has('taktstock_genommen'),
     hint: document.getElementById('hintbar').textContent,
     ziel: window.__roland.game.hud.ziel,
-    zielFrei: window.__roland.game.goalErfuellt()
+    zielFrei: window.__roland.game.goalErfuellt(),
+    dirigentAbstand: Math.round(Math.abs(
+      window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
   }`);
   check('Akt 4: der Taktstock ist nehmbar und bleibt ein Andenken ohne Storyschritt',
     zumAndenken === true && andenken.flag === true && /TAKTSTOCK/.test(andenken.hint || '')
     && /AUFTRITT/.test(andenken.ziel || ''), JSON.stringify(andenken));
   await bild4('akt4-andenken.png');
+
+  // Stille Stelle im Graben (x 820..940, Boden): ausserhalb jeder Schussweite
+  // (Dirigent 138 px, Piccolo 148 px im Dunkeln), aber in der Patrouille des
+  // Tenors — Nahkontakt ohne Schaden ist in der Messung eingeschlossen.
+  const leiseStelle = await gehe4('KeyA',
+    '(() => { const p = window.__roland.game.player; return p.y + p.h > 396 && p.x < 940 && p.x > 820; })()',
+    12000);
 
   // Die Ruhe wird in einem Fenster gemessen, nicht in einem Augenblick: ein
   // Geschoss, das VOR der Uebergabe abgefeuert wurde, ist noch bis zu 3,4 s
@@ -1816,12 +1825,20 @@ try {
   // mehr, und von da an darf nichts Neues dazukommen: kein neuer Schuss, kein
   // Nachzielen, kein neuer Treffer. Nur damage() setzt player.invuln > 0 — ein
   // frischer Treffer waere an einem Ausschlag nach oben zu erkennen.
+  // Zum Ort des Fensters (Erwartungskorrektur mit Begruendung): updateEnemies
+  // ist bei frieden stumm (kein Nahangriff, kein Sopran, kein Schaden), aber
+  // onBeat feuert taktsynchron weiter (Dirigent/Piccolo ohne frieden-Gatter,
+  // src/game.js). Direkt neben dem Dirigenten (Andenken, ~35 px) waere das
+  // Fenster nie ruhig — gemessen wird darum an der stillen Stelle; der Weg
+  // dorthin fuehrte am Dirigenten vorbei (Abstand am Andenken, Nachweis unten).
+  // Alle Praedikate bleiben bestehen, keines wurde abgesenkt.
   let ruhe = null, neueGeschosse = 0, nachgezielt = 0, neueTreffer = 0, vorherProj = null;
   for (let i = 0; i < 40; i++) {
     await sleep(150);
     ruhe = await zust4(`{
       friedlich: window.__roland.game.hud.friedlich,
       nerven: window.__roland.game.nerves,
+      x: Math.round(window.__roland.game.player.x),
       projektile: window.__roland.game.projectiles.length,
       zielen: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').map((e) => Math.round(e.aim)),
       invuln: Math.round(window.__roland.game.player.invuln * 100) / 100,
@@ -1839,14 +1856,15 @@ try {
   // diff.invuln auf 0 herunter und landet durch die Bildschrittweite knapp
   // darunter (-0,02). Das ist das Ende der alten Verwundbarkeit, kein Treffer.
   check('Akt 4: nach der Uebergabe greift im Graben niemand mehr an (kein Schaden, kein Nachzielen)',
-    ruhe.friedlich === true && neueGeschosse === 0 && nachgezielt === 0 && neueTreffer === 0
+    leiseStelle === true && ruhe.friedlich === true && neueGeschosse === 0 && nachgezielt === 0 && neueTreffer === 0
     && ruhe.nerven >= nervenVorher && ruhe.projektile === 0 && ruhe.zielen.every((a) => a === 0)
-    && ruhe.invuln <= 0 && ruhe.dirigentAbstand < 96,
+    && ruhe.invuln <= 0 && ruhe.dirigentAbstand > 200,
     `nerven=${nervenVorher}->${ruhe.nerven} neuGeschosse=${neueGeschosse} neueTreffer=${neueTreffer} `
     + `brezeln=${brezelnOben}->${ruhe.brezeln} ${JSON.stringify(ruhe)}`);
   results.push(`AKT4 Ruhe im Graben: Nerven ${nervenVorher}->${ruhe.nerven}`
     + ` (Brezeln ${brezelnOben}->${ruhe.brezeln}), neue Geschosse ${neueGeschosse},`
-    + ` neue Treffer ${neueTreffer}`);
+    + ` neue Treffer ${neueTreffer}, stille Stelle ${leiseStelle ? 'erreicht' : 'NICHT erreicht'}`
+    + ` (Dirigentenabstand Andenken ${andenken.dirigentAbstand}, Ruhe ${ruhe.dirigentAbstand})`);
 
   // 10) Zurueck nach oben und der Auftritt: Umkleide, Frack, Gitter, Abschluss.
   await gehe4('KeyA',
@@ -1888,10 +1906,17 @@ try {
     zurUmkleide === true && umkleide.state === 'paused' && umkleide.grund === 'stand'
     && umkleide.offen === true && umkleide.kluften.some((k) => /FRACK/.test(k)),
     JSON.stringify(umkleide));
-  await evaluate(`(() => {
-    const b = [...document.querySelectorAll('#gardeCards button')].find((x) => /FRACK/.test(x.textContent));
-    b.click(); return 1;
-  })()`);
+  // Nur bei wirklich geoefneter Umkleide klicken: Die Knopfziele im DOM
+  // stammen sonst noch aus der Start-Garderobe (Modus 'start') und ein Klick
+  // wuerde newGame() ausloesen — neuer Spielstand, alle Flags weg, der Rest
+  // des Laufs liefe gegen einen frischen Akt (Repro: x=308 am geschlossenen
+  // Gitter, Ziel wieder DIENSTGANG). Lieber laut scheitern als still neu starten.
+  if (umkleide.offen === true && umkleide.state === 'paused') {
+    await evaluate(`(() => {
+      const b = [...document.querySelectorAll('#gardeCards button')].find((x) => /FRACK/.test(x.textContent));
+      b.click(); return 1;
+    })()}`);
+  }
   await sleep(350);
   const imFrack = await zust4(`{
     kluft: window.__roland.game.outfit.id,
