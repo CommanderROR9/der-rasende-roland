@@ -1179,11 +1179,17 @@ export class Game {
     const goal = this.level.goal;
     if (overlap(p, goal)) {
       const aktionsZiel = goal.need === 'ablegen' || goal.need === 'setzen';
+      // Erst die Etappe, dann die Aktion (Auftrag A5): solange ein Flag fehlt,
+      // wird der fehlende Schritt benannt, statt den Frack schon abzunehmen.
+      const fehltFlag = (goal.flags || []).some((flag) => !this.storyFlags.has(flag));
       if (aktionsZiel && this.wantInteract) {
         this.wantInteract = false;
-        if (goal.need === 'ablegen') {
+        this.goalNote = this.time;      // erst die Antwort, dann die Standrede
+        if (fehltFlag) {
+          this.message(goal.flagLocked || goal.locked || 'HIER FEHLT NOCH EINE ETAPPE.', 5, 2);
+        } else if (goal.need === 'ablegen') {
           if (!this.frackAblegen()) {
-            this.message('OHNE FRACK GIBT ES NICHTS ABZULEGEN. AM KLEIDERSTÄNDER ANZIEHEN (E).', 5, 2);
+            this.message(goal.needLocked || 'OHNE FRACK GIBT ES NICHTS ABZULEGEN. AM KLEIDERSTÄNDER ANZIEHEN (E).', 5, 2);
           }
         } else if (goal.need === 'setzen') this.setzen = true;
       }
@@ -1191,7 +1197,9 @@ export class Game {
       if (erfuellt) this.complete();
       else if (this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
-        this.message(goal.locked || 'HIER GEHT ES NICHT WEITER.', 4.5, 2);
+        this.message(fehltFlag
+          ? (goal.flagLocked || goal.locked || 'HIER GEHT ES NICHT WEITER.')
+          : (goal.needLocked || goal.locked || 'HIER GEHT ES NICHT WEITER.'), 4.5, 2);
       }
     }
     // Taktwechsel: der Dirigent bestimmt das Tempo

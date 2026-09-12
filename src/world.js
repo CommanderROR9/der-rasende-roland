@@ -149,6 +149,7 @@ export function buildAkt5() {
     flags: ['zugabe_gespielt'],
     flagLocked: 'ERST DIE ZUGABE SPIELEN — AM PULT, IM TAKT (E).',
     locked: 'ERST DIE ZUGABE SPIELEN — OHNE AUFTRITT GEHT DER VORHANG NICHT AUF.',
+    needLocked: 'OHNE FRACK KEIN AUFTRITT. NUR IM FRACK GEHT DER VORHANG AUF.',
   };
 
   const takts = [
