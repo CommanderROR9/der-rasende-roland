@@ -11,6 +11,7 @@
 // Jede Stufe ist höchstens 32 px hoch (Sprunghöhe 36 px), damit die Route
 // in der Simulation nachweislich spielbar bleibt (siehe tests/smoke.test.mjs).
 import { TILE } from './config.js';
+import { STATIONEN } from './story.js';
 
 const W = 132; // Kacheln breit
 const H = 26;  // Kacheln hoch
@@ -92,6 +93,8 @@ export function buildAkt1() {
   lamp(30, 14);
   e('koffer', 34, 17, { patrol: [32, 41] });
   e('item', 38, 17, { item: 'bierdeckel' });
+  // Stimmblatt 1: gleich im ersten Gang — damit die Aufgabe früh klar ist.
+  e('item', 30, 17, { item: 'stimmblatt' });
 
   // C: unterer Gang
   e('checkpoint', 47, 25, { id: 'nach-der-luke' });
@@ -100,6 +103,8 @@ export function buildAkt1() {
   e('sopran', 58, 25, { dir: -1 });
   alcove(63, 24);
   e('item', 66, 25, { item: 'wasser' });
+  // Stimmblatt 2: mitten im dunklen Gang, wo der Tenor das Tempo zieht.
+  e('item', 60, 25, { item: 'stimmblatt' });
   // Optionale Risiko-Kante: morsche Notenblätter mit Bierdeckel als Lohn
   rect(65, 23, 3, 1, 'x');
   e('item', 66, 23, { item: 'bierdeckel' });
@@ -113,6 +118,8 @@ export function buildAkt1() {
 
   // D: Archiv
   e('item', 95, 19, { item: 'wasser' });
+  // Stimmblatt 3: hinter der Diensttür — der Anzug zahlt sich hier aus.
+  e('item', 93, 19, { item: 'stimmblatt' });
   e('stand', 96, 19);
   lamp(98, 16);
   e('item', 99, 19, { item: 'bierdeckel' });
@@ -123,7 +130,6 @@ export function buildAkt1() {
   // E: Endgang, Obermaschinerie
   e('checkpoint', 119, 13, { id: 'obermaschinerie' });
   lamp(118, 10);
-  e('item', 120, 13, { item: 'mappe' });
   e('stand', 121, 13);
   alcove(123, 12);
   e('sopran', 125, 13, { dir: -1 });
@@ -142,13 +148,14 @@ export function buildAkt1() {
   tip(9, 'KLEIDERSTÄNDER: DAVORSTELLEN UND E DRÜCKEN (HANDY: TRITT-KNOPF)');
   tip(12, 'JEDE STUFE IST SPRUNGHÖHE. NACH OBEN GEHT ES NUR HIER');
   tip(24, 'PICCOLO: SCHRILL UND GEMEIN. IM TAKT GETROFFEN WIRD ES STILL');
+  tip(29, 'STIMMBLATT 1/3. DREI BLÄTTER ERGEBEN DIE NOTENMAPPE');
   tip(45, 'LUKE. ACHTUNG: ABSTIEG IST EINWEG — SPEICHERPUNKT UNTEN');
   tip(50, 'OHROPAX EINGESAMMELT. GEGEN EIN SOPRAN HILFT SONST NUR DECKUNG');
   tip(63, 'MORSCHE NOTENBLÄTTER: SCHNELL ZUGREIFEN, DANN BRICHT ES WEG');
   tip(69, 'TENOR: ZIEHT DAS TEMPO RUNTER. ALLES WIRD ZÄH');
   tip(83, 'DIENSTTÜR: NUR MIT ANZUG UND KRAWATTE');
   tip(100, 'ABSPERRBAND: NUR DER FRACK ÖFFNET SOWAS');
-  tip(115, 'NOTENMAPPE MITNEHMEN — OHNE SIE FÄHRT DER AUFZUG NICHT');
+  tip(115, 'OHNE VOLLSTÄNDIGE NOTENMAPPE FÄHRT DER AUFZUG NICHT');
   tip(126, 'AUFZUG NACH OBEN. ENDE AKT 1');
 
   return {
@@ -158,6 +165,7 @@ export function buildAkt1() {
     subtitle: '2. Untergeschoss. Es riecht nach Staub und Notenpapier.',
     w: W, h: H,
     grid, spawns, gates, lights, alcoves, hints, goal,
+    stimmblaetterNoetig: 3,
     deckelTotal: spawns.filter((s) => s.kind === 'item' && s.item === 'bierdeckel').length,
   };
 }
@@ -259,10 +267,14 @@ export function buildAkt2() {
   e('stand', 108, 25);
   e('item', 110, 25, { item: 'wasser' });
 
+  // Dirigentenpult am Podium: hier wird die Notenmappe abgelegt und der erste
+  // gemeinsame Einsatz gespielt — drei Takte, dann zieht das Orchester mit (DRR-04).
+  e('pult', 56, 25, { noetig: 3 });
+
   const goal = {
     x: 120 * TILE, y: 21 * TILE, w: TILE, h: 3 * TILE,
-    name: 'BÜHNENEINGANG', need: null,
-    locked: '',
+    name: 'BÜHNENEINGANG', need: 'einsatz',
+    locked: 'DER AUFTRITT BEGINNT AM PULT. ERST DER EINSATZ IM TAKT.',
   };
 
   // Taktwechsel: der Dirigent bestimmt das Tempo
@@ -273,9 +285,10 @@ export function buildAkt2() {
   tip(25, 'ZWEI WEGE: UNTEN ZWISCHEN DEN STÜHLEN ODER OBEN ÜBER DIE PULTE');
   tip(40, 'DER DIRIGENT WIRFT IM BOGEN — DUCK ODER SEITWÄRTS WEG');
   tip(50, 'IM TAKT GETROFFEN VERLIERT ER DEN TAKTSTOCK');
+  tip(54, 'DIRIGENTENPULT: MAPPE ABLEGEN, DANN DREI TAKTE EINSATZ GEBEN (E IM TAKT)');
   tip(78, 'BÜHNE. VON HIER GEHT ES ÜBER DIE BELEUCHTUNGSBRÜCKE ZURÜCK');
   tip(100, 'HINTERBÜHNE. ZUM AUFTRITT NUR IM FRACK — AB HIER WIRD ES WARM');
-  tip(119, 'BÜHNENEINGANG. ENDE AKT 2');
+  tip(119, 'BÜHNENEINGANG. ERST NACH DEM EINSATZ AM PULT — ENDE AKT 2');
 
   return {
     id: 'akt2',
@@ -292,16 +305,15 @@ export function buildAkt2() {
 /** Alle Akte an einer Stelle — die Level sind reine Daten. */
 // Stationen in Spielreihenfolge. `mode` gehört hierher, damit Werkzeuge und
 // Oberfläche eine Station einordnen können, ohne sie erst zu bauen.
-export const LEVELS = [
-  { id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', mode: 'sidescroller', build: buildAkt1 },
-  { id: 'akt2', name: 'AKT 2 — DIE PROBE', mode: 'sidescroller', build: buildAkt2 },
-  { id: 'cabrio', name: 'INTERLUDIUM — CABRIO ZUM OPEN AIR', mode: 'racer', build: buildCabrio },
-  { id: 'akt3', name: 'AKT 3 — OPEN AIR', mode: 'sidescroller', build: buildAkt3 },
-  { id: 'akt4', name: 'AKT 4 — DER ORCHESTERGRABEN', mode: 'sidescroller', build: buildAkt4 },
-  { id: 'motorrad', name: 'INTERLUDIUM — MOTORRAD NACH HAUSE', mode: 'racer', build: buildMotorrad },
-  { id: 'akt5', name: 'AKT 5 — DIE BÜHNE', mode: 'sidescroller', build: buildAkt5 },
-  { id: 'epilog', name: 'EPILOG — DER KLEINGARTEN', mode: 'sidescroller', build: buildEpilog },
-];
+// Reihenfolge, Namen und Ziele stehen in story.js — hier hängt jede Station an
+// ihrem Levelbauer. Akt 5 (Finale) kommt vor der Motorrad-Nachtfahrt: die
+// Heimfahrt ist der echte Heimweg (Entscheidung 5.1).
+const BAUER = {
+  akt1: buildAkt1, akt2: buildAkt2, cabrio: buildCabrio, akt3: buildAkt3,
+  akt4: buildAkt4, akt5: buildAkt5, motorrad: buildMotorrad, epilog: buildEpilog,
+};
+
+export const LEVELS = STATIONEN.map((st) => ({ ...st, build: BAUER[st.id] }));
 
 // ============================================================================
 // INTERLUDIUM — CABRIO ZUM OPEN AIR
@@ -806,8 +818,8 @@ export function buildAkt5() {
 
   const goal = {
     x: 112 * TILE, y: 19 * TILE, w: TILE, h: 3 * TILE,
-    name: 'VORHANG', need: 'frack', applaus: 60, frackOff: true,
-    locked: 'ZU WENIG APPLAUS. UND DER FRACK IST NOCH ZU.',
+    name: 'VORHANG', need: 'ablegen', applaus: 60,
+    locked: 'ZU WENIG APPLAUS. UND DER FRACK IST NOCH AN.',
   };
 
   const takts = [
@@ -821,7 +833,7 @@ export function buildAkt5() {
   tip(44, 'SCHNÜRBODEN. VON HIER SIEHT MAN DIE GANZE BÜHNE');
   tip(60, 'VERFOLGERSCHEINWERFER: IM LICHT WIRD DER FRACK ZUR HEIZUNG');
   tip(84, 'APPLAUS: IM TAKT GETROFFEN WÄCHST ER. DAS IST DEIN AUFTRITT');
-  tip(110, 'DER VORHANG GEHT NUR AUF, WENN DER FRACK FÄLLT');
+  tip(110, 'DER VORHANG GEHT AUF, WENN DU DEN FRACK ABLEGST (E)');
 
   return {
     id: 'akt5',
@@ -861,13 +873,15 @@ export function buildEpilog() {
 
   carve(1, 0, 118, 25);      // Himmel und Garten
 
-  // Laube mit Stufe
+  // Laube mit Stufe und Bank: hier endet der Weg.
   solid(70, 19, 16, 1);      // Laubendach, Kante 304
   solid(70, 19, 2, 2);       // Pfosten links (Durchgang in Bodenhöhe frei)
   solid(84, 19, 2, 2);       // Pfosten rechts
-  plank(74, 22, 4);          // Stufe zur Laube, Kante 352
-  // Bank und Grill
-  solid(40, 23, 6, 2);       // Bank, Kante 368
+  // Bank unter der Laube — und genau hier steht auch das Ziel (Befund D5:
+  // vorher lag die Bank bei Kachel 40, das Ziel „DIE BANK" aber bei Kachel 78).
+  // Eine Kachel hoch: im Garten darf der Schluss keine Sprungprüfung sein.
+  solid(75, 24, 5, 1);       // Bank, Kante 384
+  // Grill
   solid(52, 23, 4, 2);       // Grill, Kante 368
   // Hecke als Begrenzung der Wiese
   solid(30, 23, 2, 2);       // Hecke: 32 px, springbar (vorher 48 px = Sackgasse)
@@ -877,25 +891,27 @@ export function buildEpilog() {
   e('spawn', 4, 25, { isSpawn: true });
   e('item', 12, 25, { item: 'bierdeckel' });
   e('item', 26, 25, { item: 'bierdeckel' });
-  e('item', 44, 23, { item: 'bier' });
+  e('item', 62, 25, { item: 'bierdeckel' });
   e('grill', 54, 23);
-  e('ramona', 58, 25);
-  e('item', 74, 22, { item: 'bierdeckel' });
+  e('ramona', 66, 25);
+  e('item', 80, 23, { item: 'bier' });      // steht schon auf der Bank
+  e('schrank', 82, 25);                     // hier hängt der Frack, für immer
   e('item', 88, 25, { item: 'bierdeckel' });
   e('item', 102, 22, { item: 'bierdeckel' });
   e('stand', 20, 25);
 
   const goal = {
-    x: 78 * TILE, y: 22 * TILE, w: TILE * 2, h: TILE * 2,
-    name: 'DIE BANK', need: null,
-    locked: '',
+    x: 73 * TILE, y: 23 * TILE, w: TILE * 6, h: TILE * 2,
+    name: 'DIE BANK', need: 'setzen', bench: true,
+    locked: 'ERST HINSETZEN: HIER STEHT DIE BANK (E).',
   };
 
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
-  tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEIN FRACK, KEIN WEG MEHR NÖTIG');
-  tip(38, 'DIE BANK UNTER DEM APFELBAUM. UND EIN BIER STEHT SCHON DA');
-  tip(50, 'DER GRILL: BRATWÜRSTE IM TAKT WENDEN. ES GEHT AUCH OHNE TAKT');
+  tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEINE HITZE, KEIN WEG MEHR NÖTIG');
+  tip(46, 'DER GRILL: BRATWÜRSTE WENDEN. ES GEHT AUCH OHNE TAKT');
   tip(56, 'RAMONA WARTET SCHON. SIE HAT DAS BESSERE MESSER');
+  tip(78, 'DIE BANK UNTER DER LAUBE. UND EIN BIER STEHT SCHON DA');
+  tip(81, 'DER SCHRANK DER LAUBE: HIER HÄNGT DER FRACK. FÜR IMMER (E)');
 
   return {
     id: 'epilog',

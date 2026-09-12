@@ -6,6 +6,7 @@ import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/ra
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
 import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH, VIEW_DESKTOP } from '../src/config.js';
+import { STATIONEN, BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from '../src/story.js';
 
 const results = [];
 let failed = 0;
@@ -70,7 +71,8 @@ function place(game, px, py) {
   check('goal inside level', level.goal.x + level.goal.w <= level.w * TILE);
   check('vertical range is real',
     level.spawns.some((s) => s.kind === 'spawn' && s.walkRow === 24)
-    && level.spawns.some((s) => s.kind === 'item' && s.item === 'mappe' && s.walkRow === 12));
+    && level.goal.y <= 12 * TILE
+    && level.spawns.filter((s) => s.kind === 'item' && s.item === 'stimmblatt').length === 3);
   // Der Kern des Levelbaus: kein Abkürzungsweg am Boden entlang
   check('no ground-level bypass under the upper corridor',
     level.grid[24][26] === 1 && level.grid[24][30] === 1 && level.grid[24][40] === 1);
@@ -673,6 +675,8 @@ function place(game, px, py) {
     { wp: [58, 14] }, { wp: [94, 14] },
     { wp: [60, 14] },                       // zurück über die Brücke
     { wp: [49, 25] },                       // an der Kante hinunter auf den Saalboden
+    { wp: [56, 25] },                       // ans Dirigentenpult
+    { einsatz: true },                      // Mappe ablegen, dann drei Takte Einsatz (DRR-04)
     { wp: [60, 25] }, { wp: [100, 25] },    // durch den Saal zur Hinterbühne
     { wp: [108, 25] },
     { outfit: 'frack' },
@@ -682,6 +686,18 @@ function place(game, px, py) {
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    if (stepItem.einsatz) {
+      // Der erste gemeinsame Einsatz: drei Takte am Pult, jede Taste genau auf dem Schlag.
+      for (let i = 0; i < 3; i++) {
+        game.beatPhase = 0.02;
+        input.setKey('action', true);
+        game.update(1 / 60);
+        input.setKey('action', false);
+        game.update(1 / 60);
+      }
+      if (!game.einsatzGelungen) failures.push('Einsatz am Pult');
+      continue;
+    }
     const [wx, row] = stepItem.wp;
     const tx = wx * TILE + 8;
     const feetY = row * TILE;
@@ -729,9 +745,82 @@ function place(game, px, py) {
   }
   check('Akt 2: Bot läuft die gebaute Route', failures.length === 0, failures.join(' | '));
   check('Akt 2: Route endet an der Bühnentür', game.state === 'complete', `state=${game.state}`);
+  const pultEnd = game.entities.find((en) => en.kind === 'pult');
+  check('Akt 2: drei Takte am Pult gezählt',
+    !!pultEnd && pultEnd.teil === 3 && game.einsatzGelungen === true);
   check('Akt 2: Frack öffnet die Bühnentür',
     game.gates[0].open === true || game.state === 'complete');
   check('Akt 2: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
+}
+
+// ----------------------------------------- Akt 2: Pult und erster Einsatz (DRR-04) --
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  const pult = game.entities.find((en) => en.kind === 'pult');
+  check('Akt 2 hat ein Dirigentenpult', !!pult && pult.noetig === 3);
+  check('Akt 2 verlangt den ersten Einsatz', level.goal.need === 'einsatz');
+  check('das Pult steht vor der Bühnentür', !!pult && pult.x < level.goal.x);
+  check('Ziel bleibt ohne Einsatz gesperrt', game.goalErfuellt() === false);
+
+  // Berührung allein schließt nichts ab: danebenstehen ohne E zählt nicht.
+  place(game, pult.x + 4, pult.y + pult.h - PHYS.playerH);
+  step(game, 0.4);
+  check('Pult reagiert nicht auf bloßes Danebenstehen', pult.teil === 0 && !game.einsatzGelungen);
+
+  // Die Mappe gehört aufs Pult (Aufgabe aus story.js), kostet aber keinen Takt.
+  game.hasMappe = true;
+  game.beatPhase = 0.02;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('Mappe liegt auf dem Pult', game.mappeAbgegeben === true && game.hasMappe === false);
+  check('Mappe ablegen kostet keinen Takt', pult.teil === 0);
+
+  // Ein Takt daneben kostet nichts, wird aber angesagt. Vorher die aufgestauten
+  // Weghinweise abarbeiten lassen — der Test prüft die Rückmeldung, nicht die
+  // Warteschlange (die ist auf fünf Einträge begrenzt und gilt für alle Texte).
+  game.hintQueue = [];
+  step(game, 2);
+  game.beatPhase = 0.5;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('ein Takt daneben zählt nicht', pult.teil === 0);
+  check('daneben wird angesagt', !!game.hud.hint && game.hud.hint.includes('DANEBEN'),
+    `hint=${game.hud.hint}`);
+
+  for (let i = 0; i < 3; i++) {
+    game.beatPhase = 0.02;
+    input.setKey('action', true);
+    game.update(1 / 60);
+    input.setKey('action', false);
+    game.update(1 / 60);
+  }
+  check('drei Takte ergeben den Einsatz', pult.teil === 3 && game.einsatzGelungen === true);
+  check('danach ist das Ziel frei', game.goalErfuellt() === true);
+}
+
+// Wer über die Stationswahl direkt in Akt 2 einsteigt, hat keine Mappe — dann zählt
+// der erste Druck sofort als Einsatz-Takt (kein Softlock über den fehlenden Gegenstand).
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  const pult = game.entities.find((en) => en.kind === 'pult');
+  place(game, pult.x + 4, pult.y + pult.h - PHYS.playerH);
+  game.beatPhase = 0.02;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('ohne Mappe zählt der erste Druck als Takt',
+    pult.teil === 1 && game.mappeAbgegeben === false);
 }
 
 // ================================================= INTERLUDIUM — CABRIO ======
@@ -1051,6 +1140,10 @@ function place(game, px, py) {
   const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {}, view: VIEW_DESKTOP });
   game.reset('schwarz');
   game.maxNerves = 99; game.nerves = 99;
+  // Ruhiges Wetter: die Route prüft die Geometrie, nicht die zufälligen Windböen.
+  // Eine Böe (Zufall, Vorwarnung 0,9 s) schiebt den Bot sonst mitten im letzten
+  // Sprung vom Podium — der Test wäre dann je nach Laufzeit mal rot, mal grün.
+  game.wetterIdx = 0; game.wetterTimer = 9999; game.wetterKind = 'sonne';
   const route = [
     { wp: [10, 25] }, { wp: [40, 25] }, { wp: [58, 25] },
     { wp: [66, 24] }, { wp: [69, 23] }, { wp: [72, 22] }, { wp: [75, 21] },
@@ -1342,9 +1435,9 @@ function place(game, px, py) {
   const lv = buildAkt5();
   check('Akt 5: Buehne im Theaterschwarz', lv.setting === 'buehne', String(lv.setting));
   check('Akt 5: drei Verfolgerscheinwerfer', (lv.movingLights || []).length === 3);
-  check('Akt 5: Ziel verlangt Applaus, Frack und Frack-Off',
-    lv.goal.applaus === 60 && lv.goal.need === 'frack' && lv.goal.frackOff === true,
-    JSON.stringify({ applaus: lv.goal.applaus, need: lv.goal.need, frackOff: lv.goal.frackOff }));
+  check('Akt 5: Ziel verlangt Applaus und den abgelegten Frack',
+    lv.goal.applaus === 60 && lv.goal.need === 'ablegen' && lv.goal.frackOff === undefined,
+    JSON.stringify(lv.goal));
   check('Akt 5: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
 
   const mk5 = (difficulty = 'gemuetlich') => {
@@ -1376,6 +1469,11 @@ function place(game, px, py) {
   gB.beatPhase = 0.02;
   gB.tryTritt();
   check('Akt 5: Treffer im Takt gibt Applaus', gB.applaus > 0, String(gB.applaus));
+  // Befund D3: derselbe, noch betaeubte Gegner darf nicht erneut zaehlen.
+  const vorDoppel = gB.applaus;
+  gB.tryTritt();
+  check('Akt 5: kein zweiter Applaus fuer denselben betaeubten Gegner',
+    gB.applaus === vorDoppel, `${vorDoppel} -> ${gB.applaus}`);
   const vorher = gB.applaus;
   step(gB, 3);
   check('Akt 5: Applaus faellt ohne weiteren Auftritt', gB.applaus < vorher, `${vorher.toFixed(1)} -> ${gB.applaus.toFixed(1)}`);
@@ -1384,12 +1482,22 @@ function place(game, px, py) {
   const { game: gZ } = { game: mk5() };
   gZ.setOutfit('frack');
   gZ.applaus = 70;
-  check('Akt 5: ohne Frack-Off geht der Vorhang nicht', gZ.goalErfuellt() === false);
+  check('Akt 5: ohne abgelegten Frack geht der Vorhang nicht', gZ.goalErfuellt() === false);
   gZ.applaus = 10;
-  gZ.frackOffUsed = true;
+  gZ.frackAbgelegt = true;
   check('Akt 5: ohne Applaus geht der Vorhang nicht', gZ.goalErfuellt() === false);
   gZ.applaus = 70;
-  check('Akt 5: Applaus plus Frack-Off oeffnet den Vorhang', gZ.goalErfuellt() === true);
+  check('Akt 5: Applaus plus abgelegter Frack oeffnen den Vorhang', gZ.goalErfuellt() === true);
+
+  // Befund D4: Frack-Off laesst den Frack an, Ablegen wirkt sichtbar.
+  const gF = mk5();
+  gF.setOutfit('frack');
+  gF.frackOff();
+  check('Akt 5: Frack-Off laesst den Frack an', gF.outfit.id === 'frack' && gF.frackOffUsed === true);
+  gF.frackAblegen();
+  check('Akt 5: Frack ablegen ist sichtbar (Hemd statt Frack)',
+    gF.frackAbgelegt === true && gF.outfit.id === 'schwarz', gF.outfit.id);
+  check('Akt 5: Frack ablegen geht nur einmal', gF.frackAblegen() === false);
 
   // Durchspiel-Route
   const iR = createInput(null);
@@ -1481,19 +1589,71 @@ function place(game, px, py) {
   check('Epilog: Aktion am Grill oeffnet das Minispiel',
     gE.state === 'paused' && gE.pauseReason === 'grill', `${gE.state}/${gE.pauseReason}`);
 
-  // Ziel: die Bank
+  // Ziel: die Bank. Seit Befund D5 liegt sie unter der Laube — und Platz nimmt
+  // man bewusst (E), statt sie nur zu berühren.
+  const iZ = createInput(null);
   const gZ = new Game({
-    level: buildEpilog(), input: createInput(null),
+    level: buildEpilog(), input: iZ,
     audio: { play() {}, engine() {}, engineOff() {} },
     events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
   });
   gZ.reset('schwarz');
   const ziel = gZ.level.goal;
+  const bx = Math.round(ziel.x / TILE), bw = Math.round(ziel.w / TILE), by = Math.round(ziel.y / TILE);
+  const bankUnterZiel = [];
+  for (let i = bx; i < bx + bw; i++) if (gZ.level.grid[by + 1][i] === 1) bankUnterZiel.push(i);
+  check('Epilog: unter dem Ziel steht wirklich die Bank',
+    bankUnterZiel.length >= 4 && ziel.name === 'DIE BANK' && ziel.need === 'setzen',
+    `Bankkacheln=${bankUnterZiel.join(',')}`);
   place(gZ, ziel.x + 8, 25 * TILE - PHYS.playerH);
   gZ.update(1 / 60);
-  check('Epilog: die Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
+  check('Epilog: vor der Bank steht das Angebot zum Hinsetzen',
+    gZ.state === 'play' && !!gZ.hud.label && /HINSETZEN/.test(gZ.hud.label.text) && gZ.hud.label.action === true,
+    JSON.stringify(gZ.hud.label));
+  iZ.setKey('right', false);
+  iZ.setKey('action', true);
+  gZ.update(1 / 60);
+  check('Epilog: Hinsetzen auf der Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
   check('Epilog: Abschluss nennt Deckel und Zeit',
     !!gZ.rows && gZ.rows.length > 0, JSON.stringify(gZ.rows));
+
+  // Befund D5: kein Takt, keine Hitze — auch nicht im Frack.
+  const iR2 = createInput(null);
+  const gR2 = new Game({
+    level: buildEpilog(), input: iR2,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gR2.reset('frack');
+  place(gR2, 20 * TILE, 25 * TILE - PHYS.playerH);
+  iR2.setKey('right', true);
+  stepAny(gR2, 1.5);
+  stepAny(gR2, 3);
+  check('Epilog: im Frack steigt keine Hitze mehr', gR2.heat === 0, String(gR2.heat));
+  check('Epilog: kein Takt mehr', gR2.beatPhase === 0 && gR2.beats === 0,
+    `phase=${gR2.beatPhase} beats=${gR2.beats}`);
+  check('Epilog: HUD meldet den ruhigen Modus', gR2.hud.ruhig === true);
+  iR2.setKey('right', false);
+
+  // Der Frack kommt in den Schrank der Laube.
+  const iS = createInput(null);
+  const gS = new Game({
+    level: buildEpilog(), input: iS,
+    audio: { play() {}, engine() {}, engineOff() {} },
+    events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
+  });
+  gS.reset('frack');
+  const schrank = gS.entities.find((e) => e.kind === 'schrank');
+  check('Epilog: der Schrank der Laube existiert', !!schrank);
+  place(gS, schrank.x + 8, 25 * TILE - PHYS.playerH);
+  gS.update(1 / 60);
+  check('Epilog: der Schrank bietet das Aufhängen an',
+    !!gS.hud.label && /SCHRANK/.test(gS.hud.label.text) && gS.hud.label.action === true,
+    JSON.stringify(gS.hud.label));
+  iS.setKey('action', true);
+  gS.update(1 / 60);
+  check('Epilog: der Frack hängt im Schrank, das Hemd bleibt',
+    gS.frackAbgelegt === true && gS.outfit.id === 'schwarz', gS.outfit.id);
 }
 
 // ============================================================ GRILL ==========
@@ -1645,7 +1805,7 @@ function place(game, px, py) {
     events: () => {}, view: VIEW_DESKTOP, difficulty: 'gemuetlich',
   });
   epi.reset('schwarz');
-  const wegEpilog = [[10, 25], [27, 25], [30, 23], [34, 25], [42, 23], [50, 25], [56, 25], [70, 25], [78, 25]];
+  const wegEpilog = [[10, 25], [27, 25], [30, 23], [34, 25], [42, 25], [56, 25], [66, 25], [74, 25], [88, 25]];
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1, hoch = 0;
   const fehlwege = [];
   for (const [wx, row] of wegEpilog) {
@@ -1676,6 +1836,12 @@ function place(game, px, py) {
     }
     if (!ok) fehlwege.push(`${wx}/${row} (x=${epi.player.x.toFixed(0)})`);
   }
+  // Der Schluss ist seit Befund D5 eine bewusste Aktion (E) — die Bank wird
+  // nicht mehr beim Berühren gewertet.
+  iE.setKey('right', false);
+  place(epi, epi.level.goal.x + 8, 25 * TILE - PHYS.playerH);
+  iE.setKey('action', true);
+  epi.update(1 / 60);
   check('Epilog ist zu Fuß erreichbar (Hecke springbar)',
     fehlwege.length === 0 && epi.state === 'complete',
     fehlwege.length ? fehlwege.join(' | ') : `Zustand ${epi.state}`);
@@ -1790,6 +1956,49 @@ function place(game, px, py) {
   check('particle pool stays bounded', g2.particles.length <= 400, `p=${g2.particles.length}`);
   check('projectiles stay bounded', g2.projectiles.length < 40, `pr=${g2.projectiles.length}`);
   check('entity list does not leak', g2.entities.length < 60, `e=${g2.entities.length}`);
+}
+
+// ------------------------------------ STORY-GERÜST (DRR-03) -------------------
+{
+  check('Reihenfolge: Finale vor der Nachtfahrt, Garten zuletzt',
+    LEVELS.map((l) => l.id).join(' > ')
+      === 'akt1 > akt2 > cabrio > akt3 > akt4 > akt5 > motorrad > epilog',
+    LEVELS.map((l) => l.id).join(' > '));
+  check('Jede Station hat ID, Name, Modus und ein Ziel',
+    STATIONEN.every((s) => s.id && s.name && s.mode && s.ziel && s.ziel.length > 12),
+    JSON.stringify(STATIONEN.filter((s) => !s.ziel).map((s) => s.id)));
+  check('Die Ziele sind eindeutig formuliert',
+    new Set(STATIONEN.map((s) => s.ziel)).size === STATIONEN.length);
+  check('Leveldaten und Stationen teilen die Ziele',
+    LEVELS.every((l) => l.ziel === STATIONEN.find((s) => s.id === l.id).ziel));
+  check('Jede Station hat eine Belohnung',
+    STATIONEN.every((s) => BELOHNUNGEN[s.id] && BELOHNUNGEN[s.id].title));
+
+  // Migration: alte Stände kannten nur `act` (Index der ALTEN Reihenfolge).
+  const alt = [
+    [0, 'akt1'], [1, 'akt2'], [2, 'cabrio'], [3, 'akt3'],
+    [4, 'akt4'], [5, 'motorrad'], [6, 'akt5'], [7, 'epilog'],
+  ];
+  const falsch = [];
+  for (const [idx, id] of alt) {
+    const s = migriereSave({ act: idx, akt1: true });
+    if (s.station !== id) falsch.push(`act=${idx} → ${s.station} (erwartet ${id})`);
+  }
+  check('Alte Spielstände landen auf derselben Station wie vorher', falsch.length === 0, falsch.join(' | '));
+  check('Alter Index 5 zeigt weiter auf die Nachtfahrt, nicht auf das Finale',
+    stationIndex(migriereSave({ act: 5 })) === 6, String(stationIndex(migriereSave({ act: 5 }))));
+  check('Alter Index 6 zeigt auf die Bühne', migration6(), String(migration6()));
+  function migration6() { return stationIndex(migriereSave({ act: 6 })); }
+
+  // Neue Stände bleiben, unbekannte fallen auf den Anfang zurück.
+  check('Neuer Stand bleibt unverändert',
+    migriereSave({ station: 'akt4' }).station === 'akt4' && stationIndex({ station: 'akt4' }) === 4);
+  check('Unbekannte Station fällt auf Akt 1 zurück',
+    migriereSave({ station: 'gibtsnicht' }).station === 'akt1');
+  check('Leerer Stand beginnt bei Akt 1',
+    stationIndex(migriereSave({})) === 0 && migriereSave(null).station === 'akt1');
+  check('Version und Fortschrittsliste werden gesetzt',
+    migriereSave({}).v === SAVE_VERSION && JSON.stringify(migriereSave({}).geschafft) === '{}');
 }
 
 console.log(results.join('\n'));

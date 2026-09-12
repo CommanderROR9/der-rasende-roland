@@ -607,6 +607,68 @@ export const SPRITES = {
     'amo..........omo',
     'aaaaaaaaaaaaaaaa',
   ],
+
+  // Kleiderschrank der Laube: die Endstation für den Frack.
+  schrank: [
+    'LLLLLLLLLLLLLLLL',
+    'LddddddddddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LdddddyLLydddddL',
+    'LdddddyLLydddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddLLddddddL',
+    'LddddddddddddddL',
+    'LL            LL',
+  ],
+
+  // Stimmblätter der Notenmappe (DRR-04): ein Blatt allein ist kein Auftritt.
+  stimmblatt: [
+    'LLLLLLLLLL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LhhhhhhhhL',
+    'Lh......hL',
+    'LLLLLLLLLL',
+  ],
+
+  // Bank der Laube im Kleingarten: Holzlatten, zwei Beine, 32x10.
+  bank: [
+    '  MMMMMMMMMMMMMMMMMMMMMMMMMMMM  ',
+    '  MMMMMMMMMMMMMMMMMMMMMMMMMMMM  ',
+    '  LLLLLLLLLLLLLLLLLLLLLLLLLLLL  ',
+    '  MMMMMMMMMMMMMMMMMMMMMMMMMMMM  ',
+    '  LLLLLLLLLLLLLLLLLLLLLLLLLLLL  ',
+    '   LL                      LL   ',
+    '   LL                      LL   ',
+    '   LL                      LL   ',
+    '   LL                      LL   ',
+    '   LL                      LL   ',
+  ],
 };
 
 // Kleiderordnung als Palettenvarianten desselben Körpers.

@@ -405,6 +405,7 @@ export class Racer {
       bpm: this.bpm,
       beatPhase: this.beatPhase,
       hint: this.hint ? this.hint.text : null,
+      ziel: (this.level && this.level.ziel) || null,
       label: null,
       state: this.state,
     };

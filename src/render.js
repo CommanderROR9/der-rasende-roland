@@ -3,13 +3,22 @@ import { PAL } from './config.js';
 
 const cache = new Map();
 
+/** Cachefähiger Schlüssel: Name plus die tatsächlichen Farbwerte.
+ *  Vorher standen hier nur die Palettenbuchstaben — die sind bei allen drei
+ *  Klüften gleich (`.hHsSawrb`), dadurch bekam jedes Outfit denselben Sprite
+ *  und Umziehen war am Avatar unsichtbar (Review-Befund D2). */
+function cacheKey(name, palette) {
+  if (!palette) return `${name}|base`;
+  return name + '|' + Object.keys(palette).sort().map((k) => `${k}=${palette[k]}`).join(',');
+}
+
 function paletteFor(key, palette) {
   return Object.assign({}, PAL, palette || {});
 }
 
 /** Baut eine Sprite-Matrix in ein eigenes Canvas (einmalig, gecacht). */
 export function spriteCanvas(name, rows, palette) {
-  const key = name + '|' + (palette ? Object.keys(palette).join('') : 'base');
+  const key = cacheKey(name, palette);
   if (cache.has(key)) return cache.get(key);
   const pal = paletteFor(name, palette);
   let w = 0;
