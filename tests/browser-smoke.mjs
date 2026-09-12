@@ -1709,6 +1709,21 @@ try {
     if (seite4 < -12) zuRolfOben = await gehe4('KeyD', mitteRolf4, 2500) || zuRolfOben;
     else if (seite4 > 12) zuRolfOben = await gehe4('KeyA', mitteRolf4, 2500) || zuRolfOben;
   }
+  // Vorzustand VOR den E-Druecken messen: danach ist die Kiste weg und das
+  // Ziel weiter — wer hier nachher misst, prueft den Nachzustand gegen die
+  // Vorbedingung und faellt bei JEDER gelungenen Uebergabe durch.
+  const obenBeiRolf = await zust4(`{
+    label: window.__roland.game.hud.label,
+    ziel: window.__roland.game.hud.ziel,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    traegt: window.__roland.game.traegt
+  }`);
+  check('Akt 4: oben an der Versenkung will Rolf die Kiste sehen',
+    zuRolfOben === true && obenBeiRolf.traegt === true && /ROLF/.test(obenBeiRolf.label?.text || ''),
+    JSON.stringify(obenBeiRolf));
+  check('Akt 4: das Ziel ist vor der Uebergabe gesperrt',
+    obenBeiRolf.zielFrei === false && /KISTE ÜBERGEBEN/.test(obenBeiRolf.ziel || ''),
+    JSON.stringify(obenBeiRolf));
   const uebergabeVersuche = [];
   for (let i = 0; i < 4; i++) {
     if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
@@ -1725,18 +1740,6 @@ try {
     await key('KeyE', 'keyDown'); await sleep(90);
     await key('KeyE', 'keyUp'); await sleep(260);
   }
-  const obenBeiRolf = await zust4(`{
-    label: window.__roland.game.hud.label,
-    ziel: window.__roland.game.hud.ziel,
-    zielFrei: window.__roland.game.goalErfuellt(),
-    traegt: window.__roland.game.traegt
-  }`);
-  check('Akt 4: oben an der Versenkung will Rolf die Kiste sehen',
-    zuRolfOben === true && obenBeiRolf.traegt === true && /ROLF/.test(obenBeiRolf.label?.text || ''),
-    JSON.stringify(obenBeiRolf));
-  check('Akt 4: das Ziel ist vor der Uebergabe gesperrt',
-    obenBeiRolf.zielFrei === false && /KISTE \u00dcBERGEBEN/.test(obenBeiRolf.ziel || ''),
-    JSON.stringify(obenBeiRolf));
   const uebergabe = await zust4(`{
     flag: window.__roland.game.storyFlags.has('kiste_uebergeben'),
     traegt: window.__roland.game.traegt,
