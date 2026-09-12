@@ -28,7 +28,7 @@ es wechselt im Zyklus und verändert das Spiel.
 | Wetter | Wirkung |
 |---|---|
 | **Sonne** | brät von oben — im Frack steigt die Hitze am schnellsten |
-| **Wind** | Böen mit Vorwarnung drücken zur Seite, Notenblätter fliegen quer und bleiben im Gesicht hängen |
+| **Wind** | Böen kündigen sich 0,9 s vorher an, Notenblätter fliegen quer und kosten 0,6 s Sicht (Stun) |
 | **Regen** | man wird nass, der Boden wird rutschig (weniger Grip) — unter dem **Vordach** trocknet man wieder |
 | **Kälte** | die Finger werden steif: langsamer und niedrigerer Sprung |
 

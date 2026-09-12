@@ -159,8 +159,10 @@ export function buildAkt3() {
     locked: 'ROLF WARTET AM PODIUM. ERST DIE PULTE, DANN DER ABSCHIED.',
   };
 
-  // Das Wetter wechselt und verändert das Spiel; der Wind gibt mit Vorwarnung
-  // den Takt vor, statt den Abschnitt unpassierbar zu machen.
+  // Das Wetter wechselt und verändert das Spiel. Der Wind macht den Abschnitt
+  // nicht unpassierbar: er kündigt die Böe 0,9 s vorher an und stößt
+  // Notenblätter (0,6 s Stun bei Kontakt), die Pulte bleiben sicherbar. Der
+  // Schub selbst verschiebt den Spieler nicht messbar (62 vs. Bodenreibung 900).
   const wetter = [
     { kind: 'sonne', dur: 20, label: 'SONNE — DER FRACK WIRD ZUR SAUNA' },
     { kind: 'wind', dur: 24, label: 'WIND — DIE NOTEN FLIEGEN' },
