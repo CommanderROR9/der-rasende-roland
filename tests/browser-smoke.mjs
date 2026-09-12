@@ -1082,10 +1082,12 @@ try {
 } finally {
   try { ws.close(); } catch { /* egal */ }
   chrome.kill('SIGKILL');
-  // Profil wieder wegräumen: jeder Lauf legt ~120 MB in /tmp ab. Ohne diese
-  // Zeile ist das tmpfs nach genügend Läufen voll und Chromium startet gar
-  // nicht mehr — dann schlägt jede Browserprüfung mit irreführendem Timeout fehl.
-  try { rmSync(profile, { recursive: true, force: true }); } catch { /* egal */ }
+  // Profil wegräumen: jeder Lauf legt hier ~120 MB im tmpfs ab. Nach dem SIGKILL
+  // schreibt das Kind noch Reste nach, deshalb kurz warten und zweimal löschen.
+  await new Promise((r) => setTimeout(r, 400));
+  for (let i = 0; i < 2; i++) {
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* egal */ }
+  }
 }
 
 console.log(results.join('\n'));
