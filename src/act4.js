@@ -49,8 +49,16 @@ export function buildAkt4() {
   const lamp = (tx, ty) => lights.push({ x: (tx - 2) * 16, y: ty * 16, w: 5 * 16, h: 4 * 16 });
   const gleam = (tx, ty, r) => gleams.push({ tx, ty, r });
   const alcove = (tx, ty) => alcoves.push({ x: tx * 16, y: ty * 16, w: 32, h: 16 });
-  const lift = (tx, topRow, bottomRow, w, period, phase) => {
-    elevators.push({ tx, topRow, bottomRow, w, period, phase: phase || 0 });
+  // Versenkungen tragen Namen und Markierungen: ohne sichtbares Schild war im
+  // dunklen Graben nicht zu finden, was der einzige Weg nach oben ist
+  // (Playtest-Befund Akt 4).
+  const lift = (tx, topRow, bottomRow, w, period, phase, name, marken) => {
+    const el = { tx, topRow, bottomRow, w, period, phase: phase || 0, name, marke: [] };
+    for (const m of marken) {
+      el.marke.push({ spr: m.spr, tx: m.tx, row: m.row });
+      decor(m.spr, m.tx, m.row, { marke: name, versenkung: name });
+    }
+    elevators.push(el);
   };
   const spook = (tx, ty, w, h) => spooks.push({ tx, ty, w, h });
   const decor = (spr, tx, surfaceRow, extra) => e('decor', tx, surfaceRow, { spr, ...extra });
@@ -183,8 +191,15 @@ export function buildAkt4() {
   lamp(112, 22);
 
   // E · Versenkungen — der einzige Weg nach oben (und wieder herunter).
-  lift(59, 12, 25, 4, 11, 0);      // Hauptversenkung: Unterkante bündig mit dem Boden (400)
-  lift(88, 16, 25, 3, 7, 2.5);     // Requisitenaufzug: ebenfalls bündig
+  // Beide sind beschildert und mit Leuchte gezeichnet: der Weg nach oben muss
+  // zu sehen sein, bevor man davorsteht (Playtest-Befund Akt 4).
+  lift(59, 12, 25, 4, 11, 0, 'HAUPTVERSENKUNG', [
+    { spr: 'versenkungsschild', tx: 56, row: 25 },   // unten im Graben, von weitem lesbar
+    { spr: 'versenkungsschild', tx: 56, row: 12 },   // oben am Steg, wo die Fahrt endet
+  ]);
+  lift(88, 16, 25, 3, 7, 2.5, 'REQUISITENAUFZUG', [
+    { spr: 'versenkungstafel', tx: 86, row: 25 },    // kleinere Marke, gleiche Familie
+  ]);
 
   const goal = {
     x: 96 * TILE, y: 10 * TILE, w: TILE, h: 2 * TILE,
@@ -205,6 +220,9 @@ export function buildAkt4() {
   tip(8, 'ROLF: DAVORSTELLEN UND E DRÜCKEN — NOCHMAL E FÜR DIE NÄCHSTE ZEILE');
   tip(20, 'DAS GITTER ÖFFNET ERST NACH ROLFS AUFTRAG');
   tip(28, 'LAMPENKISTE: E ZUM AUFNEHMEN, DUCKEN + E ZUM ABSETZEN. DER TAKT BLEIBT DEIN');
+  // Wegweiser vor der Versenkung: die Richtung muss früh klar sein, nicht erst
+  // am Schacht (Playtest-Befund Akt 4).
+  tip(33, 'MIT DER KISTE WEITER RECHTS — DIE HAUPTVERSENKUNG STEHT AM SCHACHT MIT DER LEUCHTE');
   tip(43, 'SOUFFLEURKASTEN: NICHT ZU NAHE RANGEHEN, ER FLÜSTERT MIT');
   tip(58, 'MIT DER KISTE AUF DIE VERSENKUNG — SIE FAHRT VON ALLEIN HOCH');
   tip(65, 'STEG ÜBER DEM GRABEN. HIER OBEN WARTET ROLF AN DER VERSENKUNG');
