@@ -614,7 +614,9 @@ function place(game, px, py) {
   check('Akt 2 existiert als eigenes Levelmodul', level.id === 'akt2' && level.w >= 120);
   check('Akt 2: fünf Bierdeckel', level.deckelTotal === 5, `n=${level.deckelTotal}`);
   check('Akt 2: Bühnentür verlangt den Frack',
-    level.gates.length === 1 && level.gates[0].need === 'frack');
+    level.gates.some((g) => g.need === 'frack'));
+  check('Akt 2: Saaltür verlangt Annas Auftrag (Story-Gate)',
+    level.gates.some((g) => g.flag === 'probe_beauftragt' && (g.locked || '').includes('ANNA')));
   check('Akt 2: Tür blockiert solange sie zu ist',
     level.grid[level.gates[0].ty + level.gates[0].th - 1][level.gates[0].tx] === 1);
   check('Akt 2: zwei Taktwechsel vorgesehen', (level.takts || []).length === 2);
@@ -629,6 +631,19 @@ function place(game, px, py) {
   check('Akt 2: Pulte sind in Sprunghöhe gestaffelt (32 px)',
     level.grid[23][30] === 2 && level.grid[21][35] === 2 && level.grid[19][40] === 2
     && level.grid[17][45] === 2 && level.grid[16][50] === 2);
+  check('Akt 2: Anna führt die Probe (Briefing und Payoff)',
+    level.spawns.filter((s) => s.kind === 'npc' && s.npc === 'ada').length === 2);
+  check('Akt 2: vier Storyschritte bis zum Bühneneingang',
+    Array.isArray(level.storySteps) && level.storySteps.length >= 4);
+  check('Akt 2: fünf unterschiedliche Raumrequisiten',
+    new Set(level.spawns.filter((s) => s.kind === 'decor').map((s) => s.spr)).size >= 5);
+  check('Akt 2: Proben-Motiv für das Finale zitierbar',
+    level.motiv?.id === 'probe-motiv');
+  check('Akt 2: Route beidseitig begehbar',
+    level.route?.reversible === true && (level.route?.returnStair || []).length >= 3);
+  check('Akt 2: Ziel verlangt Einsatz und Anna-Abschied',
+    level.goal.need === 'einsatz' && (level.goal.flags || []).includes('probe_abgenommen'));
+  check('Akt 2: Rolf tritt nicht auf', !/rolf/i.test(JSON.stringify(level)));
   check('Akte stehen im Register',
     LEVELS.length >= 3 && LEVELS[1].id === 'akt2' && LEVELS[2].id === 'cabrio'
     && typeof LEVELS[1].name === 'string');
@@ -727,33 +742,50 @@ function place(game, px, py) {
   check('gemütlich führt den Wechsel sanfter aus', game.bpm < 132 && game.bpm > 100, `bpm=${game.bpm}`);
 }
 
-// Durchspiel-Bot für Akt 2 (oberer Weg über die Pulte, dann über die Brücke)
+// Durchspiel-Bot für Akt 2 (Geometrie: oberer Weg über die Pulte, dann über
+// die Brücke, zurück zum Pult und zur Hinterbühne). Gegner sind herausgefiltert
+// wie in der Akt-1-Geometrieroute — der Kampf hat seinen eigenen Bot
+// (tests/act2-hazard-route.test.mjs). Geprüft wird die Geometrie: Sprunghöhen,
+// Rückwege, Tore, Mappe, Einsatz und Anna an beiden Enden.
 {
   const level = buildAkt2();
   const input = createInput(null);
   const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
   game.reset('schwarz');
   game.maxNerves = 99; game.nerves = 99;
+  // Geometrie ohne Gegnerstörung: Sprunghöhen und Rückwege bleiben messbar.
+  const hostile = new Set(['piccolo', 'sopran', 'tenor', 'koffer', 'dirigent']);
+  game.entities = game.entities.filter((en) => !hostile.has(en.kind));
+  // Die Notenmappe reist aus Akt 1 im Spielstand an (main.js setzt hasMappe).
+  game.hasMappe = true;
   const route = [
-    { wp: [10, 25] },
+    { wp: [12, 25] }, { talk: 'probe_beauftragt' }, { wp: [23, 25] },
     { wp: [31, 23] }, { wp: [37, 21] }, { wp: [42, 19] }, { wp: [47, 17] }, { wp: [52, 16] },
     { wp: [58, 14] }, { wp: [94, 14] },
     { wp: [60, 14] },                       // zurück über die Brücke
     { wp: [49, 25] },                       // an der Kante hinunter auf den Saalboden
     { wp: [56, 25] },                       // ans Dirigentenpult
     { einsatz: true },                      // Mappe ablegen, dann drei Takte Einsatz (DRR-04)
-    { wp: [60, 25] }, { wp: [100, 25] },    // durch den Saal zur Hinterbühne
+    { wp: [60, 25] }, { wp: [97, 25] },     // durch den Saal zur Hinterbühne
     { wp: [108, 25] },
     { outfit: 'frack' },
-    { wp: [116, 25] }, { wp: [120, 25] },   // genau auf die Bühnentür zu
+    { wp: [116, 25] }, { talk: 'probe_abgenommen' }, { wp: [120, 25] },
   ];
   const failures = [];
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    if (stepItem.talk) {
+      const npc = game.entities.find((en) => en.kind === 'npc' && en.flag === stepItem.talk);
+      for (let i = 0; i < npc.dialog.length; i++) {
+        input.setKey('action', true); game.update(1 / 60);
+        input.setKey('action', false); game.update(1 / 60);
+      }
+      continue;
+    }
     if (stepItem.einsatz) {
-      // Der erste gemeinsame Einsatz: drei Takte am Pult, jede Taste genau auf dem Schlag.
-      for (let i = 0; i < 3; i++) {
+      // Erst die Mappe aufs Pult (kostet keinen Takt), dann drei Takte im Takt.
+      for (let i = 0; i < 4; i++) {
         game.beatPhase = 0.02;
         input.setKey('action', true);
         game.update(1 / 60);
@@ -813,6 +845,11 @@ function place(game, px, py) {
   const pultEnd = game.entities.find((en) => en.kind === 'pult');
   check('Akt 2: drei Takte am Pult gezählt',
     !!pultEnd && pultEnd.teil === 3 && game.einsatzGelungen === true);
+  check('Akt 2: Mappe aus Akt 1 liegt auf dem Pult', game.mappeAbgegeben === true);
+  check('Akt 2: Anna rahmt die Route (Briefing und Payoff)',
+    game.storyFlags.has('probe_beauftragt') && game.storyFlags.has('probe_abgenommen'));
+  check('Akt 2: Saaltür öffnet nach Annas Auftrag',
+    game.gates.find((g) => g.flag === 'probe_beauftragt').open === true);
   check('Akt 2: Frack öffnet die Bühnentür',
     game.gates[0].open === true || game.state === 'complete');
   check('Akt 2: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
@@ -867,6 +904,8 @@ function place(game, px, py) {
     game.update(1 / 60);
   }
   check('drei Takte ergeben den Einsatz', pult.teil === 3 && game.einsatzGelungen === true);
+  check('ohne Annas Abschied bleibt das Ziel zu', game.goalErfuellt() === false);
+  game.storyFlags.add('probe_abgenommen');
   check('danach ist das Ziel frei', game.goalErfuellt() === true);
 }
 
