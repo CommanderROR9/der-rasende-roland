@@ -94,7 +94,10 @@ async function evaluate(expr) {
   return r.result.value;
 }
 async function key(code, type) {
-  const map = { KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'] };
+  const map = {
+    KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'],
+    ArrowDown: [40, 'ArrowDown'], KeyS: [83, 's'], ArrowUp: [38, 'ArrowUp'],
+  };
   const [vk, k] = map[code];
   await send('Input.dispatchKeyEvent', {
     type, code, key: k, text: type === 'char' ? k : undefined,
@@ -1328,6 +1331,415 @@ try {
   })()`));
   check('Akt 4: auch auf dem Steg ist genug zu sehen', stegHell.helligkeit > 25, JSON.stringify(stegHell));
   check('Akt 4: Spieler laeuft im Browser', xb - xa > 60, `dx=${(xb - xa).toFixed(0)}`);
+
+  // --- Akt 4 Musterstrecke: Tragezustand, Mitfahrt, Uebergabe, Andenken -----
+  // Die Browser-Ebene von Akt 4, wie sie das Muster (docs/AKT1_MUSTERSTRECKE.md,
+  // Abschnitt "Verifikation fuer Folgeakte") fuer die Folgeakte verlangt. Hier
+  // wird KEINE Position gesetzt: Rolf, Kiste, Versenkung, Andenken und Auftritt
+  // werden ausschliesslich ueber echte Tastenanschlaege und echte Wege erreicht.
+  await evaluate('window.__errors.length = 0');
+  await evaluate('window.__roland.loadAct(4)');
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(1100);
+
+  // Laufen mit echten Tasten: haelt die Richtung, springt bei Hindernissen
+  // (Kasten im Graben) und bricht ab, wenn das Spiel nicht mehr laeuft.
+  const gehe4 = async (code, bedingung, maxMs) => {
+    await key(code, 'keyDown');
+    let letzteX = await evaluate('window.__roland.game.player.x');
+    let fest = 0;
+    let erreicht = false;
+    for (let i = 0; i < Math.ceil(maxMs / 110); i++) {
+      await sleep(110);
+      if (await evaluate(bedingung)) { erreicht = true; break; }
+      const stand = JSON.parse(await evaluate(
+        'JSON.stringify({x: window.__roland.game.player.x, state: window.__roland.game.state})'));
+      if (stand.state !== 'play') break;
+      fest = Math.abs(stand.x - letzteX) < 3 ? fest + 1 : 0;
+      letzteX = stand.x;
+      if (fest >= 3) {                      // ~0,35 s festgefahren: echter Sprung
+        fest = 0;
+        await key('Space', 'keyDown'); await sleep(100);
+        await key('Space', 'keyUp'); await sleep(140);
+      }
+    }
+    await key(code, 'keyUp');
+    await sleep(180);
+    return erreicht;
+  };
+  const nah4 = (feld, wert) => `(() => {
+    const e = window.__roland.game.entities.find((x) => x.kind === 'npc' && x.near);
+    return !!e && e.${feld} === '${wert}';
+  })()`;
+  const zust4 = async (ausdruck) => JSON.parse(await evaluate(`JSON.stringify(${ausdruck})`));
+  const kiste4 = 'window.__roland.game.entities.find((e) => e.kind === \'kiste\')';
+  const lift4 = 'window.__roland.game.entities.find((e) => e.kind === \'lift\')';
+  const kopf4 = `(() => {
+    const c = document.getElementById('game');
+    const g = window.__roland.game;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const out = [];
+    for (let y = Math.max(0, py - 16); y < Math.min(c.height, py + 2); y++)
+      for (let x = Math.max(0, px - 6); x < Math.min(c.width, px + 16); x++) {
+        const i = (y * c.width + x) * 4;
+        out.push(d[i], d[i + 1], d[i + 2]);
+      }
+    return JSON.stringify(out);
+  })()`;
+  const punkte4 = (a, b) => {
+    let n = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i += 3) {
+      if (Math.abs(a[i] - b[i]) > 6 || Math.abs(a[i + 1] - b[i + 1]) > 6
+        || Math.abs(a[i + 2] - b[i + 2]) > 6) n++;
+    }
+    return n;
+  };
+  const bild4 = async (name) => {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    const dir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+    mkdirSync(dir, { recursive: true });
+    const pfad = join(dir, name);
+    writeFileSync(pfad, Buffer.from(shot.data, 'base64'));
+    check(`Akt-4-Bild ${name} geschrieben`, existsSync(pfad));
+  };
+
+  const grabA = await zust4(`{
+    name: window.__roland.level.name,
+    state: window.__roland.game.state,
+    traegt: window.__roland.game.traegt,
+    kisteDa: window.__roland.game.entities.some((e) => e.kind === 'kiste' && e.alive),
+    gitter: window.__roland.game.gates[0].open,
+    journal: document.getElementById('journal').textContent,
+    errors: window.__errors
+  }`);
+  check('Akt 4 laedt und laeuft ohne Konsolenfehler',
+    grabA.name.includes('GRABEN') && grabA.state === 'play' && grabA.errors.length === 0
+    && grabA.traegt === false && grabA.kisteDa === true, JSON.stringify(grabA));
+  check('Akt 4: das Journal beginnt bei Rolf, das Gitter in den Graben ist zu',
+    /ROLF/.test(grabA.journal || '') && grabA.gitter === false, JSON.stringify(grabA));
+
+  // 1) Rolfs Briefing im Dienstgang: hinlaufen, dann dreimal E.
+  const anRolf = await gehe4('KeyD', nah4('npc', 'rolf'), 4000);
+  const beiRolf = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    label: window.__roland.game.hud.label,
+    journal: document.getElementById('journal').textContent
+  }`);
+  check('Akt 4: der Spieler laeuft selbst bis zu Rolf im Dienstgang',
+    anRolf === true && beiRolf.x > 150 && beiRolf.x < 260, JSON.stringify(beiRolf));
+  check('Akt 4: Rolf ist als Gespraechspartner beschriftet',
+    beiRolf.label?.action === true && /MIT ROLF SPRECHEN/.test(beiRolf.label?.text || ''),
+    JSON.stringify(beiRolf.label));
+
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(70);
+    await key('KeyE', 'keyUp'); await sleep(150);
+  }
+  const briefing = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('graben_beauftragt'),
+    ziel: window.__roland.game.hud.ziel,
+    journal: document.getElementById('journal').textContent
+  }`);
+  check('Akt 4: Rolfs Briefing ueber die Aktionstaste setzt den Auftrag, das Journal wandert zur Kiste',
+    briefing.flag === true && /LAMPENKISTE AUFNEHMEN/.test(briefing.ziel || '')
+    && /LAMPENKISTE/.test(briefing.journal || ''), JSON.stringify(briefing));
+
+  // 2) Durch das Gitter in den Graben bis zur Lampenkiste — echter Weg.
+  const anDerKiste = await gehe4('KeyD',
+    `(() => { const k = ${kiste4}; return !!k && k.near === true; })()`, 6000);
+  const kiste0 = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    gitter: window.__roland.game.gates[0].open,
+    label: window.__roland.game.hud.label
+  }`);
+  check('Akt 4: das Gitter oeffnet sich auf dem echten Weg in den Graben',
+    anDerKiste === true && kiste0.gitter === true && kiste0.x > 20 * 16, JSON.stringify(kiste0));
+  check('Akt 4: an der Kiste steht das Schild LAMPENKISTE AUFNEHMEN',
+    kiste0.label?.action === true && /LAMPENKISTE AUFNEHMEN/.test(kiste0.label?.text || ''),
+    JSON.stringify(kiste0.label));
+
+  // 3) Aufnehmen ueber die Aktionstaste — und der Tragezustand ist am Spieler
+  //    zu sehen (Kopfbereich), nachgewiesen gegen zwei Kontrollbilder.
+  await sleep(500);
+  const blockLeer = JSON.parse(await evaluate(kopf4));
+  await bild4('akt4-tragezustand-vorher.png');
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const nachAufnahme = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })(),
+    flag: window.__roland.game.storyFlags.has('kiste_aufgenommen'),
+    ziel: window.__roland.game.hud.ziel,
+    label: window.__roland.game.hud.label
+  }`);
+  const blockTraegt = JSON.parse(await evaluate(kopf4));
+  check('Akt 4: die Aktionstaste nimmt die Lampenkiste auf',
+    nachAufnahme.traegt === true && nachAufnahme.kisteAlive === false && nachAufnahme.flag === true
+    && /HOCHFAHREN/.test(nachAufnahme.ziel || ''), JSON.stringify(nachAufnahme));
+  check('Akt 4: im Tragen nennt das Schild das Absetzen mit DUCKEN + E',
+    /LAMPENKISTE ABSETZEN/.test(nachAufnahme.label?.text || ''), JSON.stringify(nachAufnahme.label));
+
+  // 4) Tragezustand fair: DUCKEN + E setzt ab, E nimmt ueberall wieder auf.
+  await key('ArrowDown', 'keyDown'); await sleep(140);
+  await key('KeyE', 'keyDown'); await sleep(80);
+  await key('KeyE', 'keyUp'); await sleep(160);
+  await key('ArrowDown', 'keyUp'); await sleep(500);
+  const abgesetzt = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })(),
+    kisteNear: (() => { const k = ${kiste4}; return k ? k.near : null; })(),
+    kisteFuss: (() => { const k = ${kiste4}; return Math.round(k.y + k.h); })(),
+    flag: window.__roland.game.storyFlags.has('kiste_aufgenommen')
+  }`);
+  const blockLeer2 = JSON.parse(await evaluate(kopf4));
+  check('Akt 4: DUCKEN + E setzt die Kiste ab, sie liegt wieder in der Welt',
+    abgesetzt.traegt === false && abgesetzt.kisteAlive === true && abgesetzt.kisteNear === true
+    && Math.abs(abgesetzt.kisteFuss - 400) < 3 && abgesetzt.flag === true, JSON.stringify(abgesetzt));
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const blockTraegt2 = JSON.parse(await evaluate(kopf4));
+  const pixel4 = {
+    auf: punkte4(blockLeer, blockTraegt),
+    kontrolle1: punkte4(blockLeer2, blockTraegt),
+    kontrolle2: punkte4(blockLeer, blockTraegt2),
+  };
+  check('Akt 4: die getragene Kiste ist am Spieler sichtbar (Kopfbereich, gegen Kontrollbilder geprueft)',
+    pixel4.auf >= 24 && pixel4.auf >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1), JSON.stringify(pixel4));
+
+  // 5) Im Tragen bleiben Taktaktionen moeglich (Tritt statt Ablegen).
+  const vorTritt = await evaluate('JSON.stringify(window.__roland.game.lastTritt)');
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(250);
+  const imTragen = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    tritt: window.__roland.game.lastTritt,
+    beats: window.__roland.game.beats
+  }`);
+  check('Akt 4: im Tragen bleibt die Taktaktion moeglich, die Kiste bleibt auf dem Arm',
+    vorTritt === 'null' && imTragen.traegt === true && !!imTragen.tritt && imTragen.beats > 0,
+    `vor=${vorTritt} nach=${JSON.stringify(imTragen)}`);
+
+  // 6) Zweite Stelle: ablegen und wieder aufnehmen — kein Softlock.
+  const weiterLinks = await gehe4('KeyA', 'window.__roland.game.player.x < 400', 4000);
+  await sleep(300);
+  await key('ArrowDown', 'keyDown'); await sleep(140);
+  await key('KeyE', 'keyDown'); await sleep(80);
+  await key('KeyE', 'keyUp'); await sleep(160);
+  await key('ArrowDown', 'keyUp'); await sleep(500);
+  const weitAb = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })(),
+    kisteX: (() => { const k = ${kiste4}; return Math.round(k.x); })(),
+    kisteFuss: (() => { const k = ${kiste4}; return Math.round(k.y + k.h); })(),
+    spielerX: Math.round(window.__roland.game.player.x)
+  }`);
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const weitAuf = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })()
+  }`);
+  check('Akt 4: die Kiste ist auch an neuer Stelle wieder aufnehmbar (kein Softlock)',
+    weiterLinks === true && weitAb.traegt === false && weitAb.kisteAlive === true
+    && Math.abs(weitAb.kisteFuss - 400) < 3 && Math.abs(weitAb.kisteX - weitAb.spielerX) < 24
+    && weitAuf.traegt === true && weitAuf.kisteAlive === false,
+    JSON.stringify({ weitAb, weitAuf }));
+  await bild4('akt4-tragezustand.png');
+
+  // 7) Mit der Versenkung nach oben: echter Mitfahr-Pfad, kein Setzen der Position.
+  await gehe4('KeyD',
+    `(() => { const g = window.__roland.game, l = ${lift4};
+      const c = g.player.x + g.player.w / 2;
+      return c > l.x + 8 && c < l.x + l.w - 8; })()`, 9000);
+  const einstieg = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h)
+  }`);
+  let mitte = null, oben = null;
+  for (let i = 0; i < 120 && !oben; i++) {
+    await sleep(250);
+    const s = await zust4(`{
+      fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+      liftY: Math.round(${lift4}.y),
+      x: Math.round(window.__roland.game.player.x),
+      traegt: window.__roland.game.traegt,
+      hoch: window.__roland.game.storyFlags.has('kiste_oben'),
+      state: window.__roland.game.state
+    }`);
+    if (!mitte && s.fuss < 380 && s.fuss > 220 && s.traegt === true) mitte = s;
+    if (s.fuss <= 13 * 16 && s.traegt === true) oben = s;
+    if (s.state !== 'play') break;
+  }
+  check('Akt 4: die Versenkung traegt den Spieler mit der Kiste nach oben',
+    !!mitte && !!oben && oben.hoch === true && oben.traegt === true && oben.x > 944 && oben.x < 1008,
+    `einstieg=${JSON.stringify(einstieg)} mitte=${JSON.stringify(mitte)} oben=${JSON.stringify(oben)}`);
+  await bild4('akt4-mitfahrt.png');
+
+  // 8) Uebergabe an Rolf oben: die Pflicht endet, das Ziel gibt frei.
+  const zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 5000);
+  const obenBeiRolf = await zust4(`{
+    label: window.__roland.game.hud.label,
+    ziel: window.__roland.game.hud.ziel,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    traegt: window.__roland.game.traegt
+  }`);
+  check('Akt 4: oben an der Versenkung will Rolf die Kiste sehen',
+    zuRolfOben === true && obenBeiRolf.traegt === true && /ROLF/.test(obenBeiRolf.label?.text || ''),
+    JSON.stringify(obenBeiRolf));
+  check('Akt 4: das Ziel ist vor der Uebergabe gesperrt',
+    obenBeiRolf.zielFrei === false && /KISTE \u00dcBERGEBEN/.test(obenBeiRolf.ziel || ''),
+    JSON.stringify(obenBeiRolf));
+
+  for (let i = 0; i < 2; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(220);
+  }
+  const uebergabe = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('kiste_uebergeben'),
+    traegt: window.__roland.game.traegt,
+    kiste: window.__roland.game.hud.kiste,
+    friedlich: window.__roland.game.hud.friedlich,
+    ziel: window.__roland.game.hud.ziel,
+    nerven: window.__roland.game.nerves
+  }`);
+  check('Akt 4: die Uebergabe an Rolf beendet die Pflicht (Kiste weg, Graben friedlich)',
+    uebergabe.flag === true && uebergabe.traegt === false && uebergabe.kiste === false
+    && uebergabe.friedlich === true, JSON.stringify(uebergabe));
+  await key('KeyE', 'keyDown'); await sleep(80);
+  await key('KeyE', 'keyUp'); await sleep(300);
+  const schluss = await zust4(`{
+    hint: document.getElementById('hintbar').textContent,
+    sichtbar: !document.getElementById('hintbar').classList.contains('hidden'),
+    ziel: window.__roland.game.hud.ziel
+  }`);
+  check('Akt 4: Rolf nennt den Schlusssatz, das Journal zeigt den Auftritt',
+    /DEN REST MACHEN WIR/.test(schluss.hint || '') && schluss.sichtbar === true
+    && /AUFTRITT/.test(schluss.ziel || ''), JSON.stringify(schluss));
+  await bild4('akt4-uebergabe.png');
+
+  const zielRegeln = await zust4(`{
+    need: window.__roland.game.level.goal.need,
+    flags: window.__roland.game.level.goal.flags,
+    flagsErfuellt: window.__roland.game.level.goal.flags.every((f) => window.__roland.game.storyFlags.has(f)),
+    storyIds: window.__roland.game.level.storySteps.map((s) => s.id),
+    outfit: window.__roland.game.outfit.id,
+    taktstockDa: window.__roland.game.entities.some((e) => e.kind === 'item' && e.item === 'taktstock' && e.alive),
+    taktstockFlag: window.__roland.game.storyFlags.has('taktstock_genommen')
+  }`);
+  check('Akt 4: dem Ziel fehlt nach der Uebergabe nur noch der Frack — der Taktstock ist keine Bedingung',
+    zielRegeln.flagsErfuellt === true && zielRegeln.need === 'frack' && zielRegeln.outfit !== 'frack'
+    && !zielRegeln.flags.includes('taktstock_genommen')
+    && !zielRegeln.storyIds.includes('taktstock')
+    && zielRegeln.taktstockDa === true && zielRegeln.taktstockFlag === false,
+    JSON.stringify(zielRegeln));
+
+  // 9) Nach der Uebergabe ist der Graben kein Kampfplatz mehr: hinunter, das
+  //    optionale Andenken holen und dabei Nerven und Gegner beobachten.
+  const nervenVorher = await evaluate('window.__roland.game.nerves');
+  const hinunter = await gehe4('KeyA',
+    '(() => { const p = window.__roland.game.player; return p.y + p.h > 380 && p.x < 940; })()', 6000);
+  const unten = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+    state: window.__roland.game.state
+  }`);
+  check('Akt 4: der Weg zurueck fuehrt ueber den Stegrand hinunter in den Graben',
+    hinunter === true && unten.state === 'play' && Math.abs(unten.fuss - 400) < 4
+    && unten.x < 940, JSON.stringify(unten));
+
+  const zumAndenken = await gehe4('KeyD',
+    "window.__roland.game.storyFlags.has('taktstock_genommen')", 8000);
+  const andenken = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('taktstock_genommen'),
+    hint: document.getElementById('hintbar').textContent,
+    ziel: window.__roland.game.hud.ziel,
+    zielFrei: window.__roland.game.goalErfuellt()
+  }`);
+  check('Akt 4: der Taktstock ist nehmbar und bleibt ein Andenken ohne Storyschritt',
+    zumAndenken === true && andenken.flag === true && /TAKTSTOCK/.test(andenken.hint || '')
+    && /AUFTRITT/.test(andenken.ziel || ''), JSON.stringify(andenken));
+  await bild4('akt4-andenken.png');
+
+  await sleep(2500);
+  const ruhe = await zust4(`{
+    friedlich: window.__roland.game.hud.friedlich,
+    nerven: window.__roland.game.nerves,
+    projektile: window.__roland.game.projectiles.length,
+    zielen: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').map((e) => Math.round(e.aim)),
+    invuln: Math.round(window.__roland.game.player.invuln * 100) / 100,
+    dirigentAbstand: Math.round(Math.abs(
+      window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
+  }`);
+  check('Akt 4: nach der Uebergabe greift im Graben niemand mehr an (kein Schaden, kein Nachzielen)',
+    ruhe.friedlich === true && ruhe.nerven >= nervenVorher && ruhe.projektile === 0
+    && ruhe.zielen.every((a) => a === 0) && ruhe.invuln === 0 && ruhe.dirigentAbstand < 96,
+    `nerven=${nervenVorher}->${ruhe.nerven} ${JSON.stringify(ruhe)}`);
+
+  // 10) Zurueck nach oben und der Auftritt: Umkleide, Frack, Gitter, Abschluss.
+  await gehe4('KeyA',
+    `(() => { const g = window.__roland.game, l = ${lift4};
+      const c = g.player.x + g.player.w / 2;
+      return c > l.x + 8 && c < l.x + l.w - 8; })()`, 9000);
+  let zurueck = null;
+  for (let i = 0; i < 120 && !zurueck; i++) {
+    await sleep(250);
+    const s = await zust4(`{
+      fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+      x: Math.round(window.__roland.game.player.x),
+      state: window.__roland.game.state
+    }`);
+    if (s.fuss <= 13 * 16) zurueck = s;
+    if (s.state !== 'play') break;
+  }
+  check('Akt 4: die Versenkung traegt auch zurueck nach oben',
+    !!zurueck && zurueck.x > 944 && zurueck.x < 1008, JSON.stringify(zurueck));
+
+  const zurUmkleide = await gehe4('KeyD', 'window.__roland.game.hud.standNear === true', 5000);
+  await key('KeyE', 'keyDown'); await sleep(200);
+  await key('KeyE', 'keyUp'); await sleep(300);
+  const umkleide = await zust4(`{
+    stand: window.__roland.game.hud.standNear,
+    state: window.__roland.game.state,
+    grund: window.__roland.game.pauseReason,
+    offen: !document.getElementById('garde').classList.contains('hidden'),
+    kluften: [...document.querySelectorAll('#gardeCards button .title')].map((e) => e.textContent)
+  }`);
+  check('Akt 4: der Kleiderstaender auf dem Steg oeffnet die Umkleide per Aktionstaste',
+    zurUmkleide === true && umkleide.state === 'paused' && umkleide.grund === 'stand'
+    && umkleide.offen === true && umkleide.kluften.some((k) => /FRACK/.test(k)),
+    JSON.stringify(umkleide));
+  await evaluate(`(() => {
+    const b = [...document.querySelectorAll('#gardeCards button')].find((x) => /FRACK/.test(x.textContent));
+    b.click(); return 1;
+  })()`);
+  await sleep(350);
+  const imFrack = await zust4(`{
+    kluft: window.__roland.game.outfit.id,
+    state: window.__roland.game.state,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    ziel: window.__roland.game.hud.ziel,
+    offen: !document.getElementById('garde').classList.contains('hidden')
+  }`);
+  check('Akt 4: im Frack gibt das Ziel frei (Auftritt)',
+    imFrack.kluft === 'frack' && imFrack.state === 'play' && imFrack.zielFrei === true,
+    JSON.stringify(imFrack));
+
+  const zumAuftritt = await gehe4('KeyD', "window.__roland.game.state !== 'play'", 9000);
+  const auftritt = await zust4(`{
+    state: window.__roland.game.state,
+    gitter: window.__roland.game.gates[1].open,
+    x: Math.round(window.__roland.game.player.x),
+    errors: window.__errors
+  }`);
+  check('Akt 4: im Frack oeffnet der laufende Spieler das Gitter und der Auftritt endet',
+    zumAuftritt === true && auftritt.state === 'complete' && auftritt.gitter === true
+    && auftritt.x > 82 * 16, JSON.stringify(auftritt));
+  check('Akt 4: der ganze Weg durch den Graben bleibt ohne Konsolenfehler',
+    auftritt.errors.length === 0, JSON.stringify(auftritt.errors));
+  await bild4('akt4-auftritt.png');
 
   // --- Motorrad-Interludium (Nachtfahrt) — Heimweg nach dem Finale ---------
   await evaluate(`window.__roland.loadAct(${idxVon('MOTORRAD')})`);
