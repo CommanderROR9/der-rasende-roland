@@ -1104,6 +1104,46 @@ export const SPRITES = {
     '   LL                      LL   ',
     '   LL                      LL   ',
   ],
+
+  // Schild der Hauptversenkung (Akt 4, Playtest-Befund): Metallplatte mit
+  // // Warnstreifen und ausgeschriebenem Namen — aus der Ferne als Aufzug lesbar.
+  versenkungsschild: [
+    'ggggggggggggggggggggggggggggggggggggggggggg',
+    'yKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKy',
+    'gKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKg',
+    'gKyKyKyyyKyyKKKyyKyyyKyKyKyKyKyKyKyKyKKyyKg',
+    'gKyKyKyKKKyKyKyKKKyKKKyyyKyKyKyKyKyyyKyKKKg',
+    'gKyKyKyyyKyyKKKyKKyyyKyyyKyyKKyKyKyyyKyKyKg',
+    'gKyKyKyKKKyKyKKKyKyKKKyKyKyKyKyKyKyKyKyKyKg',
+    'gKKyKKyyyKyKyKyyKKyyyKyKyKyKyKyyyKyKyKKyyKg',
+    'gKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKg',
+    'yKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKyKy',
+    'ggggggggggggggggggggggggggggggggggggggggggg',
+    '                    mm                     ',
+    '                    mm                     ',
+    '                    mm                     ',
+    '                 mmmmmmmm                  ',
+  ],
+
+  // Kleinere Tafel am Requisitenaufzug: dieselbe Familie, andere Beschriftung —
+  // die beiden Versenkungen bleiben unterscheidbar.
+  versenkungstafel: [
+    'ggggggggggggggggggggggggggg',
+    'yKyKyKyKyKyKyKyKyKyKyKyKyKy',
+    'gKKKKKKKKKKKKKKKKKKKKKKKKKg',
+    'gKKyKKyKyKyyyKyyyKyKyKKyyKg',
+    'gKyKyKyKyKyKKKKKyKyKyKyKKKg',
+    'gKyyyKyKyKyyyKKyKKyKyKyKyKg',
+    'gKyKyKyKyKyKKKyKKKyKyKyKyKg',
+    'gKyKyKyyyKyKKKyyyKyyyKKyyKg',
+    'gKKKKKKKKKKKKKKKKKKKKKKKKKg',
+    'yKyKyKyKyKyKyKyKyKyKyKyKyKy',
+    'ggggggggggggggggggggggggggg',
+    '            mm             ',
+    '            mm             ',
+    '            mm             ',
+    '         mmmmmmmm          ',
+  ],
 };
 
 // Kleiderordnung als Palettenvarianten desselben Körpers.
