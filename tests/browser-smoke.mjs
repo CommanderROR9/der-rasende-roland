@@ -1609,6 +1609,17 @@ try {
   //    landet auf dem Steg (gemessen: px 1022, fuss 192, Schild "MIT ROLF
   //    SPRECHEN"). Ab fuss 228 haelt die Stegkante den Lauf auf (darunter passt
   //    der Spieler unter ihr durch), deshalb wird erst dann gelaufen.
+  //    Nachtrag (gemessen am Spielcode, src/game.js updateLifts): Die
+  //    Versenkung faehrt eine Dreieckswelle, deren Scheitel (k=1) in EINEM
+  //    Bild erreicht ist — oben gibt es KEINE Standzeit (nur unten,
+  //    stand=0.14). liftDy ist zusaetzlich pro Bild gerundet. Ein Ausloeser
+  //    auf (liftDy<0 && fuss<=212) in einem einzelnen Abtastfenster ist
+  //    deshalb zu fragil, und die alte Form liess KeyD unten eingerastet,
+  //    wenn das Fenster verpasst wurde (Spieler lief danach unkontrolliert
+  //    von der sinkenden Versenkung in den Graben). Ausloeser ist jetzt die
+  //    LAGE (aufLift && fuss<=206: spaeter Aufstieg + Scheitel + frueher
+  //    Abstieg, ~0,5 s Fenster, mehrere Abtastungen), und jede Taste wird
+  //    nach jedem Versuch garantiert losgelassen.
   //    Der Ausstieg wird in Runden mit echter Fahrt wiederholt und das Ergebnis
   //    gemessen, nicht angenommen — kein Blindlauf, kein Blinddruck.
   const stegLage4 = `(() => {
@@ -1624,6 +1635,9 @@ try {
   })()`;
   let stegAusstiege4 = 0;         // wie oft der Ausstieg ueber den Sprung lief
   const beimAusstieg4 = async (runden) => {
+    // Defensive Tastenlage: keine Richtung darf aus einem frueheren Lauf
+    // eingerastet bleiben, sonst stuermt der Spieler unkontrolliert los.
+    await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp'); await key('Space', 'keyUp');
     for (let runde = 0; runde < runden; runde++) {
       for (let i = 0; i < 260; i++) {              // eine Fahrt dauert 11 s
         const s = await zust4(stegLage4);
@@ -1645,25 +1659,29 @@ try {
           }
           continue;
         }
-        // Oben auf der Versenkung: laufen (die Stegkante haelt auf), dann
-        // springen und den Lauf bis auf das Steg durchhalten.
-        if (s.liftDy < 0 && s.fuss <= 228) await key('KeyD', 'keyDown');
-        if (s.liftDy < 0 && s.fuss <= 212) {
+        // Oben auf der Versenkung: Richtung + Sprung aus dem oberen Bereich,
+        // den Lauf bis auf das Steg durchhalten — und die Richtung danach
+        // IMMER loslassen, egal wo der Spieler landet.
+        if (s.aufLift && s.fuss <= 206) {
           stegAusstiege4 += 1;
+          await key('KeyD', 'keyDown');
           await key('Space', 'keyDown'); await sleep(170); await key('Space', 'keyUp');
-          for (let j = 0; j < 14; j++) {
+          for (let j = 0; j < 16; j++) {
             await sleep(100);
             const t = await zust4(stegLage4);
             if (t.aufSteg || t.state !== 'play') break;
           }
           await key('KeyD', 'keyUp');
+          await key('KeyA', 'keyUp');
           break;                                   // Ergebnis messen, nicht raten
         }
         await sleep(100);
       }
       const s = await zust4(stegLage4);
       if (s.state !== 'play' || s.aufSteg) return s;
+      await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp');
     }
+    await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp');
     return await zust4(stegLage4);
   };
   const ausstiegOben = await beimAusstieg4(4);
