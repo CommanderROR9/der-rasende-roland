@@ -80,6 +80,9 @@ export class Game {
     this.stimmblaetterNoetig = this.level.stimmblaetterNoetig || 0;
     this.mappeAbgegeben = false;  // Mappe liegt auf dem Dirigentenpult (Akt 2)
     this.einsatzGelungen = false; // erster gemeinsamer Einsatz in Akt 2 (DRR-04)
+    // Level-lokale Storyflags: dieselben NPC-/Journalbausteine funktionieren
+    // in weiteren Akten ohne Spezialfälle in main.js.
+    this.storyFlags = new Set(this.level.initialStoryFlags || []);
     this.frackBoost = 0;
     this.taktHits = 0;
     this.deckel = 0;
@@ -143,11 +146,11 @@ export class Game {
     switch (s.kind) {
       case 'item':
         return {
-          kind: 'item', item: s.item, spr: def.spr,
+          kind: 'item', item: s.item, spr: s.spr || def.spr,
           w: def.w, h: def.h,
           x: s.tx * TILE + (TILE - def.w) / 2,
           y: (s.walkRow + 1) * TILE - def.h,
-          alive: true, bob: Math.random() * 6.28,
+          alive: true, bob: Math.random() * 6.28, found: s.found,
         };
       case 'stand':
         return { kind: 'stand', x: s.tx * TILE, y: s.walkRow * TILE, w: TILE, h: TILE, alive: true };
@@ -169,6 +172,19 @@ export class Game {
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
       case 'pult':
         return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3 };
+      case 'npc': {
+        const matrix = SPRITES[s.spr];
+        const h = matrix ? matrix.length : 22;
+        const w = matrix ? Math.max(...matrix.map((row) => row.length)) : 14;
+        return { ...s, kind: 'npc', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - h,
+          w, h, alive: true, near: false, dialogIndex: 0, complete: false };
+      }
+      case 'decor': {
+        const matrix = SPRITES[s.spr];
+        const h = matrix ? matrix.length : 16;
+        const w = matrix ? Math.max(...matrix.map((row) => row.length)) : 16;
+        return { ...s, kind: 'decor', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - h, w, h, alive: true };
+      }
       case 'koffer':
         return { kind: 'koffer', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 16, h: 12, patrol: s.patrol, dir: 1, alive: true, stun: 0, flash: 0, bob: 0, wait: 0 };
       default:
@@ -211,6 +227,7 @@ export class Game {
     const g = this.level.goal;
     if (g.applaus && this.applaus < g.applaus) return false;
     if (g.frackOff && !this.frackOffUsed) return false;
+    if ((g.flags || []).some((flag) => !this.storyFlags.has(flag))) return false;
     if (g.need === 'ablegen') return this.frackAbgelegt;
     if (g.need === 'setzen') return !!this.setzen;
     if (g.need === 'einsatz') return !!this.einsatzGelungen;
@@ -413,7 +430,7 @@ export class Game {
     this.wantInteract = actPressed;
     // Am Kleiderständer ist der Druck zum Umziehen gedacht, nicht zum Tritt.
     // Am Dirigentenpult wird der Einsatz gegeben (DRR-04).
-    if (actPressed && !this.nearStand() && !this.nearPult()) {
+    if (actPressed && !this.nearStand() && !this.nearPult() && !this.nearNpc()) {
       if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
       else this.tryTritt();
     }
@@ -976,6 +993,18 @@ export class Game {
       }
     }
     this.entities = this.entities.filter((en) => en.alive);
+
+    // Datengetriebene Gespräche: E blättert bewusst durch kurze Zeilen; in der
+    // Nähe einer Figur löst dieselbe Taste deshalb keinen Beton-Tritt aus.
+    for (const en of this.entities) {
+      if (en.kind !== 'npc') continue;
+      const nah = overlap(p, this.standSlot(en));
+      en.near = nah;
+      if (!nah || !this.wantInteract) continue;
+      this.wantInteract = false;
+      this.talkTo(en);
+    }
+
     // Ramona und der Grill: nichts Gefaehrliches, nur Nachbarschaft
     for (const en of this.entities) {
       if (en.kind !== 'ramona' && en.kind !== 'grill') continue;
@@ -1041,15 +1070,16 @@ export class Game {
       // Trefferfläche leicht aufweiten: wer gegen die Tür läuft, merkt es auch
       const slot = { x: g.tx * TILE - 3, y: g.ty * TILE, w: g.tw * TILE + 6, h: g.th * TILE };
       if (!overlap(p, slot)) continue;
-      if (this.outfit.id === g.need) {
+      const erfuellt = g.flag ? this.storyFlags.has(g.flag) : this.outfit.id === g.need;
+      if (erfuellt) {
         g.open = true;
         for (let j = g.ty; j < g.ty + g.th; j++) for (let i = g.tx; i < g.tx + g.tw; i++) this.grid[j][i] = 0;
         this.audio.play('gate');
-        this.message(g.need === 'anzug' ? 'DIENSTTÜR OFFEN. DER ANZUG MACHT DEN UNTERSCHIED.' : 'ABSperrband BEISEITE. DER FRACK HAT PRESTIGE.', 4.5, 2);
+        this.message(g.opened || (g.need === 'anzug' ? 'DIENSTTÜR OFFEN. DER ANZUG MACHT DEN UNTERSCHIED.' : 'ABSPERRBAND BEISEITE. DER FRACK HAT PRESTIGE.'), 4.5, 2);
         g.notified = 0;
       } else if (this.time > g.notified + 3) {
         g.notified = this.time;
-        this.message(g.need === 'anzug' ? 'DIE DIENSTTÜR BLEIBT ZU. DAFÜR BRAUCHT ES DEN ANZUG.' : 'DAS ABSperrband HÄLT. NUR IM FRACK GEHT DAS AUF.', 4.5, 2);
+        this.message(g.locked || (g.need === 'anzug' ? 'DIE DIENSTTÜR BLEIBT ZU. DAFÜR BRAUCHT ES DEN ANZUG.' : 'DAS ABSPERRBAND HÄLT. NUR IM FRACK GEHT DAS AUF.'), 4.5, 2);
       }
     }
     // Ziel: Materialaufzug. Ziele mit `need: 'ablegen'` oder 'setzen' verlangen
@@ -1114,6 +1144,49 @@ export class Game {
     return null;
   }
 
+  nearNpc() {
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind === 'npc' && overlap(p, this.standSlot(en))) return en;
+    }
+    return null;
+  }
+
+  requirementMet(requirement) {
+    if (requirement === 'mappe') return !!this.hasMappe;
+    return this.storyFlags.has(requirement);
+  }
+
+  talkTo(npc) {
+    const missing = (npc.requires || []).find((requirement) => !this.requirementMet(requirement));
+    // Eine bewusst ausgelöste Gesprächszeile ersetzt den alten Hinweis sofort.
+    // Sonst würde schnelles Weiterblättern mehrere sieben Sekunden alte Zeilen
+    // aufstauen und die eigentliche Reaktion erst nach dem Raumwechsel zeigen.
+    this.hint = null;
+    this.hintQueue = [];
+    if (missing) {
+      this.message(npc.blocked || `${npc.name}: „DA FEHLT NOCH ETWAS.“`, 5.5, 3);
+      return false;
+    }
+    if (npc.complete) {
+      this.message(`${npc.name}: „${npc.after || 'WIR SEHEN UNS OBEN.'}“`, 5, 3);
+      return true;
+    }
+    const line = (npc.dialog || [])[npc.dialogIndex] || npc.after || 'WEITER.';
+    npc.dialogIndex += 1;
+    this.audio.play('dialog');
+    this.message(`${npc.name}: „${line}“`, 7, 3);
+    if (npc.dialogIndex >= (npc.dialog || []).length) {
+      npc.complete = true;
+      if (npc.flag) {
+        this.storyFlags.add(npc.flag);
+        this.events({ type: 'story', flag: npc.flag, npc: npc.npc });
+      }
+    }
+    this.hud = this.buildHud();
+    return true;
+  }
+
   /**
    * Ein Versuch am Pult. Nur im Takt gezählt — gelungene Teile bleiben erhalten,
    * ein danebengegangener Versuch kostet nichts (DRR-04).
@@ -1172,6 +1245,13 @@ export class Game {
     }
     const stand = this.nearStand();
     if (stand) best = { text: 'UMZIEHEN', x: stand.x + 8, y: stand.y - 30, action: true, key: 'E' };
+    const npc = this.entities.find((en) => en.kind === 'npc' && en.near);
+    if (npc) {
+      best = {
+        text: npc.complete ? `${npc.name}: NOCHMAL SPRECHEN` : `MIT ${npc.name} SPRECHEN`,
+        action: true, key: 'E', x: npc.x + npc.w / 2, y: npc.y - 4,
+      };
+    }
     const griller = this.entities.find((en) => en.kind === 'grill' && en.near);
     if (griller) best = { text: 'GRILLEN', action: true, key: 'E', x: griller.x + 10, y: griller.y - 18 };
     const schrank = this.entities.find((en) => en.kind === 'schrank' && en.near);
@@ -1196,7 +1276,9 @@ export class Game {
     const g = this.level.goal;
     const dg = Math.hypot((g.x + 8) - cx, (g.y + g.h / 2) - cy);
     const zielFrei = this.goalErfuellt();
-    const grund = (g.applaus && this.applaus < g.applaus) ? `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`
+    const fehltFlag = (g.flags || []).some((flag) => !this.storyFlags.has(flag));
+    const grund = fehltFlag ? (g.flagLocked || 'STORYSCHRITT FEHLT')
+      : (g.applaus && this.applaus < g.applaus) ? `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`
       : (g.need === 'ablegen') ? 'FRACK ABLEGEN'
         : (g.need === 'setzen') ? 'HINSETZEN'
         : (g.need === 'einsatz') ? (this.hasMappe && !this.mappeAbgegeben
@@ -1205,7 +1287,9 @@ export class Game {
               : g.need === 'frack' ? 'NUR IM FRACK'
                 : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
     const zielAktion = g.need === 'ablegen' || g.need === 'setzen';
-    if (dg < 96) {
+    // Ein bewusst ausführbares Gespräch ist wichtiger als das danebenliegende
+    // Ziel. Sonst sagt der Touch-Knopf ausgerechnet bei Ada wieder „TRITT“.
+    if (dg < 96 && !npc) {
       best = {
         text: zielFrei ? `${g.name}: WEITER` : `${g.name}: ${grund}`,
         action: zielAktion && !zielFrei, key: 'E', x: g.x + 8, y: g.y - 2,
@@ -1248,9 +1332,11 @@ export class Game {
         if (this.stimmblaetter >= noetig) {
           this.hasMappe = true;
           this.events({ type: 'mappe' });   // main.js legt sie in den Spielstand
-          this.message('DIE NOTENMAPPE IST VOLLSTÄNDIG. JETZT ZUM AUFZUG.', 5.5, 2);
+          this.message(`${en.found ? `${en.found} ` : ''}DIE NOTENMAPPE IST VOLLSTÄNDIG.`, 6.5, 2);
         } else {
-          this.message(`STIMMBLATT ${this.stimmblaetter}/${noetig} — DIE MAPPE FÜLLT SICH`, 4.5, 2);
+          this.message(en.found
+            ? `${en.found} · STIMME ${this.stimmblaetter}/${noetig}`
+            : `STIMMBLATT ${this.stimmblaetter}/${noetig} — DIE MAPPE FÜLLT SICH`, 5.5, 2);
         }
         break;
       }
@@ -1343,6 +1429,18 @@ export class Game {
   zielText() {
     const basis = this.level.ziel || '';
     const g = this.level.goal || {};
+    if (Array.isArray(this.level.storySteps)) {
+      const step = this.level.storySteps.find((candidate) => {
+        if (candidate.flag) return !this.storyFlags.has(candidate.flag);
+        if (candidate.counter) return Number(this[candidate.counter] || 0) < candidate.atLeast;
+        if (candidate.goal) return !this.goalErfuellt();
+        return true;
+      });
+      if (step) {
+        if (step.counter) return `${step.text} · ${this[step.counter] || 0}/${step.atLeast}`;
+        return step.text;
+      }
+    }
     if (this.level.ruhig) {
       return this.setzen ? 'SITZEN UND ANKOMMEN' : 'DIE BANK UNTER DER LAUBE: HINSETZEN (E)';
     }
@@ -1877,6 +1975,20 @@ export class Game {
           }
           break;
         }
+        case 'npc': {
+          const spr = this.spr(en.spr);
+          blit(ctx, spr, x, y + en.h - spr.h, !!en.flip, 0);
+          if (en.near) {
+            ctx.fillStyle = 'rgba(93,224,207,0.8)';
+            ctx.fillRect(x + Math.max(1, Math.floor(en.w / 2) - 3), y - 7, 7, 2);
+          }
+          break;
+        }
+        case 'decor': {
+          const spr = this.spr(en.spr);
+          blit(ctx, spr, x, y + en.h - spr.h, !!en.flip, 0, en.alpha ?? 1);
+          break;
+        }
         default: break;
       }
     }
@@ -1938,6 +2050,11 @@ export class Game {
     const y = Math.round(p.y - camY + p.h - spr.h);
     const hurt = p.invuln > 0;
     blit(ctx, spr, x, y, p.dir < 0, p.flash, hurt ? 0.6 : 1);
+    // Die vollständige Mappe reist sichtbar mit statt nur als boolescher Wert.
+    if (this.hasMappe && !this.mappeAbgegeben) {
+      const mappe = this.spr('mappe');
+      blit(ctx, mappe, x + (p.dir < 0 ? -7 : 10), y + 10, p.dir < 0, 0, hurt ? 0.6 : 1);
+    }
     if (hurt) {
       // Ruhender Schutzrahmen statt Blinken: man sieht den Schutz, ohne dass
       // die Figur flimmert.
