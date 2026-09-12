@@ -508,6 +508,10 @@ await testAsync('der Planer springt beim Abschnittswechsel in den B-Teil', async
   assert.equal(musik.abschnitt().lead, true, 'Abschnitt 1 trägt die Melodie');
   assert.equal(musik.abschnitt().gegen, false, 'Abschnitt 1 hat noch keine Gegenstimme');
   assert.equal(musik.abschnitt().puls, true, 'der Puls läuft weiter');
+  // Zurücklaufen lässt den Satz nicht zurückfallen — kein Pumpen an der Grenze.
+  strecke = 0;
+  await schlaf(250);
+  assert.equal(musik.abschnitt().abschnitt, 1, 'der Satz fällt hinter die erreichte Schicht zurück');
   musik.stop();
   assert.equal(musik.offeneKnoten(), 0);
 });

@@ -608,7 +608,9 @@ export function createMusik({ audio = null } = {}) {
   /** Abschnittswechsel aus der Strecke: neue Schicht und Übergang in den B-Teil. */
   function regieNachfuehren() {
     const neu = regieGrundwert();
-    if (neu === abschnitt) return;
+    // Der Satz wächst mit dem Fortschritt und fällt nicht zurück: sonst pumpt
+    // die Musik, wenn der Spieler an einer Abschnittsgrenze hin und her läuft.
+    if (neu <= abschnitt) return;
     abschnitt = neu;
     reg = regie(abschnitt);
     // Beim Wechsel in einen neuen Abschnitt geht es hörbar in den B-Teil.
