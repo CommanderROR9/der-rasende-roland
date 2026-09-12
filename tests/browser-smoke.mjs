@@ -1722,6 +1722,13 @@ try {
     && pixel4.auf >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1)
     && pixel4.auf2 >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1),
     JSON.stringify(pixel4));
+  // Die vier Messwerte gehoeren auch in den gruenen Lauf: nur so ist
+  // nachvollziehbar, wie weit das Signal ueber dem Rauschen lag.
+  results.push(`TRAGEBILD Punkte auf=${pixel4.auf} auf2=${pixel4.auf2}`
+    + ` kontrolle1=${pixel4.kontrolle1} kontrolle2=${pixel4.kontrolle2}`
+    + ` (Fenster ${pixel4.fenster} px, gefordert >= ${pixel4.gefordert},`
+    + ` Rauschen <= ${pixel4.rauschgrenze}, Versuche ${pixel4.versuche.join('/')},`
+    + ` Lage ${pixel4.lage.join(' ')})`);
 
   // 5) Im Tragen bleiben Taktaktionen moeglich (Tritt statt Ablegen).
   const vorTritt = await evaluate('JSON.stringify(window.__roland.game.lastTritt)');
