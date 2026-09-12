@@ -1201,6 +1201,7 @@ export class Game {
     if (this.hasMappe && !this.mappeAbgegeben) {
       this.mappeAbgegeben = true;
       this.hasMappe = false;
+      this.storyFlags.add('mappe_abgegeben');
       this.audio.play('pickup');
       this.message('DIE NOTENMAPPE LIEGT AUF DEM PULT. JETZT DER EINSATZ: DREI TAKTE (E).', 6, 2);
       return;
@@ -1217,6 +1218,7 @@ export class Game {
     for (const en of this.entities) if (en.kind === 'dirigent' && en.alive) en.stun = Math.max(en.stun, 1.0);
     if (pult.teil >= pult.noetig) {
       this.einsatzGelungen = true;
+      this.storyFlags.add('einsatz_gelungen');
       this.audio.play('applaus') ;
       this.message('DER EINSATZ SITZT. DAS ORCHESTER ZIEHT MIT.', 6, 2);
       this.events({ type: 'einsatz' });
