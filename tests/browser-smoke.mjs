@@ -152,7 +152,11 @@ try {
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(400);
   const options = await evaluate("JSON.stringify([...document.querySelectorAll('#gardeCards button .title')].map(e=>e.textContent))");
-  check('Kleiderwahl zeigt drei Klüfte', JSON.parse(options).length === 3, options);
+  // Seit dem Epilog-Auftrag E1 gibt es vier Klüfte (ZIVIL kam dazu).
+  const optionListe = JSON.parse(options);
+  check('Kleiderwahl zeigt alle vier Klüfte', optionListe.length === 4
+    && ['SCHWARZES HEMD', 'ANZUG + KRAWATTE', 'FRACK', 'SHORTS + HAWAII-HEMD'].every((k) => optionListe.includes(k)),
+    options);
   check('Meldet SCHWARZ, ANZUG und FRACK',
     ['SCHWARZ', 'ANZUG', 'FRACK'].every((k) => options.includes(k)), options);
 
@@ -325,7 +329,8 @@ try {
   })`));
   check('Aktionstaste öffnet die Umkleide', wardrobeState.state === 'paused' && wardrobeState.reason === 'stand',
     JSON.stringify(wardrobeState));
-  check('Umkleide zeigt die Klüfte zur Wahl', wardrobeState.options.length === 3,
+  check('Umkleide zeigt alle vier Klüfte zur Wahl', wardrobeState.options.length === 4
+    && wardrobeState.options.includes('SHORTS + HAWAII-HEMD'),
     JSON.stringify(wardrobeState.options));
 
   await evaluate("document.querySelectorAll('#gardeCards button')[1].click()");
@@ -1598,6 +1603,139 @@ try {
   const grillNachher = await evaluate('window.__roland.grill.wuerserste.filter((w) => w.seite > 0).length');
   check('Grill reagiert auf die Aktion', grillNachher > grillVorher, `${grillVorher} -> ${grillNachher}`);
   check('keine Fehler in Finale und Epilog',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
+
+  // --- Epilog: der Kleiderschrank im Kleingarten (Auftrag E1) ---------------
+  // Der Umzug muss am Avatar zu sehen sein, nicht nur im Datenmodell. Deshalb
+  // werden die Bildpunkte der Figur vor und nach dem Wechsel verglichen und
+  // zwei Screenshots abgelegt (Frack und Zivil).
+  const figurFarben = `(() => {
+    const c = document.getElementById('game'); const g = window.__roland.game;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    const farben = {};
+    for (let y = Math.max(0, py - 6); y < Math.min(c.height, py + g.player.h + 6); y++)
+      for (let x = Math.max(0, px - 8); x < Math.min(c.width, px + g.player.w + 8); x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i + 3] === 0) continue;
+        const k = [d[i], d[i + 1], d[i + 2]].join(',');
+        farben[k] = (farben[k] || 0) + 1;
+      }
+    return JSON.stringify(farben);
+  })()`;
+  // Hinstellen: dieselbe Stelle, an der auch der Vertragstest steht.
+  const hinZu = (kind) => `(() => { const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === '${kind}');
+    g.player.x = en.x - 18; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
+    return JSON.stringify({ x: en.x, y: en.y, w: en.w, h: en.h, nah: en.near }); })()`;
+  const tippe = async (pausen = 600) => {
+    await evaluate("window.__roland.input.setKey('action', true)");
+    await sleep(180);
+    await evaluate("window.__roland.input.setKey('action', false)");
+    await sleep(pausen);
+  };
+
+  // Der Grill aus dem vorigen Block ist ein eigener Modus: solange er laeuft,
+  // wird die Ebene nicht mehr aktualisiert (kein Interaktionspunkt, kein HUD).
+  // Erst beenden, dann ist der Kleingarten wieder die aktive Simulation.
+  const ausDemGrill = async () => {
+    if ((await evaluate('window.__roland.grill === null')) === true) return true;
+    await evaluate("(() => { const a = window.__roland.aktiv; if (a.ende) a.ende(); else if (a.complete) a.complete(); })()");
+    await sleep(350);
+    await evaluate("document.getElementById('rewardBtn').click()");
+    await sleep(600);
+    if ((await evaluate('window.__roland.grill === null')) === true) return true;
+    // Notnagel: frische Seite. Ohne das bliebe das Minispiel im Bild und alle
+    // folgenden Prüfungen liefen gegen den falschen Spielstand.
+    await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+    await sleep(2200);
+    return (await evaluate('window.__roland.grill === null')) === true;
+  };
+  check('Epilog-Browser: der Grill ist beendet, die Simulation laeuft wieder', await ausDemGrill());
+
+  await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  // Bewusst im Frack beginnen: das ist die Kluft, in der der Spieler ankommt.
+  await evaluate("(() => { const b = [...document.querySelectorAll('#gardeCards button')].find((x) => x.textContent.includes('FRACK')); b.click(); })()");
+  await sleep(900);
+  const gard = JSON.parse(await evaluate(hinZu('garderobe')));
+  await sleep(400);
+  const gardVor = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    nah: window.__roland.game.entities.filter((e) => e.kind === 'garderobe' && e.near).length,
+    label: window.__roland.aktiv.hud.label
+  })`));
+  check('Epilog-Browser: der Kleiderschrank ist der naechste Interaktionspunkt',
+    gardVor.nah === 1 && gardVor.outfit === 'frack', JSON.stringify(gardVor));
+  check('Epilog-Browser: im Frack bietet er Zivil als AKTION mit E an',
+    !!gardVor.label && /KLEIDERSCHRANK/.test(gardVor.label.text) && /ZIVIL/.test(gardVor.label.text)
+      && gardVor.label.action === true && gardVor.label.key === 'E',
+    JSON.stringify(gardVor.label));
+
+  const farbenFrack = JSON.parse(await evaluate(figurFarben));
+  const shotDirEpi = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDirEpi, { recursive: true });
+  const epiFrackPfad = join(shotDirEpi, 'epilog-frack.png');
+  writeFileSync(epiFrackPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  results.push(`FRACK-BILD ${epiFrackPfad}`);
+
+  await tippe();
+  const nachZivil = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    flag: window.__roland.aktiv.hud.zivilAn,
+    hint: window.__roland.aktiv.hud.hint,
+    label: window.__roland.aktiv.hud.label
+  })`));
+  check('Epilog-Browser: die Aktionstaste zieht Zivil an',
+    nachZivil.outfit === 'zivil' && nachZivil.flag === true, JSON.stringify(nachZivil));
+  check('Epilog-Browser: die Meldung nennt Shorts und Hawaii-Hemd',
+    /HAWAII/.test(String(nachZivil.hint)), String(nachZivil.hint));
+  check('Epilog-Browser: danach bietet er den Frack an',
+    !!nachZivil.label && /KLEIDERSCHRANK/.test(nachZivil.label.text) && /FRACK/.test(nachZivil.label.text),
+    JSON.stringify(nachZivil.label));
+
+  const farbenZivil = JSON.parse(await evaluate(figurFarben));
+  const neueFarben = Object.keys(farbenZivil).filter((k) => !(k in farbenFrack));
+  const hemdPunkte = farbenZivil['47,191,174'] || 0;   // #2fbfae — die Hemdfarbe der Zivilpalette
+  check('Epilog-Browser: der Avatar sieht in Zivil anders aus (Bildpunkte der Figur)',
+    neueFarben.length > 0 && hemdPunkte > 0,
+    `neue Farben ${neueFarben.join(' | ')}, Hemdpunkte ${hemdPunkte}`);
+
+  const epiZivilPfad = join(shotDirEpi, 'epilog-zivil.png');
+  const epiZivilBild = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+  writeFileSync(epiZivilPfad, epiZivilBild);
+  // Zweitablage: genau der Pfad, den der Auftrag fuer Roland nennt.
+  const epiZivilWurzel = fileURLToPath(new URL('../screenshot-epilog-zivil.png', import.meta.url));
+  writeFileSync(epiZivilWurzel, epiZivilBild);
+  check('Epilog-Browser: Screenshot in Zivil geschrieben', existsSync(epiZivilPfad) && existsSync(epiZivilWurzel));
+  results.push(`SCREENSHOT ${epiZivilPfad}`);
+  results.push(`SCREENSHOT ${epiZivilWurzel}`);
+
+  // Umkehrbar: dreimal weiterschalten, am Ende steht wieder der Frack an.
+  const kluften = [];
+  for (let i = 0; i < 3; i++) {
+    await tippe(700);
+    kluften.push(await evaluate('window.__roland.game.outfit.id'));
+  }
+  check('Epilog-Browser: der Wechsel ist mehrfach umkehrbar',
+    kluften.join(',') === 'frack,zivil,frack', kluften.join(' -> '));
+
+  // Der Frack bleibt aufhaengbar: an der Laube, im getragenen Frack. Der
+  // Kleiderschrank ist ein zusaetzlicher Weg und darf das nicht verstellen.
+  const laube = JSON.parse(await evaluate(hinZu('schrank')));
+  await sleep(500);
+  await tippe();
+  const nachLaube = JSON.parse(await evaluate(`JSON.stringify({
+    abgelegt: window.__roland.aktiv.hud.frackAbgelegt,
+    outfit: window.__roland.game.outfit.id,
+    hint: window.__roland.aktiv.hud.hint
+  })`));
+  check('Epilog-Browser: nach dem Kleiderschrank haengt der Frack weiter an der Laube',
+    nachLaube.abgelegt === true, `${JSON.stringify(nachLaube)} @ ${JSON.stringify(laube)}`);
+  check('Epilog-Browser: das Aufhaengen laesst das schwarze Hemd zurueck',
+    nachLaube.outfit === 'schwarz', JSON.stringify(nachLaube));
+  check('keine Fehler im Epilog-Kleiderschrank',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 
   await evaluate("window.__roland.loadAct(0)");

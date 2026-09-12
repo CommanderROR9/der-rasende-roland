@@ -1,3 +1,6 @@
 # Testartefakte: Screenshots und Logs aus den Suiten sind Beiprodukte. Sie sollen
 # nach der Sitzung auffindbar bleiben, aber keinen Checkout schmutzig machen.
 .artifacts/
+
+# Bildbeweise des Epilog-Auftrags (E1) am Repo-Rand: sollen den Checkout nicht schmutzig machen.
+screenshot-*.png
