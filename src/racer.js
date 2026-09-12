@@ -63,9 +63,15 @@ export function project(p, camX, camY, camZ, width, height) {
   p.camera.y = (p.world.y || 0) - camY;
   p.camera.z = (p.world.z || 0) - camZ;
   p.screen.scale = CAM_DEPTH / (p.camera.z || 1);
-  p.screen.x = Math.round(width / 2 + (p.screen.scale * p.camera.x * width) / 2);
-  p.screen.y = Math.round(height / 2 - (p.screen.scale * p.camera.y * height) / 2);
-  p.screen.w = Math.round((p.screen.scale * ROAD_W * width) / 2);
+  // Ganze Pixel nur zum Zeichnen. Die Sichtbarkeit (Culling) nutzt die
+  // Nachkommawerte — gerundete Zeilen kippen sonst pro Frame und Objekte
+  // am Straßenrand blinken auf und ab.
+  p.screen.fx = width / 2 + (p.screen.scale * p.camera.x * width) / 2;
+  p.screen.fy = height / 2 - (p.screen.scale * p.camera.y * height) / 2;
+  p.screen.fw = (p.screen.scale * ROAD_W * width) / 2;
+  p.screen.x = Math.round(p.screen.fx);
+  p.screen.y = Math.round(p.screen.fy);
+  p.screen.w = Math.round(p.screen.fw);
 }
 
 export class Racer {
@@ -457,9 +463,9 @@ export class Racer {
       project(seg.p2, this.playerX * ROAD_W - x - dx, playerY + CAM_H, camZ, vw, vh);
       x += dx;
       dx += seg.curve;
-      if (seg.p1.camera.z <= CAM_DEPTH || seg.p2.screen.y > seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
+      if (seg.p1.camera.z <= CAM_DEPTH || seg.p2.screen.fy > seg.p1.screen.fy || seg.p2.screen.fy >= maxy) continue;
       visible.push(seg);
-      maxy = seg.p1.screen.y;
+      maxy = seg.p1.screen.fy;
     }
 
     const drawList = [];
