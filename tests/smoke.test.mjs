@@ -647,6 +647,54 @@ function place(game, px, py) {
   check('Beton-Tritt erreicht den Dirigenten', dir2.stun > 0, `stun=${dir2.stun}`);
 }
 
+// Orchestergraben (Playtest-Befund „kein Weg nach oben“): im Dunkeln wirft der
+// Dirigent nur in Sichtweite. Vorher lag der Versenkungsschacht in seiner
+// Wurfweite — wer auf die Mitfahrt wartete, wurde dort beschossen und
+// weggestoßen, statt hochzukommen.
+{
+  const input = createInput(null);
+  const game = new Game({
+    level: buildAkt4(), input,
+    audio: { play() {}, resume() {} }, events: () => {}, difficulty: 'gemuetlich',
+  });
+  game.reset('schwarz');
+  const dir = game.entities.find((e) => e.kind === 'dirigent');
+  const lift = game.entities.find((e) => e.kind === 'lift');
+  const abstand = Math.abs((lift.x + lift.w / 2) - (dir.x + dir.w / 2));
+  check('Akt 4: Versenkungsschacht liegt außerhalb der dunklen Wurfweite',
+    abstand > game.vw * 0.9 * 0.4, `${abstand.toFixed(0)} px Abstand`);
+
+  game.nerves = 3; game.maxNerves = 3;
+  place(game, lift.x + 24, lift.bottom - PHYS.playerH);
+  let wuerfe = 0;
+  for (let i = 0; i < 60 * 24; i++) {
+    input.setKey('right', false); input.setKey('left', false); input.setKey('jump', false);
+    game.update(1 / 60);
+    if (game.state === 'paused') game.resume();
+    if (game.projectiles.some((pr) => pr.kind === 'baton')) wuerfe += 1;
+  }
+  check('Akt 4: Warten an der Versenkung wird nicht beschossen',
+    wuerfe === 0 && game.nerves === 3, `Würfe=${wuerfe} Nerven=${game.nerves}`);
+  check('Akt 4: die Mitfahrt hebt trotzdem ab', game.player.y + game.player.h < 380,
+    `fuß=${(game.player.y + game.player.h).toFixed(0)}`);
+
+  // Die Wurfmechanik bleibt: in Reichweite fliegt der Taktstock weiter.
+  const iN = createInput(null);
+  const gN = new Game({
+    level: buildAkt4(), input: iN,
+    audio: { play() {}, resume() {} }, events: () => {}, difficulty: 'gemuetlich',
+  });
+  gN.reset('schwarz');
+  const dirN = gN.entities.find((e) => e.kind === 'dirigent');
+  place(gN, dirN.x + 60, 25 * TILE - PHYS.playerH);
+  let nahWurf = false;
+  for (let i = 0; i < 60 * 12 && !nahWurf; i++) {
+    gN.update(1 / 60);
+    nahWurf = gN.projectiles.some((pr) => pr.kind === 'baton');
+  }
+  check('Akt 4: dicht am Dirigenten fliegt der Taktstock weiter', nahWurf);
+}
+
 // Taktwechsel beim Durchschreiten
 {
   const level = buildAkt2();
@@ -821,6 +869,26 @@ function place(game, px, py) {
   game.update(1 / 60);
   check('ohne Mappe zählt der erste Druck als Takt',
     pult.teil === 1 && game.mappeAbgegeben === false);
+}
+
+// Die Notenmappe reist mit: Akt 1 meldet sie dem Spielstand, Akt 2 legt sie ab
+// (Review-Befund: der Ablege-Zweig war ohne Spielstand-Eintrag toter Code).
+{
+  const ereignisse = [];
+  const level = buildAkt1();
+  const game = new Game({
+    level, input: createInput(null), audio: { play() {}, resume() {} },
+    events: (e) => ereignisse.push(e.type),
+  });
+  game.reset('schwarz');
+  game.stimmblaetter = 2;                     // zwei Blätter, das dritte liegt noch da
+  const blatt = game.entities.find((en) => en.kind === 'item' && en.item === 'stimmblatt' && en.alive);
+  place(game, blatt.x, blatt.y - 4);
+  step(game, 0.2);
+  check('Akt 1: das dritte Stimmblatt ergibt die Mappe',
+    game.hasMappe === true && game.stimmblaetter === 3, `Blätter=${game.stimmblaetter}`);
+  check('Akt 1: die Mappe wird dem Spielstand gemeldet',
+    ereignisse.includes('mappe'), ereignisse.join(',') || '(keine)');
 }
 
 // ================================================= INTERLUDIUM — CABRIO ======
@@ -1238,6 +1306,22 @@ function place(game, px, py) {
   check('Akt 4: fuenf Bierdeckel', lv.deckelTotal === 5, String(lv.deckelTotal));
   check('Akt 4: zwei Versenkungen, ein Souffleurkasten',
     lv.elevators.length === 2 && lv.spooks.length === 1);
+  check('Akt 4: kein Patrouillengang führt über die Versenkung', (() => {
+    // Playtest-Befund: der Tenor lief genau über den Schacht, in dem man auf die
+    // Mitfahrt wartet — mit drei Nerven war der Aufstieg damit Glückssache. Wer
+    // dort steht, darf von keiner Patrouille berührt werden können.
+    const lv = buildAkt4();
+    const luecken = [];
+    for (const en of lv.spawns.filter((s) => s.patrol)) {
+      for (const el of lv.elevators) {
+        const a1 = en.patrol[0], a2 = en.patrol[1];
+        const b1 = el.tx, b2 = el.tx + el.w - 1;
+        if (a1 <= b2 && b1 <= a2) luecken.push(`${en.kind} ${a1}..${a2} ∩ Versenkung ${b1}..${b2}`);
+      }
+    }
+    return luecken.length === 0 || luecken.join(' | ');
+  })());
+
   check('Akt 4: Auftritt nur im Frack', lv.goal.need === 'frack');
   check('Akt 4: Pultlampen als Lichtquellen', lv.gleams.length >= 10, String(lv.gleams.length));
 
@@ -1498,6 +1582,23 @@ function place(game, px, py) {
   check('Akt 5: Frack ablegen ist sichtbar (Hemd statt Frack)',
     gF.frackAbgelegt === true && gF.outfit.id === 'schwarz', gF.outfit.id);
   check('Akt 5: Frack ablegen geht nur einmal', gF.frackAblegen() === false);
+
+  // Im schwarzen Hemd gibt es nichts abzulegen: der Vorhang bleibt zu und sagt,
+  // was fehlt (Review-Befund zu frackAblegen ohne Outfit-Prüfung).
+  const gH = mk5();
+  check('Akt 5: ohne Frack wird nichts abgelegt', gH.frackAblegen() === false && gH.frackAbgelegt === false);
+  gH.applaus = 70;
+  gH.player.x = gH.level.goal.x;
+  gH.player.y = gH.level.goal.y + gH.level.goal.h - PHYS.playerH;
+  gH.update(1 / 60);
+  gH.input.setKey('action', true);
+  gH.update(1 / 60);
+  gH.input.setKey('action', false);
+  gH.update(1 / 60);
+  check('Akt 5: E am Vorhang im Hemd schließt nichts ab',
+    gH.state === 'play' && gH.frackAbgelegt === false, `state=${gH.state}`);
+  check('Akt 5: der Vorhang sagt, was fehlt',
+    !!gH.hud.hint && gH.hud.hint.includes('FRACK'), `hint=${gH.hud.hint}`);
 
   // Durchspiel-Route
   const iR = createInput(null);

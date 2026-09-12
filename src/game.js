@@ -646,7 +646,12 @@ export class Game {
         if (!en.alive || en.stun > 0) continue;
         const ccx = en.x + en.w / 2, ccy = en.y + 6;
         const ddx = (p.x + p.w / 2) - ccx;
-        if (Math.abs(ddx) > this.vw * 0.9) { en.aim = 0; continue; }
+        // Im Dunkeln (Orchestergraben) wirft er nicht ins Schwarze: dort gilt wie
+        // beim Piccolo „was man nicht sieht, trifft nicht“. Ohne diese Grenze liegt
+        // der Versenkungsschacht in seiner Wurfweite (0,9 × Bildbreite), und das
+        // Warten auf die Mitfahrt wird zur Glückssache — Playtest-Befund.
+        const wurfWeite = this.vw * 0.9 * (this.level.dark ? 0.4 : 1);
+        if (Math.abs(ddx) > wurfWeite) { en.aim = 0; continue; }
         if ((this.beats + 1) % this.diff.dirigentEvery === 0) { en.aim = this.diff.aimTime; continue; }
         if (this.beats % this.diff.dirigentEvery !== 0) continue;
         en.aim = 0;
@@ -734,6 +739,9 @@ export class Game {
   /** Der Vorhang: den Frack wirklich ablegen. Danach trägt er das Hemd. */
   frackAblegen() {
     if (this.frackAbgelegt) return false;
+    // Abgelegt wird nur, was getragen wird: der Vorhang öffnet nicht im
+    // schwarzen Hemd (Akt 5 verlangt den Auftritt im Frack).
+    if (this.outfit.id !== 'frack') return false;
     this.frackAbgelegt = true;
     this.heat = 0;
     this.glanz = 0;
@@ -1052,8 +1060,11 @@ export class Game {
       const aktionsZiel = goal.need === 'ablegen' || goal.need === 'setzen';
       if (aktionsZiel && this.wantInteract) {
         this.wantInteract = false;
-        if (goal.need === 'ablegen') this.frackAblegen();
-        else if (goal.need === 'setzen') this.setzen = true;
+        if (goal.need === 'ablegen') {
+          if (!this.frackAblegen()) {
+            this.message('OHNE FRACK GIBT ES NICHTS ABZULEGEN. AM KLEIDERSTÄNDER ANZIEHEN (E).', 5, 2);
+          }
+        } else if (goal.need === 'setzen') this.setzen = true;
       }
       const erfuellt = this.goalErfuellt();
       if (erfuellt) this.complete();
@@ -1236,6 +1247,7 @@ export class Game {
         const noetig = this.stimmblaetterNoetig || 3;
         if (this.stimmblaetter >= noetig) {
           this.hasMappe = true;
+          this.events({ type: 'mappe' });   // main.js legt sie in den Spielstand
           this.message('DIE NOTENMAPPE IST VOLLSTÄNDIG. JETZT ZUM AUFZUG.', 5.5, 2);
         } else {
           this.message(`STIMMBLATT ${this.stimmblaetter}/${noetig} — DIE MAPPE FÜLLT SICH`, 4.5, 2);

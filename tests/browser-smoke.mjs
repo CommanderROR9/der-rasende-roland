@@ -3,7 +3,7 @@
 // Laden, Start, Umziehen, Tastatur, Rendering und Fehlerfreiheit und legt einen
 // Screenshot ab. Aufruf: node tests/browser-smoke.mjs [url]
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -437,6 +437,30 @@ try {
     sichtbar: !document.getElementById('actRow').classList.contains('hidden'),
     knoepfe: [...document.querySelectorAll('#actRow button')].map((b) => b.textContent.trim())
   })`));
+  // Die Mappe aus Akt 1 landet im Spielstand (Review-Befund: sonst wäre der
+  // Abgabe-Schritt in Akt 2 im echten Spiel nie erreichbar).
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 1 }))");
+  await evaluate('window.__roland.loadAct(0)');
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(600);
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    g.stimmblaetter = 2;
+    const b = g.entities.find((en) => en.kind === 'item' && en.item === 'stimmblatt' && en.alive);
+    g.player.x = b.x; g.player.y = b.y - 4;
+    g.player.vx = 0; g.player.vy = 0;
+    return 1;
+  })()`);
+  await sleep(600);
+  const mappeStand = JSON.parse(await evaluate(`JSON.stringify({
+    getragen: window.__roland.game.hasMappe,
+    imStand: JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').mappe,
+  })`));
+  check('Akt 1: das dritte Stimmblatt landet im Spielstand',
+    mappeStand.getragen === true && mappeStand.imStand === true, JSON.stringify(mappeStand));
+
   check('Stationswahl listet alle Stationen',
     wahl.sichtbar && wahl.knoepfe.length >= 8 && wahl.knoepfe.some((k) => k.includes('CABRIO')),
     JSON.stringify(wahl.knoepfe));
@@ -601,6 +625,41 @@ try {
   check('keine Fehler in Akt 2',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]',
     await evaluate('JSON.stringify(window.__errors)'));
+
+  // Mit Mappe aus Akt 1: erst ablegen, dann zählen die Takte. Der Abschnitt steht
+  // bewusst nach der Taktwechsel-Prüfung: er setzt den Spieler ans Pult, und die
+  // Weghinweise, die dabei aufgestaut werden, würden deren Ansage verdrängen.
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 1, mappe: true }))");
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(1600);
+  await evaluate('window.__roland.loadAct(1)');
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(800);
+  const vorAbgabe = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const p = g.entities.find((en) => en.kind === 'pult');
+    g.player.x = p.x + 4; g.player.y = p.y + p.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    return JSON.stringify({ mappe: g.hasMappe, ziel: g.hud.ziel, teil: p.teil });
+  })()`));
+  check('Akt 2: die Mappe aus Akt 1 kommt mit', vorAbgabe.mappe === true, JSON.stringify(vorAbgabe));
+  check('Akt 2: die Aufgabe nennt die Abgabe',
+    (vorAbgabe.ziel || '').includes('MAPPE'), vorAbgabe.ziel);
+  await sleep(1200);                       // Kamera nachziehen lassen
+  await key('KeyE', 'keyDown');
+  await sleep(60);
+  await key('KeyE', 'keyUp');
+  await sleep(160);
+  const nachAbgabe = JSON.parse(await evaluate(`JSON.stringify({
+    abgegeben: window.__roland.game.mappeAbgegeben,
+    mappe: window.__roland.game.hasMappe,
+    teil: window.__roland.game.entities.find((e) => e.kind === 'pult').teil,
+  })`));
+  check('Akt 2: die Mappe liegt auf dem Pult und kostet keinen Takt',
+    nachAbgabe.abgegeben === true && nachAbgabe.mappe === false && nachAbgabe.teil === 0,
+    JSON.stringify(nachAbgabe));
 
   await evaluate("window.__roland.loadAct(0)");
 
@@ -1023,6 +1082,10 @@ try {
 } finally {
   try { ws.close(); } catch { /* egal */ }
   chrome.kill('SIGKILL');
+  // Profil wieder wegräumen: jeder Lauf legt ~120 MB in /tmp ab. Ohne diese
+  // Zeile ist das tmpfs nach genügend Läufen voll und Chromium startet gar
+  // nicht mehr — dann schlägt jede Browserprüfung mit irreführendem Timeout fehl.
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* egal */ }
 }
 
 console.log(results.join('\n'));

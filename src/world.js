@@ -285,7 +285,7 @@ export function buildAkt2() {
   tip(25, 'ZWEI WEGE: UNTEN ZWISCHEN DEN STÜHLEN ODER OBEN ÜBER DIE PULTE');
   tip(40, 'DER DIRIGENT WIRFT IM BOGEN — DUCK ODER SEITWÄRTS WEG');
   tip(50, 'IM TAKT GETROFFEN VERLIERT ER DEN TAKTSTOCK');
-  tip(54, 'DIRIGENTENPULT: MAPPE ABLEGEN, DANN DREI TAKTE EINSATZ GEBEN (E IM TAKT)');
+  tip(54, 'DIRIGENTENPULT: DREI TAKTE EINSATZ IM TAKT (E) — MIT MAPPE ERST ABLEGEN');
   tip(78, 'BÜHNE. VON HIER GEHT ES ÜBER DIE BELEUCHTUNGSBRÜCKE ZURÜCK');
   tip(100, 'HINTERBÜHNE. ZUM AUFTRITT NUR IM FRACK — AB HIER WIRD ES WARM');
   tip(119, 'BÜHNENEINGANG. ERST NACH DEM EINSATZ AM PULT — ENDE AKT 2');
@@ -594,12 +594,12 @@ export function buildAkt4() {
   gleam(45, 22, 3);
   e('item', 68, 25, { item: 'brezel' });   // zweite Staerkung nach dem Kasten
   alcove(54, 24);             // Deckung vor dem Sopran
-  e('sopran', 70, 25, { dir: -1 });   // Abstand zur Versenkung: beim Warten nicht beschossen werden
+  e('sopran', 78, 25, { dir: -1 });   // außerhalb der Schreiweite (0,48–0,6 × Bildbreite) vom Versenkungsschacht
   alcove(47, 24);
   gleam(52, 23, 3.5);
   e('item', 57, 21, { item: 'bierdeckel' });
   lamp(58, 18);
-  e('tenor', 62, 25, { patrol: [58, 67], dir: -1 });
+  e('tenor', 52, 25, { patrol: [50, 56], dir: -1 });   // links der Versenkung: beim Warten auf die Mitfahrt nicht im Weg
   gleam(62, 23, 3.5);
   e('dirigent', 74, 23, { dir: -1 });
   lamp(74, 20);
@@ -819,7 +819,7 @@ export function buildAkt5() {
   const goal = {
     x: 112 * TILE, y: 19 * TILE, w: TILE, h: 3 * TILE,
     name: 'VORHANG', need: 'ablegen', applaus: 60,
-    locked: 'ZU WENIG APPLAUS. UND DER FRACK IST NOCH AN.',
+    locked: 'ZU WENIG APPLAUS. UND OHNE FRACK FÄLLT HIER NICHTS.',
   };
 
   const takts = [

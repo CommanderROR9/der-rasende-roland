@@ -1,0 +1,3 @@
+# Testartefakte: Screenshots und Logs aus den Suiten sind Beiprodukte. Sie sollen
+# nach der Sitzung auffindbar bleiben, aber keinen Checkout schmutzig machen.
+.artifacts/

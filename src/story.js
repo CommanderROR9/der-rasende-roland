@@ -35,7 +35,7 @@ export const STATIONEN = [
   },
   {
     id: 'akt3', name: 'AKT 3 — OPEN AIR', mode: 'sidescroller',
-    ziel: 'DIE ZWEI PULTE SICHERN, BEVOR DER NÄCHSTE EINSATZ KOMMT',
+    ziel: 'ÜBER BÜHNE UND GERÜST BIS ZUM PODIUM — ZUM AUFTRITT NUR IM FRACK',
   },
   {
     id: 'akt4', name: 'AKT 4 — DER ORCHESTERGRABEN', mode: 'sidescroller',

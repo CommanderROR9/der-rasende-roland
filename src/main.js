@@ -168,6 +168,10 @@ function newGame(outfitId) {
     racer = null;
     game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game.reset(outfitId);
+    // Die Notenmappe reist mit: in Akt 1 zusammengesetzt, in Akt 2 aufs Pult
+    // gelegt (DRR-04). Ohne diesen Griff in den Spielstand wäre der Schritt
+    // „Mappe abgeben“ toter Code — getragen wird sie nur innerhalb eines Akts.
+    if (LEVEL.id === 'akt2' && loadSave().mappe) game.hasMappe = true;
     // Wer einen Akt geschafft hat, geht mit einem Nerv mehr in den nächsten.
     if (aktIndex > 0) { game.maxNerves = 4; game.nerves = 4; game.hud = game.buildHud(); }
   }
@@ -179,6 +183,7 @@ function newGame(outfitId) {
 function onGameEvent(e) {
   if (e.type === 'stand') renderGarde('wechseln');
   else if (e.type === 'grill') startGrill();
+  else if (e.type === 'mappe') writeSave({ mappe: true });   // reist in Akt 2 mit
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
     const s = e.stats || {};
