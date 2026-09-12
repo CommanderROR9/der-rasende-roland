@@ -1140,6 +1140,10 @@ function place(game, px, py) {
   const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {}, view: VIEW_DESKTOP });
   game.reset('schwarz');
   game.maxNerves = 99; game.nerves = 99;
+  // Ruhiges Wetter: die Route prüft die Geometrie, nicht die zufälligen Windböen.
+  // Eine Böe (Zufall, Vorwarnung 0,9 s) schiebt den Bot sonst mitten im letzten
+  // Sprung vom Podium — der Test wäre dann je nach Laufzeit mal rot, mal grün.
+  game.wetterIdx = 0; game.wetterTimer = 9999; game.wetterKind = 'sonne';
   const route = [
     { wp: [10, 25] }, { wp: [40, 25] }, { wp: [58, 25] },
     { wp: [66, 24] }, { wp: [69, 23] }, { wp: [72, 22] }, { wp: [75, 21] },
