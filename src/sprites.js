@@ -640,6 +640,42 @@ export const SPRITES = {
     'LL            LL',
   ],
 
+  // Der Kleiderschrank im Kleingarten (Epilog). Bewusst anders als der Schrank
+  // der Laube: Metallblende, helle Türen, und aus dem Türspalt hängt das
+  // Hawaii-Hemd (türkis mit orangem Saum) — man sieht von weitem, wofür er da ist.
+  kleiderschrank: [
+    'LLLLLLLLLLLLLLLL',
+    'LggggggggggggggL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMdccdMMMMdL',
+    'LdMMMMdccdMMMMdL',
+    'LdMMMMdccdMMMMdL',
+    'LdMMMMdccdMMMMdL',
+    'LdMMMMdoodMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMy..yMMMMdL',
+    'LdMMMMy..yMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LdMMMMd..dMMMMdL',
+    'LMMMMMMMMMMMMMML',
+    'LL            LL',
+  ],
+
   // Anna ist die Konzertmeisterin. Türkise Strickjacke, dunkler Bob und
   // die goldene Stimmgabel unterscheiden sie auch bei 1x-Pixelauflösung.
   // Der Sprite-Schlüssel 'ada' bleibt aus Kompatibilitätsgründen stabil.

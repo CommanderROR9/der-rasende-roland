@@ -210,6 +210,10 @@ export function buildEpilog() {
   e('item', 88, 25, { item: 'bierdeckel' });
   e('item', 102, 22, { item: 'bierdeckel' });
   e('stand', 20, 25);
+  // Der Kleiderschrank: der Garten-Interaktionspunkt für Zivil. Steht frei auf
+  // der Wiese, damit er nicht mit dem Schrank der Laube (dort hängt der Frack)
+  // verwechselt wird.
+  e('garderobe', 36, 25);
 
   const goal = {
     x: 73 * TILE, y: 23 * TILE, w: TILE * 6, h: TILE * 2,
@@ -219,6 +223,7 @@ export function buildEpilog() {
 
   const tip = (tileX, text) => hints.push({ x: tileX * TILE, text, shown: false });
   tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEINE HITZE, KEIN WEG MEHR NÖTIG');
+  tip(33, 'DER KLEIDERSCHRANK: HIER ZIEHST DU ZIVIL AN — SHORTS UND HAWAII-HEMD (E)');
   tip(46, 'DER GRILL: BRATWÜRSTE WENDEN. ES GEHT AUCH OHNE TAKT');
   tip(56, 'RAMONA WARTET SCHON. SIE HAT DAS BESSERE MESSER');
   tip(78, 'DIE BANK UNTER DER LAUBE. UND EIN BIER STEHT SCHON DA');
