@@ -1,4 +1,4 @@
-// act1.js — Musterstrecke: fünf lesbare Räume, zwei Ada-Begegnungen,
+// act1.js — Musterstrecke: fünf lesbare Räume, zwei Anna-Begegnungen,
 // drei Stimmen und eine vollständig umkehrbare Route.
 import { TILE } from './config.js';
 
@@ -62,7 +62,7 @@ export function buildAkt1() {
 
   e('spawn', 3, 25, { isSpawn: true });
   e('npc', 8, 25, {
-    npc: 'ada', spr: 'ada', name: 'ADA', flag: 'ada_beauftragt',
+    npc: 'ada', spr: 'ada', name: 'ANNA', flag: 'ada_beauftragt',
     dialog: [
       'ROLAND! DIE ZUGABE HAT SICH IM KELLER VERTEILT.',
       'DREI STIMMEN. BRING SIE ZUSAMMEN, DANN FÄHRT DER AUFZUG.',
@@ -73,12 +73,12 @@ export function buildAkt1() {
   e('stand', 13, 25);
   e('item', 5, 25, { item: 'bierdeckel' });
   // Freundliche narrative Schranke: Nicht die Figur selbst blockiert, sondern
-  // die Brandschutztür am Ende der Garderobe. Adas Auftrag entriegelt sie.
+  // die Brandschutztür am Ende der Garderobe. Annas Auftrag entriegelt sie.
   rect(17, 20, 1, 5);
   gates.push({
     tx: 17, ty: 20, tw: 1, th: 5, flag: 'ada_beauftragt', open: false,
-    locked: 'ERST MIT ADA SPRECHEN. SIE HAT DEN SCHLÜSSEL ZUM STIMMENGANG.',
-    opened: 'ADA ÖFFNET DIE TÜR ZUM STIMMENGANG.',
+    locked: 'ERST MIT ANNA SPRECHEN. SIE HAT DEN SCHLÜSSEL ZUM STIMMENGANG.',
+    opened: 'ANNA ÖFFNET DIE TÜR ZUM STIMMENGANG.',
   });
   decor('spinde', 1, 25);
   decor('geigenkasten', 14, 25);
@@ -144,9 +144,9 @@ export function buildAkt1() {
   decor('gegengewicht', 112, 19, { alpha: 0.62 });
   lamp(121, 12);
   e('npc', 124, 13, {
-    npc: 'ada', spr: 'ada', name: 'ADA', flag: 'ada_verabschiedet',
+    npc: 'ada', spr: 'ada', name: 'ANNA', flag: 'ada_verabschiedet',
     requires: ['ada_beauftragt', 'mappe'],
-    blocked: 'ADA: „ERST DIE DREI STIMMEN. KEINE ZUGABE MIT LÜCKEN.“',
+    blocked: 'ANNA: „ERST DIE DREI STIMMEN. KEINE ZUGABE MIT LÜCKEN.“',
     dialog: [
       'VOLLSTÄNDIG. NACH EINUNDVIERZIG JAHREN FINDEST DU JEDE STIMME.',
       'NIMM DIE MAPPE MIT NACH OBEN. HEUTE SPIELST DU NICHT ALLEIN.',
@@ -157,12 +157,12 @@ export function buildAkt1() {
   const goal = {
     x: 130 * TILE, y: 10 * TILE, w: TILE, h: 3 * TILE,
     name: 'MATERIALAUFZUG', need: 'mappe', flags: ['ada_verabschiedet'],
-    flagLocked: 'ERST MIT ADA SPRECHEN',
-    locked: 'ADA WARTET NEBEN DEM AUFZUG. ERST DIE MAPPE, DANN DER ABSCHIED.',
+    flagLocked: 'ERST MIT ANNA SPRECHEN',
+    locked: 'ANNA WARTET NEBEN DEM AUFZUG. ERST DIE MAPPE, DANN DER ABSCHIED.',
   };
 
   tip(1, 'A/D ODER PFEILTASTEN GEHEN · SPACE SPRINGEN · E AKTION · P PAUSE');
-  tip(7, 'ADA: DAVORSTELLEN UND E DRÜCKEN — NOCHMAL E FÜR DIE NÄCHSTE ZEILE');
+  tip(7, 'ANNA: DAVORSTELLEN UND E DRÜCKEN — NOCHMAL E FÜR DIE NÄCHSTE ZEILE');
   tip(14, 'KLEIDERSTÄNDER: JEDE KLUFT ÖFFNET ANDERE WEGE');
   tip(26, 'STIMMENGANG — DER PULS UNTEN ZEIGT DEN TAKT');
   tip(41, 'PICCOLO: SCHALLWELLE ÜBERSPRINGEN ODER IM TAKT MIT E STOPPEN');
@@ -172,7 +172,7 @@ export function buildAkt1() {
   tip(91, 'DIE DIENSTTÜR BLEIBT OFFEN — SCHWARZ IST AUF DEN REGALEN SCHNELLER UND KÜHLER');
   tip(107, 'DIE DRITTE STIMME MACHT DIE MAPPE VOLLSTÄNDIG');
   tip(110, 'OBERMASCHINERIE: NUR DER FRACK ÖFFNET DAS ABSPERRBAND');
-  tip(123, 'ADA WARTET AM AUFZUG — EIN LETZTER SATZ VOR DER PROBE');
+  tip(123, 'ANNA WARTET AM AUFZUG — EIN LETZTER SATZ VOR DER PROBE');
 
   return {
     id: 'akt1', name: 'AKT 1 — DIE KATAKOMBEN', setting: 'keller',
@@ -180,9 +180,9 @@ export function buildAkt1() {
     w: W, h: H, grid, spawns, gates, lights, alcoves, hints, goal,
     stimmblaetterNoetig: 3,
     storySteps: [
-      { id: 'briefing', text: 'MIT ADA IN DER GARDEROBE SPRECHEN', flag: 'ada_beauftragt' },
+      { id: 'briefing', text: 'MIT ANNA IN DER GARDEROBE SPRECHEN', flag: 'ada_beauftragt' },
       { id: 'stimmen', text: 'DIE DREI STIMMBLÄTTER FINDEN', counter: 'stimmblaetter', atLeast: 3 },
-      { id: 'payoff', text: 'ADA AM MATERIALAUFZUG TREFFEN', flag: 'ada_verabschiedet' },
+      { id: 'payoff', text: 'ANNA AM MATERIALAUFZUG TREFFEN', flag: 'ada_verabschiedet' },
       { id: 'aufzug', text: 'MIT DER VOLLSTÄNDIGEN MAPPE IN DEN AUFZUG', goal: true },
     ],
     route: {
