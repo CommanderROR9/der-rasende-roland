@@ -17,7 +17,7 @@ const game = new Game({
 game.reset('schwarz');
 
 const route = [
-  { talk: 'openair_beauftragt' }, { wp: [23, 25] },
+  { wp: [12, 25] }, { talk: 'openair_beauftragt' }, { wp: [23, 25] },
   { wp: [28, 25] }, { wp: [38, 25] }, { wp: [47, 25] }, { wp: [52, 25] },
   { wp: [60, 25] },
   { wp: [66, 24] }, { wp: [69, 23] }, { wp: [72, 22] }, { wp: [75, 21] },
@@ -26,6 +26,7 @@ const route = [
   { wp: [85, 19] }, { wp: [89, 17] }, { wp: [85, 15] }, { wp: [89, 13] },
   { wp: [80, 11] }, { wp: [91, 11] },
   { outfit: 'frack' },
+  { wp: [95, 11] },
   { talk: 'openair_abgenommen' }, { wp: [96, 11] },
 ];
 

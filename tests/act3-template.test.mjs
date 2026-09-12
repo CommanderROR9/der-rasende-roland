@@ -223,24 +223,36 @@ check('the return stair stays within jump height',
   stair.length >= 3 && stair.every((p, i) => i === 0 || Math.abs(p.row - stair[i - 1].row) <= 2),
   JSON.stringify(stair));
 
-// At the final Rolf, the dialogue is the actionable target even though the goal
-// is already within label range.
+// Am Podium wartet Rolf unmittelbar neben dem Ziel; dort bleibt das Gespraech
+// die ausfuehrbare Aktion (dieselbe Regel wie bei Anna in Akt 1/2, siehe
+// Pruefung darueber — in Akt 3 stehen sich beide bewusst gegenueber). Das
+// gesperrte Ziel meldet sich beim Betreten selbst und benennt die fehlenden
+// Pulte.
 {
   const { game: finale } = makeGame();
   const rolf = finale.entities.find((e) => e.kind === 'npc' && e.flag === 'openair_abgenommen');
   finale.storyFlags.add('openair_beauftragt');
-  finale.storyFlags.add('pult_west_gesichert');
-  finale.storyFlags.add('pult_ost_gesichert');
-  finale.player.x = rolf.x + 26;
+  finale.storyFlags.add('pult_ost_gesichert');          // ein Pult fehlt bewusst
+  finale.player.x = rolf.x - 18;   // neben Rolf — das Ziel bleibt in Reichweite
   finale.player.y = rolf.y + rolf.h - PHYS.playerH;
   finale.update(1 / 60);
   check('Rolf interaction label wins over the nearby goal',
     finale.hud.label?.action === true && finale.hud.label.text.includes('ROLF'), JSON.stringify(finale.hud.label));
+  finale.hint = null;
+  finale.hintQueue = [];
   finale.player.x = finale.level.goal.x;
   finale.player.y = finale.level.goal.y + finale.level.goal.h - PHYS.playerH;
+  finale.player.vx = 0;
+  finale.player.vy = 0;
   finale.update(1 / 60);
-  check('goal label names the missing pulte when only one flag is missing',
-    finale.hud.label?.text.includes('PULTE'), JSON.stringify(finale.hud.label));
+  // Der Bierdeckel auf dem Podium meldet sich zuerst; die Sperre darf deshalb
+  // auch in der Warteschlange stehen — sie muss nur angekommen sein.
+  const wartend = (finale.hintQueue || []).map((q) => q.text);
+  const meldungen = [finale.hud.hint || '', ...wartend];
+  check('the locked podium names the missing pulte on contact',
+    finale.state === 'play' && meldungen.some((text) => /PULTE/.test(text))
+    && (finale.hud.label?.text || '').includes('ROLF'),
+    JSON.stringify({ state: finale.state, hint: finale.hud.hint, queue: wartend, label: finale.hud.label }));
 }
 
 console.log(results.join('\n'));

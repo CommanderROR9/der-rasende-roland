@@ -1292,18 +1292,53 @@ function place(game, px, py) {
   // Sprung vom Podium — der Test wäre dann je nach Laufzeit mal rot, mal grün.
   game.wetterIdx = 0; game.wetterTimer = 9999; game.wetterKind = 'sonne';
   const route = [
-    { wp: [10, 25] }, { wp: [40, 25] }, { wp: [58, 25] },
+    // Zuerst Rolfs Auftrag: ohne ihn haelt das Absperrband den Weg zur Wiese zu.
+    { wp: [12, 25] }, { talk: 'openair_beauftragt' },
+    { wp: [40, 25] }, { wp: [58, 25] },
     { wp: [66, 24] }, { wp: [69, 23] }, { wp: [72, 22] }, { wp: [75, 21] },
-    { wp: [80, 21] },
+    { wp: [79, 21] }, { secure: 'pult_west_gesichert' },
+    { wp: [89, 21] }, { secure: 'pult_ost_gesichert' },
     { wp: [85, 19] }, { wp: [89, 17] }, { wp: [85, 15] }, { wp: [89, 13] },
     { wp: [80, 11] }, { wp: [91, 11] },
     { outfit: 'frack' },
+    { wp: [95, 11] }, { talk: 'openair_abgenommen' },
     { wp: [96, 11] },
   ];
   const failures = [];
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    if (stepItem.talk) {
+      // Datengetriebenes Gespraech: die Zeilen werden ueber echte
+      // Aktionstasten-Anschlaege geblaettert (wie beim Browserlauf).
+      const npc = game.entities.find((en) => en.kind === 'npc' && en.flag === stepItem.talk);
+      for (let i = 0; i < npc.dialog.length; i++) {
+        input.setKey('action', true); game.update(1 / 60);
+        input.setKey('action', false); game.update(1 / 60);
+      }
+      continue;
+    }
+    if (stepItem.secure) {
+      // Im Takt sichern: zwei saubere Klammern pro Pult, ein Daneben kostet
+      // nichts. Der Bot laeuft dem Pult nach (Gegentreffer schieben ihn weg);
+      // faellt er von der Buehne, holt ihn der eigene Speicherpunkt zurueck.
+      const pult = game.entities.find((en) => en.kind === 'pult' && en.flag === stepItem.secure);
+      for (let i = 0; i < 30 * 60 && !game.storyFlags.has(stepItem.secure); i++) {
+        const p = game.player;
+        if (p.y + p.h > 24 * TILE) { game.respawnFromCheckpoint(); continue; }
+        const d = (pult.x + 8) - (p.x + p.w / 2);
+        input.setKey('right', d > 2);
+        input.setKey('left', d < -2);
+        game.beatPhase = 0.02;
+        input.setKey('action', !!pult.near && i % 2 === 0);
+        game.update(1 / 60);
+        if (game.state === 'paused') game.resume();
+        if (game.state === 'collapse') game.respawnFromCheckpoint();
+      }
+      input.setKey('left', false); input.setKey('right', false); input.setKey('action', false);
+      if (!game.storyFlags.has(stepItem.secure)) failures.push(`Pult ${stepItem.secure}`);
+      continue;
+    }
     const [wx, row] = stepItem.wp;
     const tx = wx * TILE + 8;
     const feetY = row * TILE;
@@ -1341,7 +1376,10 @@ function place(game, px, py) {
   }
   check('Akt 3: Bot läuft Treppe, Gerüst und Brücke', failures.length === 0, failures.join(' | '));
   check('Akt 3: Route endet am Podium', game.state === 'complete', `state=${game.state}`);
-  check('Akt 3: Frack öffnet den Auftritt', game.gates[0].open === true);
+  check('Akt 3: Rolfs Auftrag oeffnet das Absperrband', game.gates[0].open === true
+    && game.storyFlags.has('openair_beauftragt'));
+  check('Akt 3: Frack oeffnet den Auftritt am Podium', game.gates[1].open === true
+    && game.gates[1].need === 'frack');
   check('Akt 3: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
 }
 
