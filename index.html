@@ -92,6 +92,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 .pick .pro{display:block;color:var(--cyan);font-size:10px}
 .pick .con{display:block;color:#e08a7a;font-size:10px}
 .rewardIcon{float:right;margin:-4px 0 6px 10px;image-rendering:pixelated}
+/* Abspann: das Bild wird in Spielauflösung gezeichnet und nur skaliert */
+#abspannCanvas{display:block;width:100%;height:auto;image-rendering:pixelated;image-rendering:crisp-edges;
+  background:#0b0810;border:1px solid rgba(58,58,74,.9)}
 .stat{display:flex;justify-content:space-between;border-bottom:1px solid #2a2340;padding:4px 0;font-size:11px;color:#c6bfd8}
 .stat b{color:var(--ink)}
 .rotate{position:absolute;z-index:11;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));
@@ -162,6 +165,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
         <b>P / ESC</b><span>Pause</span>
       </div>
       <button id="startBtn">START&nbsp;→</button>
+      <button id="abspannTitleBtn" class="ghost hidden" type="button">ABSPANN</button>
       <button id="soundBtn" class="ghost" type="button">TON: AN</button>
       <div id="actRow" class="actrow hidden"></div>
       <button id="diffBtn" class="ghost" type="button">SCHWIERIGKEIT: GEMÜTLICH</button>
@@ -214,7 +218,17 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       <p id="rewardNote" style="color:#9b93b0"></p>
       <div id="rewardBody"></div>
       <button id="rewardBtn">NOCHMAL&nbsp;→</button>
+      <button id="abspannBtn" class="ghost hidden" type="button">ABSPANN&nbsp;→</button>
       <button id="rewardQuit" class="ghost" type="button">Zum Titel</button>
+    </div>
+  </section>
+
+  <!-- Abspann: neun Portraits mit Vornamen, danach die Widmung -->
+  <section class="panel hidden" id="abspann">
+    <div class="card">
+      <canvas id="abspannCanvas" width="384" height="216" aria-label="Abspann"></canvas>
+      <button id="abspannWeiter">WEITER&nbsp;→</button>
+      <button id="abspannZurueck" class="ghost" type="button">ZURÜCK ZUM ERGEBNIS</button>
     </div>
   </section>
 </div>

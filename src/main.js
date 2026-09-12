@@ -10,6 +10,10 @@ import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.j
 import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
+import {
+  ABSPANN_SEITEN, ABSPANN_WEITER, ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL,
+  abspannLayout, zeichneAbspann,
+} from './credits.js';
 
 const $ = (s) => document.querySelector(s);
 const ui = {
@@ -24,6 +28,9 @@ const ui = {
   collapse: $('#collapse'), collapseBtn: $('#collapseBtn'),
   reward: $('#reward'), rewardBody: $('#rewardBody'), rewardBtn: $('#rewardBtn'), rewardQuit: $('#rewardQuit'),
   rewardEyebrow: $('#rewardEyebrow'), rewardTitle: $('#rewardTitle'), rewardText: $('#rewardText'), rewardNote: $('#rewardNote'),
+  abspannBtn: $('#abspannBtn'), abspannTitleBtn: $('#abspannTitleBtn'),
+  abspann: $('#abspann'), abspannCanvas: $('#abspannCanvas'),
+  abspannWeiter: $('#abspannWeiter'), abspannZurueck: $('#abspannZurueck'),
   actRow: $('#actRow'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
   walkReadout: $('#walkReadout'), racerReadout: $('#racerReadout'),
@@ -76,6 +83,8 @@ function updateActLabels() {
     ? 'Das war das Ende der Reise. Danke fürs Spielen — und viel Spaß im Ruhestand.'
     : `Weiter mit ${LEVELS[aktIndex + 1].name}.`;
   ui.rewardBtn.textContent = istLetzterAkt() ? 'NOCHMAL \u2192' : 'WEITER \u2192';
+  // Der Abspann ist die Belohnung nach dem Epilog — vorher bleibt er verborgen.
+  aktualisiereAbspannZugang();
 }
 let game = null;      // Seitenscroller-Simulation
 let racer = null;     // Fahr-Interludium
@@ -115,12 +124,59 @@ function writeSave(patch) {
 }
 
 // ---------------------------------------------------------------- Overlays --
-const OVERLAYS = ['title', 'garde', 'pause', 'collapse', 'reward'];
+const OVERLAYS = ['title', 'garde', 'pause', 'collapse', 'reward', 'abspann'];
 function show(name) {
   for (const o of OVERLAYS) ui[o].classList.toggle('hidden', o !== name);
   if (!name) for (const o of OVERLAYS) ui[o].classList.add('hidden');
 }
 function hideAll() { for (const o of OVERLAYS) ui[o].classList.add('hidden'); }
+
+// ----------------------------------------------------------------- Abspann --
+// Der Abspann ist eine Belohnung, kein Pflichtbildschirm: er öffnet sich nur,
+// wenn jemand ihn sehen will, und lässt sich jederzeit wieder verlassen. Das
+// Bild entsteht in Spielauflösung (384 × 216 bzw. 256 × 144) und wird nur
+// skaliert — dieselben zwei Ansichten wie das Spiel selbst.
+let abspannSeite = 0;
+let abspannHerkunft = 'reward';    // wohin der Rückweg führt: 'reward' oder 'title'
+
+/** Zeichnet die aktuelle Abspannseite; @returns das Layout mit `gezeichnet`. */
+function abspannZeichnen() {
+  if (!ui.abspannCanvas) return null;
+  if (ui.abspannCanvas.width !== VIEW.w || ui.abspannCanvas.height !== VIEW.h) {
+    ui.abspannCanvas.width = VIEW.w;
+    ui.abspannCanvas.height = VIEW.h;
+  }
+  const g = ui.abspannCanvas.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  return zeichneAbspann(g, VIEW, { seite: abspannSeite });
+}
+/** Abspann öffnen. `herkunft` bestimmt nur die Beschriftung des Rückwegs. */
+function abspannZeigen(herkunft = 'reward', seite = 0) {
+  abspannHerkunft = herkunft === 'title' ? 'title' : 'reward';
+  abspannSeite = Math.max(0, Math.min(ABSPANN_SEITEN - 1, seite));
+  if (ui.abspannZurueck) {
+    ui.abspannZurueck.textContent = abspannHerkunft === 'title' ? ABSPANN_ZURUECK_TITEL : ABSPANN_ZURUECK;
+  }
+  if (ui.abspannWeiter) ui.abspannWeiter.textContent = ABSPANN_WEITER;
+  show('abspann');
+  return abspannZeichnen();
+}
+function abspannWeiter() {
+  abspannSeite = (abspannSeite + 1) % ABSPANN_SEITEN;
+  return abspannZeichnen();
+}
+/** Rückweg: dorthin zurück, wo der Abspann geöffnet wurde. */
+function abspannZu() {
+  show(abspannHerkunft === 'title' ? 'title' : 'reward');
+  last = performance.now();
+}
+/** Ist der Abspann schon freigespielt? Dann steht er auch im Titel bereit. */
+function aktualisiereAbspannZugang() {
+  const geschafft = loadSave().geschafft || {};
+  const fertig = geschafft.epilog === true;
+  if (ui.abspannTitleBtn) ui.abspannTitleBtn.classList.toggle('hidden', !fertig);
+  return fertig;
+}
 
 function renderGarde(mode) {
   gardeMode = mode;
@@ -219,6 +275,8 @@ function onGameEvent(e) {
     const iz = Math.round((40 / spr.w) * spr.h);
     g.drawImage(spr.canvas, 0, 0, spr.w, spr.h, 0, 0, 40, iz);
     ui.rewardBody.prepend(icon);
+    // Nur der Epilog schaltet den Abspann frei (Auftrag C1).
+    if (ui.abspannBtn) ui.abspannBtn.classList.toggle('hidden', LEVEL.id !== 'epilog');
     show('reward');
   }
 }
@@ -521,7 +579,21 @@ ui.rewardBtn.onclick = () => {
 };
 ui.rewardQuit.onclick = () => { game = null; hudPrev = ''; musikAnhalten(); show('title'); };
 
+// Abspann: öffnen aus dem Ergebnis und aus dem Titel, weiterblättern, zurück.
+ui.abspannBtn.onclick = () => abspannZeigen('reward', 0);
+ui.abspannTitleBtn.onclick = () => abspannZeigen('title', 0);
+ui.abspannWeiter.onclick = () => abspannWeiter();
+ui.abspannCanvas.onclick = () => abspannWeiter();
+ui.abspannZurueck.onclick = () => abspannZu();
+
 window.addEventListener('keydown', (e) => {
+  // Solange der Abspann offen ist, gehört die Tastatur ihm — sonst würde ESC
+  // zugleich die (längst beendete) Simulation pausieren.
+  if (!ui.abspann.classList.contains('hidden')) {
+    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') { e.preventDefault(); abspannWeiter(); }
+    else if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); abspannZu(); }
+    return;
+  }
   if (e.code === 'KeyP' || e.code === 'Escape') {
     const a = aktivModus();
     if (!a) return;
@@ -576,6 +648,7 @@ function standAuffrischen() {
 }
 standAuffrischen();
 loadAct(stationIndex(loadSave()));
+aktualisiereAbspannZugang();   // wer den Epilog geschafft hat, sieht den Abspann im Titel
 
 // Kurzweg: wer Akt 1 geschafft hat, kann Akt 2 direkt anwählen (zum Ausprobieren
 // und Weitergeben, ohne jedes Mal die Katakomben zu spielen).
@@ -623,5 +696,15 @@ window.__roland = {
   get levelCount() { return LEVELS.length; },
   get levelIds() { return LEVELS.map((l) => l.id); },
   get musik() { return musik; }, get musikBereit() { return musikBereit; },
+  // Abspann (Auftrag C1): Zustand und Layout für die Prüfungen.
+  abspann: {
+    get offen() { return !ui.abspann.classList.contains('hidden'); },
+    get seite() { return abspannSeite; },
+    get seiten() { return ABSPANN_SEITEN; },
+    get herkunft() { return abspannHerkunft; },
+    get canvas() { return ui.abspannCanvas; },
+    layout: (seite = abspannSeite) => abspannLayout(VIEW, seite),
+    zeichne: abspannZeichnen,
+  },
   loadAct, input, get scale() { return scaleNow; },
 };
