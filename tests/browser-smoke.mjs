@@ -546,6 +546,40 @@ try {
   const a2x1 = await evaluate('window.__roland.game.player.x');
   check('Akt 2: Spieler läuft im Probenraum', a2x1 - a2x0 > 60, `dx=${(a2x1 - a2x0).toFixed(0)}`);
 
+  // Das Dirigentenpult (DRR-04): drei Takte im Takt ergeben den ersten Einsatz, und
+  // erst danach gibt die Bühnentür den Akt frei.
+  const pult = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const p = g.entities.find((en) => en.kind === 'pult');
+    if (!p) return JSON.stringify({ da: false });
+    g.player.x = p.x + 4;
+    g.player.y = p.y + p.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    return JSON.stringify({
+      da: true, noetig: p.noetig, teil: p.teil,
+      ziel: g.level.goal.need, zielFrei: g.goalErfuellt(),
+    });
+  })()`));
+  check('Akt 2: Dirigentenpult steht im Probenraum, Ziel verlangt den Einsatz',
+    pult.da === true && pult.noetig === 3 && pult.ziel === 'einsatz', JSON.stringify(pult));
+  check('Akt 2: Ziel ist vor dem Einsatz gesperrt', pult.zielFrei === false, JSON.stringify(pult));
+  await sleep(300);
+  for (let i = 0; i < 3; i++) {
+    await evaluate('window.__roland.game.beatPhase = 0.02');
+    await key('KeyE', 'keyDown');
+    await sleep(60);
+    await key('KeyE', 'keyUp');
+    await sleep(140);
+  }
+  const einsatz = JSON.parse(await evaluate(`JSON.stringify({
+    teil: window.__roland.game.entities.find((e) => e.kind === 'pult').teil,
+    gelungen: window.__roland.game.einsatzGelungen,
+    zielFrei: window.__roland.game.goalErfuellt(),
+  })`));
+  check('Akt 2: drei Takte im Takt ergeben den Einsatz',
+    einsatz.teil === 3 && einsatz.gelungen === true, JSON.stringify(einsatz));
+  check('Akt 2: danach gibt die Bühnentür den Akt frei', einsatz.zielFrei === true, JSON.stringify(einsatz));
+
   // Taktwechsel beim Durchschreiten (Spieler hinter den Wechselpunkt setzen)
   await evaluate(`(() => {
     const g = window.__roland.game;

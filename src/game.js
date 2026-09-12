@@ -78,6 +78,7 @@ export class Game {
     this.setzen = false;          // im Kleingarten auf der Bank Platz genommen
     this.stimmblaetter = 0;       // gesammelte Stimmblätter (DRR-04)
     this.stimmblaetterNoetig = this.level.stimmblaetterNoetig || 0;
+    this.mappeAbgegeben = false;  // Mappe liegt auf dem Dirigentenpult (Akt 2)
     this.einsatzGelungen = false; // erster gemeinsamer Einsatz in Akt 2 (DRR-04)
     this.frackBoost = 0;
     this.taktHits = 0;
@@ -1109,6 +1110,17 @@ export class Game {
   einsatzVersuch() {
     const pult = this.nearPult();
     if (!pult) return;
+    // Die Aufgabenstellung von Akt 2 ist „Mappe abgeben und den ersten Einsatz
+    // spielen“: wer die Mappe trägt, legt sie zuerst aufs Pult. Das kostet keinen
+    // Takt und ist optional — wer über die Stationswahl direkt in Akt 2 einsteigt
+    // (ohne Mappe), gibt sofort den Einsatz.
+    if (this.hasMappe && !this.mappeAbgegeben) {
+      this.mappeAbgegeben = true;
+      this.hasMappe = false;
+      this.audio.play('pickup');
+      this.message('DIE NOTENMAPPE LIEGT AUF DEM PULT. JETZT DER EINSATZ: DREI TAKTE (E).', 6, 2);
+      return;
+    }
     if (this.beatAccuracy() > this.diff.trittWindow) {
       this.message('DANEBEN. DER TAKT IST DIE MITTE DES PULSES.', 4.5, 2);
       return;
@@ -1162,9 +1174,11 @@ export class Game {
     const pult = this.entities.find((en) => en.kind === 'pult' && en.near);
     if (pult) {
       const fertig = pult.teil >= pult.noetig;
+      const mappe = this.hasMappe && !this.mappeAbgegeben;
       best = {
-        text: fertig ? `EINSATZ SITZT (${pult.teil}/${pult.noetig})`
-          : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`,
+        text: mappe ? 'NOTENMAPPE AUF DAS PULT LEGEN'
+          : fertig ? `EINSATZ SITZT (${pult.teil}/${pult.noetig})`
+            : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`,
         action: !fertig, key: 'E', x: pult.x + 8, y: pult.y - 20,
       };
     }
@@ -1174,7 +1188,8 @@ export class Game {
     const grund = (g.applaus && this.applaus < g.applaus) ? `APPLAUS ${Math.round(this.applaus)}/${g.applaus}`
       : (g.need === 'ablegen') ? 'FRACK ABLEGEN'
         : (g.need === 'setzen') ? 'HINSETZEN'
-          : (g.need === 'einsatz') ? 'ERST DER EINSATZ AM PULT (E)'
+        : (g.need === 'einsatz') ? (this.hasMappe && !this.mappeAbgegeben
+          ? 'NOTENMAPPE AUF DAS PULT LEGEN (E)' : 'ERST DER EINSATZ AM PULT (E)')
             : (g.frackOff && !this.frackOffUsed) ? 'KRAGEN AUFREISSEN (E)'
               : g.need === 'frack' ? 'NUR IM FRACK'
                 : g.need === 'mappe' ? 'NOTENMAPPE FEHLT' : 'GESPERRT';
@@ -1325,6 +1340,7 @@ export class Game {
     if (g.need === 'einsatz') {
       const pult = this.entities.find((en) => en.kind === 'pult');
       const teil = pult ? pult.teil : 0;
+      if (this.hasMappe && !this.mappeAbgegeben) return `${basis} · MAPPE AUF DAS PULT LEGEN (E)`;
       return `${basis} · EINSATZ ${teil}/${pult ? pult.noetig : 3}`;
     }
     if (g.applaus) return `${basis} · APPLAUS ${Math.round(this.applaus)}/${g.applaus}`;

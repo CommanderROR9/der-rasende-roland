@@ -267,10 +267,14 @@ export function buildAkt2() {
   e('stand', 108, 25);
   e('item', 110, 25, { item: 'wasser' });
 
+  // Dirigentenpult am Podium: hier wird die Notenmappe abgelegt und der erste
+  // gemeinsame Einsatz gespielt — drei Takte, dann zieht das Orchester mit (DRR-04).
+  e('pult', 56, 25, { noetig: 3 });
+
   const goal = {
     x: 120 * TILE, y: 21 * TILE, w: TILE, h: 3 * TILE,
-    name: 'BÜHNENEINGANG', need: null,
-    locked: '',
+    name: 'BÜHNENEINGANG', need: 'einsatz',
+    locked: 'DER AUFTRITT BEGINNT AM PULT. ERST DER EINSATZ IM TAKT.',
   };
 
   // Taktwechsel: der Dirigent bestimmt das Tempo
@@ -281,9 +285,10 @@ export function buildAkt2() {
   tip(25, 'ZWEI WEGE: UNTEN ZWISCHEN DEN STÜHLEN ODER OBEN ÜBER DIE PULTE');
   tip(40, 'DER DIRIGENT WIRFT IM BOGEN — DUCK ODER SEITWÄRTS WEG');
   tip(50, 'IM TAKT GETROFFEN VERLIERT ER DEN TAKTSTOCK');
+  tip(54, 'DIRIGENTENPULT: MAPPE ABLEGEN, DANN DREI TAKTE EINSATZ GEBEN (E IM TAKT)');
   tip(78, 'BÜHNE. VON HIER GEHT ES ÜBER DIE BELEUCHTUNGSBRÜCKE ZURÜCK');
   tip(100, 'HINTERBÜHNE. ZUM AUFTRITT NUR IM FRACK — AB HIER WIRD ES WARM');
-  tip(119, 'BÜHNENEINGANG. ENDE AKT 2');
+  tip(119, 'BÜHNENEINGANG. ERST NACH DEM EINSATZ AM PULT — ENDE AKT 2');
 
   return {
     id: 'akt2',

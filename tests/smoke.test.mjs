@@ -675,6 +675,8 @@ function place(game, px, py) {
     { wp: [58, 14] }, { wp: [94, 14] },
     { wp: [60, 14] },                       // zurück über die Brücke
     { wp: [49, 25] },                       // an der Kante hinunter auf den Saalboden
+    { wp: [56, 25] },                       // ans Dirigentenpult
+    { einsatz: true },                      // Mappe ablegen, dann drei Takte Einsatz (DRR-04)
     { wp: [60, 25] }, { wp: [100, 25] },    // durch den Saal zur Hinterbühne
     { wp: [108, 25] },
     { outfit: 'frack' },
@@ -684,6 +686,18 @@ function place(game, px, py) {
   let jumpHold = 0, jumpRelease = 0, letzteRichtung = 1;
   for (const stepItem of route) {
     if (stepItem.outfit) { game.setOutfit(stepItem.outfit); continue; }
+    if (stepItem.einsatz) {
+      // Der erste gemeinsame Einsatz: drei Takte am Pult, jede Taste genau auf dem Schlag.
+      for (let i = 0; i < 3; i++) {
+        game.beatPhase = 0.02;
+        input.setKey('action', true);
+        game.update(1 / 60);
+        input.setKey('action', false);
+        game.update(1 / 60);
+      }
+      if (!game.einsatzGelungen) failures.push('Einsatz am Pult');
+      continue;
+    }
     const [wx, row] = stepItem.wp;
     const tx = wx * TILE + 8;
     const feetY = row * TILE;
@@ -731,9 +745,82 @@ function place(game, px, py) {
   }
   check('Akt 2: Bot läuft die gebaute Route', failures.length === 0, failures.join(' | '));
   check('Akt 2: Route endet an der Bühnentür', game.state === 'complete', `state=${game.state}`);
+  const pultEnd = game.entities.find((en) => en.kind === 'pult');
+  check('Akt 2: drei Takte am Pult gezählt',
+    !!pultEnd && pultEnd.teil === 3 && game.einsatzGelungen === true);
   check('Akt 2: Frack öffnet die Bühnentür',
     game.gates[0].open === true || game.state === 'complete');
   check('Akt 2: Bierdeckel unterwegs eingesammelt', game.deckel >= 2, `deckel=${game.deckel}`);
+}
+
+// ----------------------------------------- Akt 2: Pult und erster Einsatz (DRR-04) --
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  const pult = game.entities.find((en) => en.kind === 'pult');
+  check('Akt 2 hat ein Dirigentenpult', !!pult && pult.noetig === 3);
+  check('Akt 2 verlangt den ersten Einsatz', level.goal.need === 'einsatz');
+  check('das Pult steht vor der Bühnentür', !!pult && pult.x < level.goal.x);
+  check('Ziel bleibt ohne Einsatz gesperrt', game.goalErfuellt() === false);
+
+  // Berührung allein schließt nichts ab: danebenstehen ohne E zählt nicht.
+  place(game, pult.x + 4, pult.y + pult.h - PHYS.playerH);
+  step(game, 0.4);
+  check('Pult reagiert nicht auf bloßes Danebenstehen', pult.teil === 0 && !game.einsatzGelungen);
+
+  // Die Mappe gehört aufs Pult (Aufgabe aus story.js), kostet aber keinen Takt.
+  game.hasMappe = true;
+  game.beatPhase = 0.02;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('Mappe liegt auf dem Pult', game.mappeAbgegeben === true && game.hasMappe === false);
+  check('Mappe ablegen kostet keinen Takt', pult.teil === 0);
+
+  // Ein Takt daneben kostet nichts, wird aber angesagt. Vorher die aufgestauten
+  // Weghinweise abarbeiten lassen — der Test prüft die Rückmeldung, nicht die
+  // Warteschlange (die ist auf fünf Einträge begrenzt und gilt für alle Texte).
+  game.hintQueue = [];
+  step(game, 2);
+  game.beatPhase = 0.5;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('ein Takt daneben zählt nicht', pult.teil === 0);
+  check('daneben wird angesagt', !!game.hud.hint && game.hud.hint.includes('DANEBEN'),
+    `hint=${game.hud.hint}`);
+
+  for (let i = 0; i < 3; i++) {
+    game.beatPhase = 0.02;
+    input.setKey('action', true);
+    game.update(1 / 60);
+    input.setKey('action', false);
+    game.update(1 / 60);
+  }
+  check('drei Takte ergeben den Einsatz', pult.teil === 3 && game.einsatzGelungen === true);
+  check('danach ist das Ziel frei', game.goalErfuellt() === true);
+}
+
+// Wer über die Stationswahl direkt in Akt 2 einsteigt, hat keine Mappe — dann zählt
+// der erste Druck sofort als Einsatz-Takt (kein Softlock über den fehlenden Gegenstand).
+{
+  const level = buildAkt2();
+  const input = createInput(null);
+  const game = new Game({ level, input, audio: { play() {}, resume() {} }, events: () => {} });
+  game.reset('schwarz');
+  const pult = game.entities.find((en) => en.kind === 'pult');
+  place(game, pult.x + 4, pult.y + pult.h - PHYS.playerH);
+  game.beatPhase = 0.02;
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('ohne Mappe zählt der erste Druck als Takt',
+    pult.teil === 1 && game.mappeAbgegeben === false);
 }
 
 // ================================================= INTERLUDIUM — CABRIO ======
