@@ -1602,6 +1602,141 @@ try {
   await sleep(600);
   const grillNachher = await evaluate('window.__roland.grill.wuerserste.filter((w) => w.seite > 0).length');
   check('Grill reagiert auf die Aktion', grillNachher > grillVorher, `${grillVorher} -> ${grillNachher}`);
+
+  // --- Auftrag E2: Grafik und Steuerung im Bild ----------------------------
+  // Die Fokusmarkierung muss sichtbar sein: Rahmen und Pfeil in der Fokusfarbe
+  // genau an der Stelle, die die Auswahl meint.
+  await evaluate(`(() => { const g = window.__roland.grill;
+    g.wuerserste.filter((x) => x.zustand === 'rost').forEach((w) => { w.gar = 5; w.verbrannt = 0; });
+    g.auswahl = 0; return true; })()`);
+  await sleep(220);
+  const fokusBild = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.grill; const c = document.getElementById('game');
+    const f = g.zeichnungFokus;
+    if (!f) return JSON.stringify({ fehlt: true });
+    const d = c.getContext('2d').getImageData(f.x, f.y, f.w, f.h).data;
+    let punkte = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] === 242 && d[i + 1] === 210 && d[i + 2] === 75 && d[i + 3] > 0) punkte++;
+    }
+    return JSON.stringify({
+      punkte, fokus: g.hud.fokus, auswahl: g.auswahl, x: f.x, w: f.w,
+      fokusName: g.hud.fokusName, stufen: g.hud.stufen.length,
+    });
+  })()`));
+  check('Grill-Browser: die Fokusmarkierung ist im Bild sichtbar',
+    !fokusBild.fehlt && fokusBild.punkte > 0 && fokusBild.fokus === fokusBild.auswahl
+      && fokusBild.fokusName === 'ROH' && fokusBild.stufen === 3,
+    JSON.stringify(fokusBild));
+
+  // Die Markierung wandert nachvollziehbar: ein Druck, ein Schritt nach rechts.
+  await evaluate("window.__roland.input.setKey('right', true)");
+  await sleep(120);
+  await evaluate("window.__roland.input.setKey('right', false)");
+  await sleep(260);
+  const fokusNach = JSON.parse(await evaluate(`JSON.stringify({
+    auswahl: window.__roland.grill.auswahl,
+    x: window.__roland.grill.zeichnungFokus.x,
+  })`));
+  check('Grill-Browser: die Fokusmarkierung wandert mit der Auswahl',
+    fokusNach.auswahl === 1 && fokusNach.x > fokusBild.x,
+    `auswahl ${fokusBild.auswahl} -> ${fokusNach.auswahl}, x ${fokusBild.x} -> ${fokusNach.x}`);
+
+  // Garstufen im Bild: jede Stufe hat eine eigene Leitfarbe, die auch wirklich
+  // gezeichnet wird — geprüft an den Bildpunkten des Wurstbereichs.
+  const stufenProbe = [];
+  const stufenFaelle = [['wurst_roh', 5, 0], ['wurst_angebraten', 40, 0], ['wurst_goldbraun', 70, 0], ['wurst_dunkel', 92, 0], ['wurst_verbrannt', 60, 1]];
+  for (const [name, gar, verbrannt] of stufenFaelle) {
+    await evaluate(`(() => { const g = window.__roland.grill;
+      const w = g.wuerserste.filter((x) => x.zustand === 'rost')[g.auswahl];
+      w.gar = ${gar}; w.verbrannt = ${verbrannt}; return true; })()`);
+    await sleep(200);
+    stufenProbe.push(JSON.parse(await evaluate(`(() => {
+      const g = window.__roland.grill; const c = document.getElementById('game');
+      const z = g.zeichnung.find((e) => e.fokus);
+      const d = c.getContext('2d').getImageData(z.x, z.y, z.w, z.h).data;
+      const r = parseInt(z.farbe.slice(1, 3), 16), gg = parseInt(z.farbe.slice(3, 5), 16), b = parseInt(z.farbe.slice(5, 7), 16);
+      let treffer = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] === r && d[i + 1] === gg && d[i + 2] === b && d[i + 3] === 255) treffer++;
+      return JSON.stringify({ stufe: z.stufe, farbe: z.farbe, treffer, w: z.w, h: z.h });
+    })()`)));
+  }
+  check('Grill-Browser: jede Garstufe hat ihren eigenen Sprite im Bild',
+    stufenProbe.every((p, i) => p.stufe === stufenFaelle[i][0] && p.treffer > 0),
+    stufenProbe.map((p) => `${p.stufe}:${p.treffer}`).join(' '));
+  check('Grill-Browser: die Garstufen sind im Bild unterscheidbar (eigene Leitfarbe)',
+    new Set(stufenProbe.map((p) => p.farbe)).size === 5, stufenProbe.map((p) => p.farbe).join(' '));
+  check('Grill-Browser: die Garstufen haben verschiedene Umrisse',
+    new Set(stufenProbe.map((p) => `${p.w}x${p.h}`)).size > 1, stufenProbe.map((p) => `${p.w}x${p.h}`).join(' '));
+
+  // Eine Aktion pro Druck: eine Sekunde gehalten wendet genau einmal.
+  await evaluate(`(() => { const g = window.__roland.grill;
+    const w = g.wuerserste.filter((x) => x.zustand === 'rost')[g.auswahl];
+    w.seite = 0; w.gar = 5; w.gewendet = 0; return true; })()`);
+  await sleep(200);
+  const vorHalten = JSON.parse(await evaluate(`JSON.stringify({
+    summe: window.__roland.grill.wuerserste.reduce((a, w) => a + w.gewendet, 0),
+    seite: window.__roland.grill.wuerserste.filter((x) => x.zustand === 'rost')[window.__roland.grill.auswahl].seite,
+  })`));
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(1000);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  await sleep(300);
+  const nachHalten = JSON.parse(await evaluate(`JSON.stringify({
+    summe: window.__roland.grill.wuerserste.reduce((a, w) => a + w.gewendet, 0),
+    seite: window.__roland.grill.wuerserste.filter((x) => x.zustand === 'rost')[window.__roland.grill.auswahl].seite,
+    serviert: window.__roland.grill.serviert,
+  })`));
+  check('Grill-Browser: ein gehaltener Knopf wendet genau einmal',
+    nachHalten.summe === vorHalten.summe + 1 && nachHalten.seite === 1 && nachHalten.serviert === 0,
+    `${vorHalten.summe} -> ${nachHalten.summe}, seite ${vorHalten.seite} -> ${nachHalten.seite}`);
+
+  // Der Knopf sagt, was die Aktion tut.
+  await evaluate(`(() => { const g = window.__roland.grill;
+    const w = g.wuerserste.filter((x) => x.zustand === 'rost')[g.auswahl];
+    w.seite = 0; w.gar = 50; return true; })()`);
+  await sleep(400);
+  const knopfWenden = await evaluate("document.getElementById('btnAction').textContent");
+  await evaluate(`(() => { const g = window.__roland.grill;
+    const w = g.wuerserste.filter((x) => x.zustand === 'rost')[g.auswahl]; w.seite = 1; w.gar = 50; return true; })()`);
+  await sleep(400);
+  const knopfServieren = await evaluate("document.getElementById('btnAction').textContent");
+  check('Grill-Browser: der Aktionsknopf sagt, was passiert',
+    knopfWenden === 'WENDEN' && knopfServieren === 'SERVIEREN', `${knopfWenden} -> ${knopfServieren}`);
+
+  // Rauch, wenn die Wurst zu lange liegt.
+  await evaluate(`(() => { const g = window.__roland.grill;
+    const w = g.wuerserste.filter((x) => x.zustand === 'rost')[g.auswahl];
+    w.seite = 0; w.gar = 80; return true; })()`);
+  await sleep(1100);
+  const rauch = JSON.parse(await evaluate(`JSON.stringify({
+    teilchen: window.__roland.grill.rauch.length,
+    fett: window.__roland.grill.fettTropfen,
+    verbrannt: window.__roland.grill.verbrannt,
+  })`));
+  check('Grill-Browser: bei zu langem Liegen steigt Rauch',
+    rauch.teilchen > 0 && rauch.verbrannt === 0, JSON.stringify(rauch));
+
+  // Bild für Roland: gemischte Garstufen, Teller mit zwei Würsten, Fokus sichtbar.
+  await evaluate(`(() => { const g = window.__roland.grill;
+    const aufRost = g.wuerserste.filter((x) => x.zustand === 'rost');
+    aufRost.forEach((w, i) => { w.seite = i === 1 ? 1 : 0; w.gar = [12, 62, 88][i] || 40; w.verbrannt = 0; });
+    g.wuerserste.filter((x) => x.zustand === 'kiste').slice(0, 2).forEach((w) => {
+      w.zustand = 'fertig'; w.seite = 1; w.gar = 76; });
+    g.auswahl = 1; g.serviert = 2; g.fertig = 2; g.sauber = 3; g.punktestand = 340;
+    return true; })()`);
+  await sleep(900);
+  const shotDirGrill = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDirGrill, { recursive: true });
+  const grillPfad = join(shotDirGrill, 'grill.png');
+  const grillBild = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+  writeFileSync(grillPfad, grillBild);
+  // Zweitablage: genau der Pfad, den der Auftrag für Roland nennt.
+  const grillWurzel = fileURLToPath(new URL('../screenshot-grill.png', import.meta.url));
+  writeFileSync(grillWurzel, grillBild);
+  check('Grill-Browser: Screenshot geschrieben', existsSync(grillPfad) && existsSync(grillWurzel));
+  results.push(`SCREENSHOT ${grillPfad}`);
+  results.push(`SCREENSHOT ${grillWurzel}`);
   check('keine Fehler in Finale und Epilog',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 

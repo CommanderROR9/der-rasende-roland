@@ -259,7 +259,9 @@ function setzeKnopfBeschriftung() {
   // E ist im Laufmodus kontextsensitiv. Bei einer Figur oder einem Gegenstand
   // darf die Touch-Oberfläche nicht weiter behaupten, man würde zutreten.
   const hatAktion = modus === 'lauf' && !!(game?.hud?.label?.action);
-  const akt = modus === 'racer' ? 'BREMSE' : modus === 'grill' ? 'WENDEN' : hatAktion ? 'AKTION' : 'TRITT';
+  const akt = modus === 'racer' ? 'BREMSE'
+    : modus === 'grill' ? ((grill?.hud?.fokusSeite === 1) ? 'SERVIEREN' : 'WENDEN')
+      : hatAktion ? 'AKTION' : 'TRITT';
   if (ui.btnJump.textContent !== jump) ui.btnJump.textContent = jump;
   if (ui.btnAction.textContent !== akt) ui.btnAction.textContent = akt;
   ui.btnJump.style.opacity = modus === 'lauf' ? '' : '0.3';
@@ -275,11 +277,14 @@ function refreshHud() {
     ui.racerReadout.classList.add('hidden');
     ui.grillReadout.classList.remove('hidden');
     setzeJournal(null);
-    const sigG = [h.punkte, h.serviert, h.verbrannt, h.takt, h.hint].join('|');
+    const sigG = [h.punkte, h.serviert, h.verbrannt, h.takt, h.hint,
+      (h.stufen || []).join(''), h.fokus, h.knapp].join('|');
     if (sigG === hudPrev) return;
     hudPrev = sigG;
     ui.gPunkte.textContent = String(h.punkte);
-    ui.gServiert.textContent = `${h.serviert}/${h.serviert + h.offen}`;
+    // Der Nenner ist die Gesamtzahl der Würste, nicht die noch offenen Plätze:
+    // nach einer verbrannten Wurst stand hier sonst „2/7" (Auftrag E2).
+    ui.gServiert.textContent = `${h.serviert}/${h.gesamt || 8}`;
     ui.gVerbrannt.textContent = String(h.verbrannt);
     ui.gTakt.textContent = String(h.sauber || 0);
     ui.gBpm.textContent = String(h.takt);

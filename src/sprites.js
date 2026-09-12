@@ -220,9 +220,160 @@ const BREZEL = [
   '..aawwaa..',
   "........'",
 ];
+// ---------------------------------------------------------------- Grill (E2) --
+// Fünf Garstufen, jede mit eigener Silhouette — nicht dasselbe Bild in anderer
+// Farbe. Roh ist ein praller Schlauch mit Fettspecken, angebraten kringelt sich
+// ein Ende, goldbraun ist dicker und kürzer mit vier Roststreifen, dunkel hat
+// Blasen am Rand und Bänder, verbrannt ist eingerissen und hat Ascheflecken.
+const WURST_ROH = [
+  '  FFFFFFFFFFFFFFFF  ',
+  ' HHHHHHHHwHHHHHHHHH ',
+  'FFFFwFFFFFFFFFwFFFFF',
+  'ffffffffffffffffffff',
+  ' ffffffffwfffffffff ',
+  '  ffffffffffffffff  ',
+];
+const WURST_ANGEBRATEN = [
+  '  BBBBBBBBBBBBBBbb  ',
+  ' BBBBBBBBBBBBBBBBb  ',
+  'BBBBBBdBBBBBBBBdBBBB',
+  'bbbbbbbbbbbbbbbbbbbb',
+  ' bbbbwbbbbbbbbbbbbb ',
+  '  bbbbbbbbbbbbbbbb  ',
+];
+const WURST_GOLDBRAUN = [
+  '   GGGGGGGGGGGGGG   ',
+  ' HGGGGGGGGGGGGGGGH  ',
+  'ggggGggggGggggGggggg',
+  'gggggggGggggGggggggg',
+  'kggggggggggggggggggk',
+  ' kkkkkkkkkkkkkkkkkk ',
+  '  kkkkkkkkkkkkkkkk  ',
+];
+const WURST_DUNKEL = [
+  '  KKKKKKKKKKKKKKKK  ',
+  ' KKKKKKKKKKKKKKKKKK ',
+  'kkkKkkkkKkkkkKkkkkkk',
+  'kkkkkkkkkkkkkkkkkkkk',
+  'xkxkkxkkkkkkxkkxkkxk',
+  ' xxxxxxxxxxxxxxxxxx ',
+];
+const WURST_VERBRANNT = [
+  '  xxxx xxxxxxxxxx   ',
+  ' xxxxxxxxxxxxxxxxxxx',
+  'xxxxxxxxxxxxXxxxxxxx',
+  'xXxxxxxxxxxxxxxxxxXx',
+  ' xxxxxxXxxxxxXxxxxx ',
+  '  XXXXXX   XXXXXX   ',
+];
+export const WURST_STUFEN = [
+  'wurst_roh', 'wurst_angebraten', 'wurst_goldbraun', 'wurst_dunkel', 'wurst_verbrannt',
+];
+
+// Die Glut glimmt in drei Bildern (ruhiges Flackern), nicht als Rechteck.
+const GLUT_1 = [
+  'o..oo...o..o',
+  'oo.ooo.oo.oo',
+  '.O.oo.oo.o..',
+];
+const GLUT_2 = [
+  '.oo..o..oo..',
+  'ooo.oo.ooo.o',
+  'o.oO.o.o.oo.',
+];
+const GLUT_3 = [
+  '..o..oo..o.o',
+  'o.oooo.ooo.o',
+  '.oo.o.Oo..oo',
+];
+const RAUCH = [
+  '  sss  ',
+  ' sSSSs ',
+  'sSSSSSs',
+  'sSSSSSs',
+  ' sSSSs ',
+  '  sss  ',
+];
+const DAMPF = [
+  ' s ',
+  'sSs',
+  ' S ',
+  'sSs',
+];
+const FETT = [
+  'ww',
+  'ww',
+  'ww',
+  ' w',
+];
+const TELLER = [
+  '   tttttttttttttttttt   ',
+  ' ttTTTTTTTTTTTTTTTTTTtt ',
+  'tTTTTTTTTTTTTTTTTTTTTTTt',
+  ' ttTTTTTTTTTTTTTTTTTTtt ',
+  '   tttttttttttttttttt   ',
+];
+
+export const GRILL_PALETTE = {
+  ' ': null,
+  // roh
+  F: '#e0a099', f: '#b87a76', H: '#f7cfc9',
+  // angebraten
+  B: '#c98a5a', b: '#a06a3c', d: '#7a4a2c',
+  // goldbraun
+  G: '#c68a3c', g: '#b0762c', k: '#7a4a24',
+  // dunkel
+  K: '#6b4326', k2: '#4a2c16',
+  // verbrannt
+  x: '#241f1a', X: '#6e6a64',
+  // Fett, Glut, Rauch, Teller, Rost
+  w: '#f2e6cf', o: '#c8401c', O: '#ff9a3c',
+  s: '#8a868c', S: '#b8b4ba',
+  t: '#8a8478', T: '#d8d2c2',
+};
+
+/** Gibt es diese Garstufe als eigenen Sprite? */
+export function garstufeName(gar, verbrannt = 0) {
+  if (verbrannt) return 'wurst_verbrannt';
+  if (gar > 85) return 'wurst_dunkel';
+  if (gar > 55) return 'wurst_goldbraun';
+  if (gar > 25) return 'wurst_angebraten';
+  return 'wurst_roh';
+}
+
+/** Deutsche Kurzbezeichnung der Garstufe fürs HUD. */
+export const GARSTUFEN_TEXT = {
+  wurst_roh: 'ROH',
+  wurst_angebraten: 'ANGEBRATEN',
+  wurst_goldbraun: 'GOLDBRAUN',
+  wurst_dunkel: 'DUNKEL',
+  wurst_verbrannt: 'VERBRANNT',
+};
+
+/** Der Farbwert, der jede Garstufe im Bild unverwechselbar macht (für den Bildnachweis). */
+export const GARSTUFEN_FARBE = {
+  wurst_roh: GRILL_PALETTE.F,
+  wurst_angebraten: GRILL_PALETTE.B,
+  wurst_goldbraun: GRILL_PALETTE.G,
+  wurst_dunkel: GRILL_PALETTE.K,
+  wurst_verbrannt: GRILL_PALETTE.X,
+};
+
 export const SPRITES = {
   ramona: RAMONA,
   grill: GRILL,
+  wurst_roh: WURST_ROH,
+  wurst_angebraten: WURST_ANGEBRATEN,
+  wurst_goldbraun: WURST_GOLDBRAUN,
+  wurst_dunkel: WURST_DUNKEL,
+  wurst_verbrannt: WURST_VERBRANNT,
+  glut1: GLUT_1,
+  glut2: GLUT_2,
+  glut3: GLUT_3,
+  rauch: RAUCH,
+  dampf: DAMPF,
+  fett: FETT,
+  teller: TELLER,
   laub: LAUB,
   brezel: BREZEL,
   motorrad: MOTORRAD,

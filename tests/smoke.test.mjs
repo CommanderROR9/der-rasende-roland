@@ -2,6 +2,7 @@
 // Aufruf: node tests/smoke.test.mjs
 import { buildAkt1, buildAkt2, buildAkt3, buildAkt4, buildAkt5, buildEpilog, buildCabrio, buildMotorrad, LEVELS } from '../src/world.js';
 import { Grill } from '../src/grill.js';
+import { SPRITES, WURST_STUFEN, GARSTUFEN_FARBE, GARSTUFEN_TEXT, garstufeName } from '../src/sprites.js';
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
@@ -1990,6 +1991,116 @@ function place(game, px, py) {
   check('Grill: Bewertung steht am Ende', g6.state === 'complete' && g6.rows.some(([k]) => k === 'BEWERTUNG'),
     JSON.stringify(g6.rows));
   check('Grill: viele im Takt gewendet', g6.sauber >= 5, String(g6.sauber));
+  check('Grill: Rauch und Fett bleiben begrenzt',
+    g6.rauch.length < 200 && g6.fett.length < 60, `rauch=${g6.rauch.length} fett=${g6.fett.length}`);
+
+  // ------------------------------------------------- Auftrag E2: Grafik ------
+  // Garstufen als eigene Sprites: fünf Namen, fünf verschiedene Bildmatrizen,
+  // fünf verschiedene Farbwerte — nicht ein Bild in fünf Farben.
+  check('Grill: Garstufen sind eigene Sprites',
+    WURST_STUFEN.length === 5 && new Set(WURST_STUFEN.map((s) => JSON.stringify(SPRITES[s]))).size === 5,
+    WURST_STUFEN.join(','));
+  check('Grill: jede Garstufe hat eine eigene Leitfarbe',
+    new Set(WURST_STUFEN.map((s) => GARSTUFEN_FARBE[s])).size === 5,
+    WURST_STUFEN.map((s) => `${s}=${GARSTUFEN_FARBE[s]}`).join(' '));
+  check('Grill: jede Garstufe ist beschriftet',
+    WURST_STUFEN.every((s) => !!GARSTUFEN_TEXT[s] && GARSTUFEN_TEXT[s] === GARSTUFEN_TEXT[s].toUpperCase()));
+  check('Grill: der Garstand fuehrt zur passenden Garstufe',
+    garstufeName(0) === 'wurst_roh' && garstufeName(30) === 'wurst_angebraten'
+    && garstufeName(60) === 'wurst_goldbraun' && garstufeName(90) === 'wurst_dunkel'
+    && garstufeName(40, 1) === 'wurst_verbrannt',
+    [garstufeName(0), garstufeName(30), garstufeName(60), garstufeName(90), garstufeName(40, 1)].join(','));
+  const glutBilder = ['glut1', 'glut2', 'glut3'].map((n) => JSON.stringify(SPRITES[n]));
+  check('Grill: die Glut glimmt in mehreren Bildern',
+    glutBilder.every((b) => !!b) && new Set(glutBilder).size === 3);
+  check('Grill: Rauch, Dampf, Fett und Teller sind vorhanden',
+    !!SPRITES.rauch && !!SPRITES.dampf && !!SPRITES.fett && !!SPRITES.teller);
+  check('Grill: das HUD nennt die Garstufen der Aufliegenden',
+    Array.isArray(g1.hud.stufen) && g1.hud.stufen.length === 3
+    && g1.hud.stufen.every((s) => s === 'wurst_roh') && g1.hud.gesamt === 8
+    && g1.hud.fokus === g1.auswahl && g1.hud.fokusName === 'ROH',
+    JSON.stringify(g1.hud.stufen));
+  // Rauch erst, wenn die Wurst zu lange liegt — und noch nicht verbrannt.
+  iG.setKey('left', false);
+  iG.setKey('right', false);
+  iG.setKey('action', false);
+  const g7 = mkG();
+  stepAny(g7, 9);
+  check('Grill: bei zu langem Liegen steigt Rauch',
+    g7.rauch.length > 0 && g7.verbrannt === 0, `rauch=${g7.rauch.length} verbrannt=${g7.verbrannt}`);
+  // Fett tropft nur von der Garseite.
+  const g8 = mkG();
+  g8.auswahl = 0;
+  iG.setKey('action', true);
+  g8.update(1 / 60);
+  iG.setKey('action', false);
+  stepAny(g8, 4);
+  check('Grill: Fett tropft in die Glut',
+    g8.fettTropfen > 0 && g8.fett.length > 0 && g8.wuerserste[0].seite === 1,
+    `tropfen=${g8.fettTropfen}`);
+
+  // --------------------------------------------- Auftrag E2: Steuerung -------
+  // Eine Aktion pro Druck: zwei Sekunden gehalten wendet genau einmal.
+  const g9 = mkG();
+  g9.auswahl = 0;
+  iG.setKey('action', true);
+  stepAny(g9, 2);
+  iG.setKey('action', false);
+  g9.update(1 / 60);
+  check('Grill: ein gehaltener Knopf wendet genau einmal',
+    g9.wuerserste[0].gewendet === 1 && g9.serviert === 0 && g9.sauber <= 1,
+    `gewendet=${g9.wuerserste[0].gewendet} serviert=${g9.serviert}`);
+
+  // Die Fokusmarkierung existiert und wandert nachvollziehbar.
+  const g10 = mkG();
+  check('Grill: die Fokusmarkierung liegt auf einer Wurst',
+    g10.hud.fokus === 1 && g10.hud.fokusName === GARSTUFEN_TEXT[g10.hud.stufen[1]]);
+  g10.auswahl = 0;
+  iG.setKey('right', true);
+  g10.update(1 / 60);
+  iG.setKey('right', false);
+  g10.update(1 / 60);
+  check('Grill: die Auswahl wandert einen Schritt pro Druck',
+    g10.auswahl === 1 && g10.hud.fokus === 1, String(g10.auswahl));
+  iG.setKey('right', true);
+  g10.update(1 / 60);
+  iG.setKey('right', false);
+  g10.update(1 / 60);
+  check('Grill: die Markierung wandert nachvollziehbar weiter',
+    g10.auswahl === 2 && g10.hud.fokus === 2 && g10.hud.fokusName === 'ROH', String(g10.auswahl));
+  // Gehalten: erst ein Schritt, dann Ruhe, dann ruhiges Wiederholen.
+  g10.auswahl = 0;
+  iG.setKey('right', true);
+  stepAny(g10, 0.15);
+  check('Grill: ein gehaltener Richtungsknopf wandert nur einen Schritt',
+    g10.auswahl === 1, String(g10.auswahl));
+  stepAny(g10, 1.2);
+  check('Grill: nach der Ruhezeit wandert die Markierung ruhig weiter',
+    g10.auswahl === 2, String(g10.auswahl));
+  iG.setKey('right', false);
+  stepAny(g10, 1 / 60);
+
+  // Verpasster Takt kostet keine Wurst — knapp daneben ist eine Pointe.
+  const g11 = mkG();
+  g11.auswahl = 0;
+  g11.beatPhase = 0.5;
+  iG.setKey('action', true);
+  g11.update(1 / 60);
+  iG.setKey('action', false);
+  check('Grill: ein verpasster Takt kostet keine Wurst',
+    g11.wuerserste[0].zustand === 'rost' && g11.verbrannt === 0 && g11.fertig === 0
+    && g11.serviert === 0 && g11.wuerserste[0].seite === 1,
+    `${g11.wuerserste[0].zustand} verbrannt=${g11.verbrannt}`);
+  const g12 = mkG();
+  g12.auswahl = 0;
+  g12.beatPhase = 0.42;
+  iG.setKey('action', true);
+  g12.update(1 / 60);
+  iG.setKey('action', false);
+  check('Grill: knapp daneben ist eine Pointe, kein Verlust',
+    g12.knapp === 1 && g12.sauber === 0 && g12.wuerserste[0].zustand === 'rost'
+    && g12.rows.length === 0,
+    `knapp=${g12.knapp} sauber=${g12.sauber}`);
 }
 
 // -------------------------------------------------- Schauplatz (Keller/Freiluft) --
