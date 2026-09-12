@@ -17,7 +17,7 @@ game.reset('schwarz');
 game.hasMappe = true;
 
 const route = [
-  { wp: [7, 25] }, { talk: 'probe_beauftragt' }, { wp: [23, 25] },
+  { wp: [12, 25] }, { talk: 'probe_beauftragt' }, { wp: [23, 25] },
   { wp: [28, 25] }, { wp: [38, 25] }, { wp: [47, 25] },
   { wp: [52, 25] }, { wp: [56, 25] },
   { einsatz: true },

@@ -153,8 +153,8 @@ if (pult) {
   check('mappe lands on the pult', game.mappeAbgegeben === true && game.hasMappe === false);
   check('laying down the mappe costs no takt', pult.teil === 0);
   check('mappe handover sets a story flag', game.storyFlags?.has('mappe_abgegeben') === true);
+  game.hint = null;
   game.hintQueue = [];
-  game.update(1 / 60);
   game.beatPhase = 0.5;
   tap(game, input);
   check('a missed takt counts nothing', pult.teil === 0);

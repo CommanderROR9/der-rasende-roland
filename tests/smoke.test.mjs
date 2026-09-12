@@ -759,7 +759,7 @@ function place(game, px, py) {
   // Die Notenmappe reist aus Akt 1 im Spielstand an (main.js setzt hasMappe).
   game.hasMappe = true;
   const route = [
-    { wp: [7, 25] }, { talk: 'probe_beauftragt' }, { wp: [23, 25] },
+    { wp: [12, 25] }, { talk: 'probe_beauftragt' }, { wp: [23, 25] },
     { wp: [31, 23] }, { wp: [37, 21] }, { wp: [42, 19] }, { wp: [47, 17] }, { wp: [52, 16] },
     { wp: [58, 14] }, { wp: [94, 14] },
     { wp: [60, 14] },                       // zurück über die Brücke
