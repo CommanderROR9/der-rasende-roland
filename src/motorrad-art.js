@@ -20,15 +20,30 @@ function pixel(w,h,paint) {
 }
 function bike(braking=false) {
   return pixel(30,26,q=>{
-    q(4,20,4,6,'.'); q(22,20,4,6,'.');
-    q(2,17,26,3,'d'); q(3,15,24,2,'g');
-    // Low night machine with rider: helmet, coat, red taillight.
-    q(11,4,7,6,'h'); q(12,5,5,3,'H'); q(11,3,7,2,'r');
-    q(9,10,11,6,'m'); q(10,10,9,2,'M'); q(13,12,4,6,'d');
-    q(6,13,18,4,'R'); q(6,13,18,1,'c');
-    q(24,14,3,3,braking?'y':'R'); q(25,15,1,1,braking?'w':'c');
-    q(3,14,2,2,'y'); q(20,21,3,1,'G');
-    q(12,18,6,2,'w');
+    // Heckansicht eines Motorrads: EIN Hinterrad in der Mitte, schmaler Aufbau,
+    // Fahrer von hinten mit Helm, Schultern, Spiegeln und Rücklicht.
+    // Das Vorderrad ist verdeckt — zwei Räder nebeneinander wären ein Auto.
+    q(12,18,6,8,'d');                   // Hinterrad (mittig, eine Spur)
+    q(13,19,4,6,'.');                   // Profil
+    q(14,21,2,2,'G');                   // Nabe
+    q(11,15,8,3,'m');                   // Sitzbank/Heck
+    q(11,15,8,1,'M');
+    q(12,12,6,3,braking?'y':'R');       // Rücklicht
+    q(13,13,4,1,braking?'w':'c');
+    q(9,13,2,2,'y'); q(19,13,2,2,'y');  // Blinker
+    q(12,7,6,6,'m');                    // Rücken des Fahrers
+    q(13,7,4,2,'M');
+    q(14,9,2,4,'d');
+    q(10,7,10,2,'m');                   // Schultern
+    q(7,8,4,4,'m'); q(19,8,4,4,'m');    // Arme zu den Griffen
+    q(6,11,3,2,'d'); q(21,11,3,2,'d');  // Griffe
+    q(5,6,3,2,'a'); q(22,6,3,2,'a');    // Spiegel
+    q(6,8,1,3,'g'); q(23,8,1,3,'g');    // Spiegelstiele
+    q(12,1,6,6,'h');                    // Helm
+    q(13,2,4,2,'H');
+    q(12,1,6,1,'r');                    // Helmstreifen
+    q(13,6,4,2,'d');                    // Nacken
+    q(18,16,3,2,'G');                   // Auspuff
   });
 }
 function nightTraffic(front=false) {
@@ -68,16 +83,36 @@ export function nightSceneFor(r) { return NIGHT_SCENES[journeySection(r).theme];
 function poly(ctx, points, color) {
   ctx.fillStyle=color;ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();
 }
-export function drawNightSky(r,ctx) {
+/** Deckenlampen im Tunnel: so nah wie möglich am Fluchtpunkt, nie seitlich wandernd. */
+const LAMPEN_ABSTAND = 6;      // jedes sechste sichtbare Segment bekommt eine Leuchte
+const LAMPEN_K = 0.5;          // Höhe der Decke über dem Horizont je Fahrbahntiefe
+const LAMPEN_TIEFE = 74;       // bis hierher reicht die Decke im Bild
+const LAMPEN_HOEHE = (rel) => Math.round(rel * LAMPEN_K);
+export function drawNightSky(r,ctx,visible) {
   const {vw:w,vh:h}=r, horizon=Math.ceil(h/2);
   if (r.imTunnel()) {
     ctx.fillStyle='#060609';ctx.fillRect(0,0,w,horizon+2);
-    ctx.fillStyle='#2c2820';ctx.fillRect(0,horizon-12,w,12);
-    const off=(r.position*0.4)%110;
-    for(let i=-1;i<w/110+2;i++){
-      const lx=Math.round(i*110-off);
-      ctx.fillStyle='#ffe2a8';ctx.fillRect(lx+40,horizon-11,30,3);
-      ctx.fillStyle='rgba(255,226,168,0.10)';ctx.fillRect(lx+32,horizon-8,46,26);
+    // Tunneldecke: eine Fläche, die auf den Fluchtpunkt zuläuft. Die Lampen
+    // sitzen auf der Strecke und kommen mit der Fahrt näher — vorher lagen sie
+    // als gelbes Band auf einer Höhe und liefen seitlich vorbei (sah wie ein Zug aus).
+    const segs=Array.isArray(visible)?visible:[];
+    const decke=Math.round(LAMPEN_TIEFE*LAMPEN_K);
+    const vp=segs.length?segs[segs.length-1].p1.screen.x:Math.round(w/2);
+    poly(ctx,[[0,0],[w,0],[w,horizon-decke],[vp,horizon],[0,horizon-decke]],'#0d0c11');
+    ctx.fillStyle='#221f18';ctx.fillRect(0,horizon-4,w,4);
+    const imTunnel=(i)=>(r.tunnel||[]).some((t)=>i>=t.from&&i<t.to);
+    for(const seg of segs){
+      if(seg.index%LAMPEN_ABSTAND)continue;
+      if(!imTunnel(seg.index))continue;
+      const rel=seg.p1.screen.fy-horizon;          // Tiefe: nah = groß
+      if(rel<=8||rel>LAMPEN_TIEFE)continue;
+      const ly=horizon-LAMPEN_HOEHE(rel);
+      const bw=Math.max(2,Math.round(rel*0.30));   // mit der Entfernung schmaler
+      const bh=Math.max(1,Math.round(rel*0.035));
+      ctx.fillStyle='rgba(255,226,168,0.08)';
+      ctx.fillRect(Math.round(seg.p1.screen.x)-bw,ly-bh,bw*2,bh*3);
+      ctx.fillStyle='#ffe2a8';
+      ctx.fillRect(Math.round(seg.p1.screen.x-bw/2),ly,bw,bh);
     }
     ctx.fillStyle='#0c0c12';ctx.fillRect(0,horizon,w,2);
     return;
@@ -117,18 +152,44 @@ export function drawNightSegment(r,ctx,seg) {
   if(r.rain&&dark){ctx.globalAlpha=.14;band(.12,.26,'#9fc0cc');ctx.globalAlpha=1;}
   ctx.globalAlpha=(1-seg.fog)*.85;ctx.fillStyle=s.fog;ctx.fillRect(0,b.y,r.vw,a.y-b.y);ctx.globalAlpha=1;
 }
+/** Scheinwerferkegel auf der Straße: von der Lampe bis knapp unter den Horizont,
+ *  sich zum Fluchtpunkt hin verbreiternd, mit hellem Lichtsee am Vorderrad.
+ *  Alles liegt UNTER dem Horizont — über dem Horizont ist Nacht. */
+export function headlightCone(r) {
+  const oben=Math.ceil(r.vh/2)+4;        // knapp unter dem Horizont
+  const unten=Math.round(r.vh-26);       // Lampenhöhe am Fahrzeug
+  const bands=[], N=30;
+  for(let i=0;i<N;i++){
+    const t=i/(N-1);                     // 0 = am Fahrzeug, 1 = Fluchtpunkt
+    bands.push({
+      y:Math.round(unten-t*(unten-oben)),
+      breite:Math.round(18+t*r.vw*0.6),  // zum Fluchtpunkt hin breiter
+      alpha:Number((0.10+0.14*(1-t)*(1-t)).toFixed(3)),   // nah heller
+    });
+  }
+  return bands;
+}
+/** Heller Lichtsee direkt vor dem Vorderrad — ebenfalls auf der Straße. */
+export function headlightPool(r) {
+  const horizon=Math.ceil(r.vh/2);
+  const hoehe=Math.max(6,Math.round(r.vh*0.06));
+  const y=Math.max(horizon+2,Math.round(r.vh-26));
+  return { y, hoehe, breite:Math.round(r.vw*0.44), alpha:0.22 };
+}
 export function drawNightBike(r,ctx) {
   const spr=r.sprite(r.input.action()?'motorrad_brake':'motorrad');
   const w=Math.round(r.vw*.20), h=Math.round(w*spr.h/spr.w);
   const x=Math.round(r.vw/2-w/2), y=r.vh-8-h;
-  // Headlight cone ahead; red glow behind when braking.
-  ctx.fillStyle='rgba(255,232,180,0.10)';
-  for(let i=0;i<30;i++){
-    const t=i/29, yy=Math.round(y-h*.2-t*(y-h*.2-r.vh*.42)), breite=Math.round(14+t*r.vw*.55);
-    ctx.fillRect(Math.round(r.vw/2-breite/2),yy,breite,2);
+  const turn=Math.round((r.lenkung||0)*3);
+  // Der Kegel gehört auf die Straße, nicht an den Himmel.
+  const pool=headlightPool(r);
+  ctx.fillStyle=`rgba(255,236,200,${pool.alpha})`;
+  ctx.fillRect(Math.round(r.vw/2+turn-pool.breite/2),pool.y,pool.breite,pool.hoehe);
+  for(const band of headlightCone(r)){
+    ctx.fillStyle=`rgba(255,232,180,${band.alpha})`;
+    ctx.fillRect(Math.round(r.vw/2+turn-band.breite/2),band.y,band.breite,3);
   }
   ctx.fillStyle='rgba(14,24,30,.4)';ctx.fillRect(x+3,r.vh-11,w-6,5);
-  const turn=Math.round((r.lenkung||0)*3);
   ctx.drawImage(spr.canvas,0,0,spr.w,spr.h,x+turn,y,w,h);
   if(r.panneTimer>0){ctx.fillStyle='#ffd675';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText('KURZE PAUSE',r.vw/2,y-4);ctx.textAlign='left';}
 }

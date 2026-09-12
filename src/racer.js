@@ -505,14 +505,16 @@ export class Racer {
 
   draw(ctx) {
     const frame = this.buildFrame();
-    this.drawSky(ctx);
+    this.drawSky(ctx, frame.visible);
     for (const seg of frame.visible) this.drawSegment(ctx, this.vw, seg);
     for (const o of frame.drawList) {
       if(o.flip){ctx.save();ctx.translate(o.sx*2,0);ctx.scale(-1,1);}
       this.drawSpriteAt(ctx, o.sprite, o.breite, o.sx, o.sy, o.half, o.fog, o.clip);
       if(o.flip)ctx.restore();
     }
-    if (this.nacht) this.drawScheinwerfer(ctx);
+    // Die Nachtfahrt bringt ihren eigenen Scheinwerferkegel mit (Fahrzeug-Art);
+    // ohne Fahrzeug-Art zeichnet der Racer ihn wie bisher.
+    if (this.nacht && !journeyArt(this.level)) this.drawScheinwerfer(ctx);
     this.drawCar(ctx);
     if (this.rain) this.drawRain(ctx);
     this.drawFx(ctx);
@@ -525,8 +527,8 @@ export class Racer {
     return this.tunnel.some((t) => seg >= t.from && seg < t.to);
   }
 
-  drawSky(ctx) {
-    { const art = journeyArt(this.level); if (art) return art.sky(this,ctx); }
+  drawSky(ctx, visible) {
+    { const art = journeyArt(this.level); if (art) return art.sky(this,ctx,visible); }
     const vw = this.vw, vh = this.vh;
     if (this.imTunnel()) {
       ctx.fillStyle = '#08060c';
