@@ -153,34 +153,34 @@ try {
     const npcs = g.entities.filter((e) => e.kind === 'npc');
     const decor = g.entities.filter((e) => e.kind === 'decor');
     const sheets = g.entities.filter((e) => e.kind === 'item' && e.item === 'stimmblatt');
-    const ada = npcs.find((e) => e.flag === 'ada_beauftragt');
-    g.player.x = ada.x - 18;
-    g.player.y = ada.y + ada.h - g.player.h;
+    const anna = npcs.find((e) => e.flag === 'ada_beauftragt');
+    g.player.x = anna.x - 18;
+    g.player.y = anna.y + anna.h - g.player.h;
     g.player.vx = 0; g.player.vy = 0;
     return JSON.stringify({ npcs: npcs.length, decor: new Set(decor.map((e) => e.spr)).size,
       sheets: new Set(sheets.map((e) => e.spr)).size });
   })()`));
   await sleep(250);
-  check('Akt 1 rendert zwei Ada-Begegnungen', akt1Data.npcs === 2, JSON.stringify(akt1Data));
+  check('Akt 1 rendert zwei Anna-Begegnungen', akt1Data.npcs === 2, JSON.stringify(akt1Data));
   check('Akt 1 hat mindestens fünf unterschiedliche Raumrequisiten', akt1Data.decor >= 5, JSON.stringify(akt1Data));
   check('Akt 1 rendert drei unterscheidbare Stimmen', akt1Data.sheets === 3, JSON.stringify(akt1Data));
-  const adaLabel = await evaluate("(window.__roland.game.hud.label || {}).text || ''");
-  check('Ada wird im Browser als Interaktion beschriftet', adaLabel.includes('ADA'), adaLabel);
-  check('Touch-Aktion heißt bei Ada nicht Tritt',
+  const annaLabel = await evaluate("(window.__roland.game.hud.label || {}).text || ''");
+  check('Anna wird im Browser als Interaktion beschriftet', annaLabel.includes('ANNA'), annaLabel);
+  check('Touch-Aktion heißt bei Anna nicht Tritt',
     (await evaluate("document.getElementById('btnAction').textContent")) === 'AKTION');
-  check('Adas Weltschild verweist auf die Aktionstaste',
+  check('Annas Weltschild verweist auf die Aktionstaste',
     (await evaluate("document.getElementById('worldlabel').textContent")).includes('AKTION-KNOPF'));
   for (let i = 0; i < 3; i++) {
     await key('KeyE', 'keyDown'); await sleep(80);
     await key('KeyE', 'keyUp'); await sleep(100);
   }
-  const adaState = JSON.parse(await evaluate(`JSON.stringify({
+  const annaState = JSON.parse(await evaluate(`JSON.stringify({
     flag: window.__roland.game.storyFlags.has('ada_beauftragt'),
     ziel: window.__roland.game.hud.ziel,
     hint: window.__roland.game.hud.hint
   })`));
-  check('Drei echte E-Tastendrücke schließen Adas Auftrag ab', adaState.flag === true, JSON.stringify(adaState));
-  check('Das Journal wechselt danach zu den drei Stimmen', adaState.ziel.includes('STIMMBLÄTTER'), adaState.ziel);
+  check('Drei echte E-Tastendrücke schließen Annas Auftrag ab', annaState.flag === true, JSON.stringify(annaState));
+  check('Das Journal wechselt danach zu den drei Stimmen', annaState.ziel.includes('STIMMBLÄTTER'), annaState.ziel);
   const act1Shot = await send('Page.captureScreenshot', { format: 'png' });
   const act1ShotDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
   mkdirSync(act1ShotDir, { recursive: true });
@@ -196,7 +196,7 @@ try {
     g.player.vx = 0; g.player.vy = 0;
   })()`);
   await sleep(200);
-  check('Adas Auftrag öffnet die Garderobentür im Browser',
+  check('Annas Auftrag öffnet die Garderobentür im Browser',
     (await evaluate("window.__roland.game.gates.find((e) => e.flag === 'ada_beauftragt').open")) === true);
   // Visuelle Referenzbilder für die vier späteren Raumtypen. Direkte
   // Positionierung dient nur der Aufnahme; die Route selbst prüft der Bot-Test.

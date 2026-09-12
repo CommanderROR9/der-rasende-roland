@@ -486,10 +486,10 @@ function place(game, px, py) {
   check('lift hints about the mappe', !!game.hud.hint && game.hud.hint.includes('MAPPE'), `hint=${game.hud.hint}`);
   game.hasMappe = true;
   game.update(1 / 60);
-  check('lift still waits for Ada after the mappe is complete', game.state === 'play');
+  check('lift still waits for Anna after the mappe is complete', game.state === 'play');
   game.storyFlags.add('ada_verabschiedet');
   game.update(1 / 60);
-  check('lift accepts mappe plus Ada payoff', game.state === 'complete');
+  check('lift accepts mappe plus Anna payoff', game.state === 'complete');
   check('reward beer appears', game.entities.some((e) => e.item === 'bier'));
   check('stats are recorded', game.stats.deckel === 0 && game.stats.time > 0);
 }
@@ -603,7 +603,7 @@ function place(game, px, py) {
   check('bot switches to the Frack for the Absperrband',
     game.gates.find((g) => g.need === 'frack').open === true);
   check('Notenmappe is collected on the way', game.hasMappe === true);
-  check('Ada frames the route at both ends',
+  check('Anna frames the route at both ends',
     game.storyFlags.has('ada_beauftragt') && game.storyFlags.has('ada_verabschiedet'));
   check('Bierdeckel are collected on the way', game.deckel >= 2, `deckel=${game.deckel}`);
 }

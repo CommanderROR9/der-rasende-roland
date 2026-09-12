@@ -48,12 +48,12 @@ const sheets = level.spawns.filter((s) => s.kind === 'item' && s.item === 'stimm
 check('Akt 1 defines a reusable story-step sequence',
   Array.isArray(level.storySteps) && level.storySteps.length >= 4,
   JSON.stringify(level.storySteps));
-check('Ada appears for briefing and payoff',
+check('Anna appears for briefing and payoff',
   npcs.filter((s) => s.npc === 'ada').length === 2,
   JSON.stringify(npcs));
-check('both Ada encounters contain authored dialogue',
+check('both Anna encounters contain authored dialogue',
   npcs.length === 2 && npcs.every((s) => Array.isArray(s.dialog) && s.dialog.length >= 2));
-check('the payoff Ada requires the complete score',
+check('the payoff Anna requires the complete score',
   npcs.some((s) => s.flag === 'ada_verabschiedet' && (s.requires || []).includes('mappe')));
 check('five or more distinct set-piece sprites establish the rooms',
   new Set(decors.map((s) => s.spr)).size >= 5,
@@ -99,24 +99,24 @@ check('all new Act-1 sprite matrices exist',
   ['ada', 'stimme_violine', 'stimme_bratsche', 'stimme_bass', 'spinde', 'notenregal', 'rohrventil', 'lastenhaken', 'dienstplan41']
     .every((name) => Array.isArray(SPRITES[name]) && SPRITES[name].length > 5));
 check('Act 1 explicitly declares a reversible route', level.route?.reversible === true);
-check('the goal requires mappe and the Ada payoff',
+check('the goal requires mappe and the Anna payoff',
   level.goal.need === 'mappe' && (level.goal.flags || []).includes('ada_verabschiedet'));
 const briefingGateData = level.gates.find((g) => g.flag === 'ada_beauftragt');
 check('the briefing room has a reusable story gate',
-  !!briefingGateData && briefingGateData.locked?.includes('ADA'));
+  !!briefingGateData && briefingGateData.locked?.includes('ANNA'));
 
 const runtime = makeGame();
 const { game, input, events } = runtime;
-check('the journal starts with the Ada briefing', (game.hud.ziel || '').includes('ADA'), game.hud.ziel);
-const startAda = game.entities.find((e) => e.kind === 'npc' && e.flag === 'ada_beauftragt');
-if (startAda) {
-  placeAt(game, startAda);
+check('the journal starts with the Anna briefing', (game.hud.ziel || '').includes('ANNA'), game.hud.ziel);
+const startAnna = game.entities.find((e) => e.kind === 'npc' && e.flag === 'ada_beauftragt');
+if (startAnna) {
+  placeAt(game, startAnna);
   const label = game.hud.label;
-  check('Ada is named and offers a deliberate interaction',
-    label?.action === true && label.text.includes('ADA'), JSON.stringify(label));
+  check('Anna is named and offers a deliberate interaction',
+    label?.action === true && label.text.includes('ANNA'), JSON.stringify(label));
   const beforeTritt = game.lastTritt;
-  for (let i = 0; i < startAda.dialog.length; i++) tap(game, input);
-  check('talking to Ada does not trigger the combat stomp', game.lastTritt === beforeTritt);
+  for (let i = 0; i < startAnna.dialog.length; i++) tap(game, input);
+  check('talking to Anna does not trigger the combat stomp', game.lastTritt === beforeTritt);
   check('the briefing completes a story flag', game.storyFlags?.has('ada_beauftragt') === true);
   if (briefingGateData) {
     const briefingGate = game.gates.find((g) => g.flag === 'ada_beauftragt');
@@ -130,26 +130,26 @@ if (startAda) {
   check('the journal advances from briefing to score sheets',
     (game.hud.ziel || '').includes('STIMMBLÄTTER'), game.hud.ziel);
 } else {
-  check('Ada is named and offers a deliberate interaction', false, 'start Ada missing');
-  check('talking to Ada does not trigger the combat stomp', false, 'start Ada missing');
-  check('the briefing completes a story flag', false, 'start Ada missing');
-  check('the journal advances from briefing to score sheets', false, 'start Ada missing');
+  check('Anna is named and offers a deliberate interaction', false, 'start Anna missing');
+  check('talking to Anna does not trigger the combat stomp', false, 'start Anna missing');
+  check('the briefing completes a story flag', false, 'start Anna missing');
+  check('the journal advances from briefing to score sheets', false, 'start Anna missing');
 }
 
-const endAda = game.entities.find((e) => e.kind === 'npc' && e.flag === 'ada_verabschiedet');
-if (endAda) {
-  placeAt(game, endAda);
+const endAnna = game.entities.find((e) => e.kind === 'npc' && e.flag === 'ada_verabschiedet');
+if (endAnna) {
+  placeAt(game, endAnna);
   tap(game, input);
   check('payoff dialogue stays locked before the score is complete',
     game.storyFlags?.has('ada_verabschiedet') !== true && (game.hud.hint || '').includes('STIMMEN'));
   game.hasMappe = true;
-  for (let i = 0; i < endAda.dialog.length; i++) tap(game, input);
-  check('Ada acknowledges the complete score', game.storyFlags?.has('ada_verabschiedet') === true);
+  for (let i = 0; i < endAnna.dialog.length; i++) tap(game, input);
+  check('Anna acknowledges the complete score', game.storyFlags?.has('ada_verabschiedet') === true);
   check('story completion emits a reusable event', events.some((e) => e.type === 'story' && e.flag === 'ada_verabschiedet'));
 } else {
-  check('payoff dialogue stays locked before the score is complete', false, 'payoff Ada missing');
-  check('Ada acknowledges the complete score', false, 'payoff Ada missing');
-  check('story completion emits a reusable event', false, 'payoff Ada missing');
+  check('payoff dialogue stays locked before the score is complete', false, 'payoff Anna missing');
+  check('Anna acknowledges the complete score', false, 'payoff Anna missing');
+  check('story completion emits a reusable event', false, 'payoff Anna missing');
 }
 
 const goal = game.level.goal;
@@ -185,9 +185,9 @@ check('the mappe can be displayed as a carried object', !!SPRITES.mappe && TILE 
   check('combined action goals open after action and story flag', composed.goalErfuellt() === true);
 }
 
-// At the final Ada, the dialogue is the actionable target even though the lift
+// At the final Anna, the dialogue is the actionable target even though the lift
 // is already within label range. Once standing at the lift, the missing reason
-// must name Ada rather than falsely claiming the carried score is absent.
+// must name Anna rather than falsely claiming the carried score is absent.
 {
   const { game: finale } = makeGame();
   const ada = finale.entities.find((e) => e.kind === 'npc' && e.flag === 'ada_verabschiedet');
@@ -196,13 +196,13 @@ check('the mappe can be displayed as a carried object', !!SPRITES.mappe && TILE 
   finale.player.x = ada.x + 26;
   finale.player.y = ada.y + ada.h - PHYS.playerH;
   finale.update(1 / 60);
-  check('Ada interaction label wins over the nearby lift',
-    finale.hud.label?.action === true && finale.hud.label.text.includes('ADA'), JSON.stringify(finale.hud.label));
+  check('Anna interaction label wins over the nearby lift',
+    finale.hud.label?.action === true && finale.hud.label.text.includes('ANNA'), JSON.stringify(finale.hud.label));
   finale.player.x = finale.level.goal.x;
   finale.player.y = finale.level.goal.y + finale.level.goal.h - PHYS.playerH;
   finale.update(1 / 60);
-  check('lift label names the missing Ada payoff when mappe is carried',
-    finale.hud.label?.text.includes('ADA') && !finale.hud.label.text.includes('MAPPE FEHLT'), JSON.stringify(finale.hud.label));
+  check('lift label names the missing Anna payoff when mappe is carried',
+    finale.hud.label?.text.includes('ANNA') && !finale.hud.label.text.includes('MAPPE FEHLT'), JSON.stringify(finale.hud.label));
 }
 
 console.log(results.join('\n'));
