@@ -171,7 +171,7 @@ export class Game {
       case 'schrank':
         return { kind: 'schrank', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 28, w: 16, h: 28, alive: true, near: false };
       case 'pult':
-        return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3 };
+        return { kind: 'pult', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 16, w: 16, h: 16, alive: true, near: false, teil: 0, noetig: s.noetig || 3, flag: s.flag, aktion: s.aktion };
       case 'npc': {
         const matrix = SPRITES[s.spr];
         const h = matrix ? matrix.length : 22;
@@ -1220,8 +1220,18 @@ export class Game {
       this.einsatzGelungen = true;
       this.storyFlags.add('einsatz_gelungen');
       this.audio.play('applaus') ;
-      this.message('DER EINSATZ SITZT. DAS ORCHESTER ZIEHT MIT.', 6, 2);
+      // Ein Pult mit eigenem Flag (Akt 3: zwei Pulte sichern) meldet seinen
+      // Abschluss als Story-Flag; ohne Flag gilt die Akt-2-Meldung.
+      if (pult.flag) {
+        this.storyFlags.add(pult.flag);
+        this.events({ type: 'story', flag: pult.flag });
+        this.message('PULT GESICHERT. DIE KLAMMERN HALTEN.', 6, 2);
+      } else {
+        this.message('DER EINSATZ SITZT. DAS ORCHESTER ZIEHT MIT.', 6, 2);
+      }
       this.events({ type: 'einsatz' });
+    } else if (pult.aktion) {
+      this.message(`KLAMMER ${pult.teil}/${pult.noetig} SITZT`, 4.5, 2);
     } else {
       this.message(`TEIL ${pult.teil}/${pult.noetig} — DAS ORCHESTER ZIEHT MIT`, 4.5, 2);
     }
@@ -1268,10 +1278,14 @@ export class Game {
     if (pult) {
       const fertig = pult.teil >= pult.noetig;
       const mappe = this.hasMappe && !this.mappeAbgegeben;
-      best = {
-        text: mappe ? 'NOTENMAPPE AUF DAS PULT LEGEN'
+      // Ein Pult mit eigener Aktion (Akt 3: sichern statt Einsatz spielen)
+      // beschriftet sich selbst; ohne Aktion gilt die Akt-2-Beschriftung.
+      const text = mappe ? 'NOTENMAPPE AUF DAS PULT LEGEN'
+        : pult.aktion ? (fertig ? `${pult.aktion} — FERTIG` : `${pult.aktion} (${pult.teil}/${pult.noetig})`)
           : fertig ? `EINSATZ SITZT (${pult.teil}/${pult.noetig})`
-            : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`,
+            : `EINSATZ GEBEN (${pult.teil}/${pult.noetig})`;
+      best = {
+        text,
         action: !fertig, key: 'E', x: pult.x + 8, y: pult.y - 20,
       };
     }
