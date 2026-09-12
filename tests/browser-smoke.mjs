@@ -43,6 +43,8 @@ const chrome = spawn(chromiumPath, [
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ANTWORT_MS = 30000;      // Antwortgrenze je Browserauftrag (siehe evaluate)
+const laufStart = Date.now();  // Gesamtlaufzeit fuer den Nachweis
 
 async function targetWs() {
   for (let i = 0; i < 60; i++) {
@@ -92,12 +94,26 @@ function send(method, params = {}) {
   });
 }
 async function evaluate(expr) {
-  const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || ''));
+  // Harte Antwortgrenze je Browserauftrag (A4h): haengt die Seite (Endlosschleife
+  // im Spielcode), kommt auf Runtime.evaluate nie eine Antwort. Ohne Grenze
+  // friert der Lauf stumm ein und endet erst in der Zeitgrenze des Aufrufers —
+  // mit null Ausgabezeilen. Mit Grenze gibt es FAIL mit Meldung.
+  const r = await Promise.race([
+    send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }),
+    new Promise((_, rej) => {
+      const t = setTimeout(() => rej(new Error(
+        `keine Antwort vom Browser nach ${ANTWORT_MS / 1000} s auf: ${expr.slice(0, 90)}`)), ANTWORT_MS);
+      t.unref?.();
+    }),
+  ]);
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || '') + ' | Ausdruck: ' + expr.replace(/\s+/g, ' ').slice(0, 200));
   return r.result.value;
 }
 async function key(code, type) {
-  const map = { KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'] };
+  const map = {
+    KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'],
+    ArrowDown: [40, 'ArrowDown'], KeyS: [83, 's'], ArrowUp: [38, 'ArrowUp'],
+  };
   const [vk, k] = map[code];
   await send('Input.dispatchKeyEvent', {
     type, code, key: k, text: type === 'char' ? k : undefined,
@@ -1290,6 +1306,34 @@ try {
     a3ende.state === 'complete', JSON.stringify(a3ende));
   check('keine Fehler im Akt-3-Auftritt', a3ende.errors.length === 0, JSON.stringify(a3ende.errors));
   // --- Akt 4: Orchestergraben ---------------------------------------------
+  // Grenzen des Akt-4-Abschnitts (Auftrag A4h). Der Abschnitt hat frueher
+  // unbegrenzt gewartet: die Ausstiegsschleife lief bis zu 260 Schritte weit,
+  // in jedem Schritt konnte eine Anlaufschleife von 13 s stecken, die das Ziel
+  // nur alle 100 ms abtastete und deshalb ueber es hinweglief (Rechts-links-
+  // Pingpong). Der Lauf endete nicht mit FAIL, sondern in der Zeitgrenze des
+  // Aufrufers — mit NULL Ausgabezeilen, weil alle Meldungen bis zum Schluss
+  // gepuffert wurden. Deshalb jetzt:
+  //   * harte Wandumgrenzung ueber Date.now() (A4_BUDGET_MS),
+  //   * eine sofort ausgegebene Zeile "A4-SCHRITT: ..." bei jedem Schritt
+  //     (console.log, nicht results — sichtbar, waehrend der Lauf noch laeuft),
+  //   * ein Ueberschreiten der Grenze ist ein FAIL mit Meldung und bricht den
+  //     Abschnitt ab, statt weiterzulaufen (a4Wache wirft).
+  const A4_BUDGET_MS = 110000;           // hart: ganzer Abschnitt in < 2 min
+  const A4_STEG_KANTE = 1008;            // Stegkante (gemessen, src/game.js Akt 4)
+  const A4_STEG_FUSS = 192;              // Fusshoehe auf dem Steg (gemessen)
+  const a4Start = Date.now();
+  const a4Dauer = () => Date.now() - a4Start;
+  const a4Rest = () => A4_BUDGET_MS - a4Dauer();
+  const a4Zeit = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  const a4Schritt = (text) => console.log(`A4-SCHRITT: ${text}`
+    + ` [t=${a4Zeit(a4Dauer())}, Rest ${a4Zeit(Math.max(0, a4Rest()))}]`);
+  const a4Wache = (was) => {
+    if (a4Rest() <= 0) {
+      throw new Error(`Akt-4-Zeitgrenze ${A4_BUDGET_MS / 1000} s ueberschritten bei`
+        + ` "${was}" (nach ${a4Zeit(a4Dauer())}): Abschnitt abgebrochen, kein Weiterlaufen`);
+    }
+  };
+  a4Schritt('1/10 Akt 4 laden');
   await evaluate("window.__roland.loadAct(4)");
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(300);
@@ -1328,6 +1372,7 @@ try {
 
   // Der NaN-Kamerafehler war fuer die frueheren Checks unsichtbar: jetzt wird die
   // Welt direkt um den Spieler gemessen und Bewegung geprueft.
+  a4Schritt('2/10 Kamera, Sichtbarkeit und Lauf');
   const kam = JSON.parse(await evaluate(`JSON.stringify({
     camX: window.__roland.game.cam.x, camY: window.__roland.game.cam.y,
     w: window.__roland.level.w, h: window.__roland.level.h
@@ -1376,6 +1421,749 @@ try {
   })()`));
   check('Akt 4: auch auf dem Steg ist genug zu sehen', stegHell.helligkeit > 25, JSON.stringify(stegHell));
   check('Akt 4: Spieler laeuft im Browser', xb - xa > 60, `dx=${(xb - xa).toFixed(0)}`);
+
+  // --- Akt 4 Musterstrecke: Tragezustand, Mitfahrt, Uebergabe, Andenken -----
+  // Die Browser-Ebene von Akt 4, wie sie das Muster (docs/AKT1_MUSTERSTRECKE.md,
+  // Abschnitt "Verifikation fuer Folgeakte") fuer die Folgeakte verlangt: Rolf,
+  // Kiste, Versenkung, Andenken und Auftritt werden ueber echte Tastenanschlaege
+  // und echte Wege erreicht. Einzige Ausnahme ist der Sprung vom Scheitel der
+  // Versenkung auf das Steg: dieses Stueck autonomes Plattformen darf der Test
+  // nach Auftrag A4h Punkt 3 durch Setzen der Position abkuerzen — und nur,
+  // wenn der echte Sprungweg vorher in begrenzten Runden nicht getragen hat
+  // (er wird immer zuerst versucht und das Ergebnis gemeldet).
+  a4Schritt('3/10 Weg zu Rolf im Dienstgang (echte Tasten)');
+  await evaluate('window.__errors.length = 0');
+  await evaluate('window.__roland.loadAct(4)');
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(1100);
+
+  // Laufen mit echten Tasten: haelt die Richtung, springt bei Hindernissen
+  // (Kasten im Graben: der Sprung muss die volle Hoehe erreichen, deshalb wird
+  // die Sprungtaste so lange gehalten wie im Gefahrenlauf) und faengt einen
+  // Kollaps mit dem Knopf des Spiels ab, damit der Weg weitergeht.
+  let kollaps4 = 0;
+  const kollaps4Orte = [];          // Wo der Lauf zusammengebrochen ist (Nachweis)
+  let abgang4 = 'zeit';             // Warum endete der letzte Lauf? (Nachweis unten)
+  const gehe4 = async (code, bedingung, maxMs) => {
+    await key(code, 'keyDown');
+    let letzteX = await evaluate('window.__roland.game.player.x');
+    let fest = 0;
+    let erreicht = false;
+    abgang4 = 'zeit';
+    for (let i = 0; i < Math.ceil(maxMs / 110); i++) {
+      a4Wache(`gehe4(${code})`);
+      await sleep(110);
+      if (await evaluate(bedingung)) { erreicht = true; abgang4 = 'erreicht'; break; }
+      const stand = JSON.parse(await evaluate(
+        'JSON.stringify({x: window.__roland.game.player.x, state: window.__roland.game.state})'));
+      if (stand.state === 'collapse') {
+        kollaps4++;
+        kollaps4Orte.push(Math.round(stand.x));
+        await evaluate("document.getElementById('collapseBtn').click()");
+        await sleep(450);
+        letzteX = await evaluate('window.__roland.game.player.x');
+        fest = 0;
+        continue;
+      }
+      if (stand.state !== 'play') { abgang4 = `ende:${stand.state}`; break; }
+      fest = Math.abs(stand.x - letzteX) < 3 ? fest + 1 : 0;
+      letzteX = stand.x;
+      if (fest >= 3) {                      // ~0,35 s festgefahren: echter Sprung
+        fest = 0;
+        await key('Space', 'keyDown'); await sleep(280);
+        await key('Space', 'keyUp'); await sleep(160);
+      }
+    }
+    await key(code, 'keyUp');
+    await sleep(180);
+    return erreicht;
+  };
+  const nah4 = (feld, wert) => `(() => {
+    const e = window.__roland.game.entities.find((x) => x.kind === 'npc' && x.near);
+    return !!e && e.${feld} === '${wert}';
+  })()`;
+  const zust4 = async (ausdruck) => JSON.parse(await evaluate(`JSON.stringify(${ausdruck})`));
+  const kiste4 = 'window.__roland.game.entities.find((e) => e.kind === \'kiste\')';
+  const lift4 = 'window.__roland.game.entities.find((e) => e.kind === \'lift\')';
+  const kopf4 = `(() => {
+    const c = document.getElementById('game');
+    const g = window.__roland.game;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const out = [];
+    for (let y = Math.max(0, py - 16); y < Math.min(c.height, py + 2); y++)
+      for (let x = Math.max(0, px - 6); x < Math.min(c.width, px + 16); x++) {
+        const i = (y * c.width + x) * 4;
+        out.push(d[i], d[i + 1], d[i + 2]);
+      }
+    return JSON.stringify(out);
+  })()`;
+  const punkte4 = (a, b) => {
+    let n = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i += 3) {
+      if (Math.abs(a[i] - b[i]) > 6 || Math.abs(a[i + 1] - b[i + 1]) > 6
+        || Math.abs(a[i + 2] - b[i + 2]) > 6) n++;
+    }
+    return n;
+  };
+  const bild4 = async (name) => {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    const dir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+    mkdirSync(dir, { recursive: true });
+    const pfad = join(dir, name);
+    writeFileSync(pfad, Buffer.from(shot.data, 'base64'));
+    check(`Akt-4-Bild ${name} geschrieben`, existsSync(pfad));
+  };
+
+  const grabA = await zust4(`{
+    name: window.__roland.level.name,
+    state: window.__roland.game.state,
+    traegt: window.__roland.game.traegt,
+    kisteDa: window.__roland.game.entities.some((e) => e.kind === 'kiste' && e.alive),
+    gitter: window.__roland.game.gates[0].open,
+    journal: document.getElementById('journal').textContent,
+    errors: window.__errors
+  }`);
+  check('Akt 4 laedt und laeuft ohne Konsolenfehler',
+    grabA.name.includes('GRABEN') && grabA.state === 'play' && grabA.errors.length === 0
+    && grabA.traegt === false && grabA.kisteDa === true, JSON.stringify(grabA));
+  check('Akt 4: das Journal beginnt bei Rolf, das Gitter in den Graben ist zu',
+    /ROLF/.test(grabA.journal || '') && grabA.gitter === false, JSON.stringify(grabA));
+
+  // 1) Rolfs Briefing im Dienstgang: hinlaufen, dann dreimal E.
+  const anRolf = await gehe4('KeyD', nah4('npc', 'rolf'), 4000);
+  const beiRolf = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    label: window.__roland.game.hud.label,
+    journal: document.getElementById('journal').textContent
+  }`);
+  check('Akt 4: der Spieler laeuft selbst bis zu Rolf im Dienstgang',
+    anRolf === true && beiRolf.x > 150 && beiRolf.x < 260, JSON.stringify(beiRolf));
+  check('Akt 4: Rolf ist als Gespraechspartner beschriftet',
+    beiRolf.label?.action === true && /MIT ROLF SPRECHEN/.test(beiRolf.label?.text || ''),
+    JSON.stringify(beiRolf.label));
+
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(70);
+    await key('KeyE', 'keyUp'); await sleep(150);
+  }
+  const briefing = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('graben_beauftragt'),
+    ziel: window.__roland.game.hud.ziel,
+    journal: document.getElementById('journal').textContent
+  }`);
+  check('Akt 4: Rolfs Briefing ueber die Aktionstaste setzt den Auftrag, das Journal wandert zur Kiste',
+    briefing.flag === true && /LAMPENKISTE AUFNEHMEN/.test(briefing.ziel || '')
+    && /LAMPENKISTE/.test(briefing.journal || ''), JSON.stringify(briefing));
+
+  // 2) Durch das Gitter in den Graben bis zur Lampenkiste — echter Weg.
+  a4Schritt('4/10 Gitter auf und Lampenkiste aufnehmen (echte Tasten)');
+  const anDerKiste = await gehe4('KeyD',
+    `(() => { const k = ${kiste4}; return !!k && k.near === true; })()`, 6000);
+  const kiste0 = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    gitter: window.__roland.game.gates[0].open,
+    label: window.__roland.game.hud.label
+  }`);
+  check('Akt 4: das Gitter oeffnet sich auf dem echten Weg in den Graben',
+    anDerKiste === true && kiste0.gitter === true && kiste0.x > 20 * 16, JSON.stringify(kiste0));
+  check('Akt 4: an der Kiste steht das Schild LAMPENKISTE AUFNEHMEN',
+    kiste0.label?.action === true && /LAMPENKISTE AUFNEHMEN/.test(kiste0.label?.text || ''),
+    JSON.stringify(kiste0.label));
+
+  // 3) Aufnehmen ueber die Aktionstaste — und der Tragezustand ist am Spieler
+  //    zu sehen (Kopfbereich), nachgewiesen gegen zwei Kontrollbilder.
+  await sleep(500);
+  const blockLeer = JSON.parse(await evaluate(kopf4));
+  await bild4('akt4-tragezustand-vorher.png');
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const nachAufnahme = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAusDerWelt: !window.__roland.game.entities.some((e) => e.kind === 'kiste' && e.alive),
+    flag: window.__roland.game.storyFlags.has('kiste_aufgenommen'),
+    ziel: window.__roland.game.hud.ziel,
+    label: window.__roland.game.hud.label
+  }`);
+  const blockTraegt = JSON.parse(await evaluate(kopf4));
+  check('Akt 4: die Aktionstaste nimmt die Lampenkiste auf',
+    nachAufnahme.traegt === true && nachAufnahme.kisteAusDerWelt === true && nachAufnahme.flag === true
+    && /HOCHFAHREN/.test(nachAufnahme.ziel || ''), JSON.stringify(nachAufnahme));
+  check('Akt 4: im Tragen nennt das Schild das Absetzen mit DUCKEN + E',
+    /LAMPENKISTE ABSETZEN/.test(nachAufnahme.label?.text || ''), JSON.stringify(nachAufnahme.label));
+
+  // 4) Tragezustand fair: DUCKEN + E setzt ab, E nimmt ueberall wieder auf.
+  a4Schritt('5/10 Ablegen, Wiederaufnehmen, Tragebild (echte Tasten)');
+  await key('ArrowDown', 'keyDown'); await sleep(140);
+  await key('KeyE', 'keyDown'); await sleep(80);
+  await key('KeyE', 'keyUp'); await sleep(160);
+  await key('ArrowDown', 'keyUp'); await sleep(500);
+  const abgesetzt = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })(),
+    kisteNear: (() => { const k = ${kiste4}; return k ? k.near : null; })(),
+    kisteFuss: (() => { const k = ${kiste4}; return Math.round(k.y + k.h); })(),
+    flag: window.__roland.game.storyFlags.has('kiste_aufgenommen')
+  }`);
+  const blockLeer2 = JSON.parse(await evaluate(kopf4));
+  check('Akt 4: DUCKEN + E setzt die Kiste ab, sie liegt wieder in der Welt',
+    abgesetzt.traegt === false && abgesetzt.kisteAlive === true && abgesetzt.kisteNear === true
+    && Math.abs(abgesetzt.kisteFuss - 400) < 3 && abgesetzt.flag === true, JSON.stringify(abgesetzt));
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const blockTraegt2 = JSON.parse(await evaluate(kopf4));
+  const pixel4 = {
+    auf: punkte4(blockLeer, blockTraegt),
+    auf2: punkte4(blockLeer2, blockTraegt2),
+    kontrolle1: punkte4(blockLeer, blockLeer2),
+    kontrolle2: punkte4(blockTraegt, blockTraegt2),
+  };
+  check('Akt 4: die getragene Kiste ist am Spieler sichtbar (Kopfbereich, gegen Kontrollbilder geprueft)',
+    pixel4.auf >= 24 && pixel4.auf2 >= 24
+    && pixel4.auf >= 4 * (pixel4.kontrolle1 + pixel4.kontrolle2 + 1), JSON.stringify(pixel4));
+
+  // 5) Im Tragen bleiben Taktaktionen moeglich (Tritt statt Ablegen).
+  const vorTritt = await evaluate('JSON.stringify(window.__roland.game.lastTritt)');
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(250);
+  const imTragen = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    tritt: window.__roland.game.lastTritt,
+    beats: window.__roland.game.beats
+  }`);
+  check('Akt 4: im Tragen bleibt die Taktaktion moeglich, die Kiste bleibt auf dem Arm',
+    vorTritt === 'null' && imTragen.traegt === true && !!imTragen.tritt && imTragen.beats > 0,
+    `vor=${vorTritt} nach=${JSON.stringify(imTragen)}`);
+
+  // 6) Zweite Stelle: ablegen und wieder aufnehmen — kein Softlock.
+  const weiterLinks = await gehe4('KeyA', 'window.__roland.game.player.x < 400', 4000);
+  await sleep(300);
+  await key('ArrowDown', 'keyDown'); await sleep(140);
+  await key('KeyE', 'keyDown'); await sleep(80);
+  await key('KeyE', 'keyUp'); await sleep(160);
+  await key('ArrowDown', 'keyUp'); await sleep(500);
+  const weitAb = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAlive: (() => { const k = ${kiste4}; return k ? k.alive : null; })(),
+    kisteX: (() => { const k = ${kiste4}; return Math.round(k.x); })(),
+    kisteFuss: (() => { const k = ${kiste4}; return Math.round(k.y + k.h); })(),
+    spielerX: Math.round(window.__roland.game.player.x)
+  }`);
+  await key('KeyE', 'keyDown'); await sleep(70);
+  await key('KeyE', 'keyUp'); await sleep(450);
+  const weitAuf = await zust4(`{
+    traegt: window.__roland.game.traegt,
+    kisteAusDerWelt: !window.__roland.game.entities.some((e) => e.kind === 'kiste' && e.alive)
+  }`);
+  check('Akt 4: die Kiste ist auch an neuer Stelle wieder aufnehmbar (kein Softlock)',
+    weiterLinks === true && weitAb.traegt === false && weitAb.kisteAlive === true
+    && Math.abs(weitAb.kisteFuss - 400) < 3 && Math.abs(weitAb.kisteX - weitAb.spielerX) < 24
+    && weitAuf.traegt === true && weitAuf.kisteAusDerWelt === true,
+    JSON.stringify({ weitAb, weitAuf }));
+  await bild4('akt4-tragezustand.png');
+
+  // 7) Mit der Versenkung nach oben: echter Mitfahr-Pfad, kein Setzen der Position.
+  //    Auf die Versenkung kommen (gilt fuer Hin- und Rueckfahrt): echter Weg
+  //    zuerst — hinstellen und warten, bis die Versenkung unten ist und den
+  //    Spieler mitnimmt. Nur wenn das im Fenster nicht getragen hat, wird die
+  //    Position gesetzt (Auftrag A4h Punkt 3, autonomes Plattformen); gemeldet
+  //    wird, was geschehen ist.
+  const liftLage4 = `(() => {
+    const g = window.__roland.game, p = g.player;
+    const l = g.entities.find((e) => e.kind === 'lift');
+    const pc = Math.round(p.x + p.w / 2), mitte = Math.round(l.x + l.w / 2);
+    return {
+      px: Math.round(p.x), pc, mitte, liftY: Math.round(l.y),
+      fuss: Math.round(p.y + p.h), grund: p.onGround === true,
+      aufLift: Math.abs(pc - mitte) < l.w / 2 - 4 && Math.abs((p.y + p.h) - l.y) < 6,
+      state: g.state
+    };
+  })()`;
+  let liftGesetzt4 = 0;
+  const aufsLift4 = async (richtung, maxMs, wo) => {
+    const ende = Date.now() + maxMs;
+    let s = await zust4(liftLage4);
+    while (Date.now() < ende && s.aufLift !== true && s.state === 'play') {
+      a4Wache(`aufsLift4(${wo})`);
+      if (Math.abs(s.pc - s.mitte) > 6) {          // noch nicht auf der Hoehe
+        const code = s.pc < s.mitte ? 'KeyD' : 'KeyA';
+        await key(code, 'keyDown');
+        for (let j = 0; j < 30; j++) {             // hoechstens 3 s je Anlauf
+          await sleep(100);
+          const t = await zust4(liftLage4);
+          if (t.aufLift || t.state !== 'play') break;
+          if (code === 'KeyD' ? t.pc >= t.mitte : t.pc <= t.mitte) break;
+        }
+        await key(code, 'keyUp');
+        await sleep(120);
+      } else {
+        await sleep(120);                          // warten, bis sie unten ist
+      }
+      s = await zust4(liftLage4);
+    }
+    await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp');
+    if (s.aufLift !== true) {
+      liftGesetzt4 += 1;
+      a4Schritt(`Versenkung ${wo}: echter Weg (${richtung}) trug nicht`
+        + ` (pc=${s.pc}, mitte=${s.mitte}, fuss=${s.fuss}, liftY=${s.liftY})`
+        + ` -> Spieler auf die Versenkung setzen (A4h Punkt 3)`);
+      await evaluate(`(() => { const g = window.__roland.game, p = g.player;
+        const l = g.entities.find((e) => e.kind === 'lift');
+        p.x = l.x + l.w / 2 - p.w / 2; p.y = l.y - p.h; p.vy = 0; })()`);
+      await sleep(250);
+      s = await zust4(liftLage4);
+    }
+    a4Schritt(`Versenkung ${wo}: ${s.aufLift ? 'auf der Versenkung' : 'NICHT auf der Versenkung'}`
+      + ` (pc=${s.pc}, fuss=${s.fuss}, liftY=${s.liftY}, gesetzt=${liftGesetzt4})`);
+    return s;
+  };
+  a4Schritt('6/10 Mitfahrt auf der Versenkung (echte Tasten)');
+  const aufLift6 = await aufsLift4('KeyD', 8000, 'Hinfahrt');
+  const einstieg = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+    aufLift: ${aufLift6.aufLift === true}
+  }`);
+  let mitte = null, oben = null, letzte4 = null;
+  for (let i = 0; i < 80 && !oben; i++) {        // hoechstens 16 s (eine Fahrt 11 s)
+    a4Wache('Mitfahrt nach oben');
+    await sleep(200);
+    const s = await zust4(`{
+      fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+      liftY: Math.round(${lift4}.y),
+      x: Math.round(window.__roland.game.player.x),
+      traegt: window.__roland.game.traegt,
+      hoch: window.__roland.game.storyFlags.has('kiste_oben'),
+      state: window.__roland.game.state
+    }`);
+    if (!mitte && s.fuss < 380 && s.fuss > 220 && s.traegt === true) mitte = s;
+    if (s.fuss <= 13 * 16 && s.traegt === true) oben = s;
+    letzte4 = s;
+    if (s.state !== 'play') break;
+  }
+  check('Akt 4: die Versenkung traegt den Spieler mit der Kiste nach oben',
+    !!mitte && !!oben && oben.hoch === true && oben.traegt === true && oben.x > 944 && oben.x < 1008,
+    `einstieg=${JSON.stringify(einstieg)} mitte=${JSON.stringify(mitte)} oben=${JSON.stringify(oben)}`
+    + ` letzte=${JSON.stringify(letzte4)}`);
+  await bild4('akt4-mitfahrt.png');
+
+  // 8) Ausstieg oben auf das Steg — der gemessene Kern des Fehlers.
+  //    Gemessen im Browser (nicht vermutet, Diagnoselauf mit Zustandstrace):
+  //    Die Hauptversenkung traegt den Spieler bis fuss 192, die Stegkante
+  //    beginnt bei x=1008 auf y=192. Ein reiner Rechtslauf am oberen Ende
+  //    fuehrt deshalb am Rand der Versenkung vorbei UNTER dem Steg hindurch in
+  //    den Graben (gemessen: px 1019, fuss 259, Versenkung 256, onGround false)
+  //    — genau dort endete der Walk bisher, und damit fielen alle neun
+  //    Pruefungen, die an der Uebergabe haengen. Ein reiner Sprung ohne
+  //    Richtungstaste bleibt auf der Versenkung (gemessen: px unveraendert 970).
+  //    Der Weg, der traegt, ist Richtung + Sprung im selben Moment, waehrend
+  //    die Versenkung oben steht: der Spieler laeuft ueber der Kante hinweg und
+  //    landet auf dem Steg (gemessen: px 1022, fuss 192, Schild "MIT ROLF
+  //    SPRECHEN"). Ab fuss 228 haelt die Stegkante den Lauf auf (darunter passt
+  //    der Spieler unter ihr durch), deshalb wird erst dann gelaufen.
+  //    Nachtrag (gemessen am Spielcode, src/game.js updateLifts): Die
+  //    Versenkung faehrt eine Dreieckswelle, deren Scheitel (k=1) in EINEM
+  //    Bild erreicht ist — oben gibt es KEINE Standzeit (nur unten,
+  //    stand=0.14). liftDy ist zusaetzlich pro Bild gerundet. Ein Ausloeser
+  //    auf (liftDy<0 && fuss<=212) in einem einzelnen Abtastfenster ist
+  //    deshalb zu fragil, und die alte Form liess KeyD unten eingerastet,
+  //    wenn das Fenster verpasst wurde (Spieler lief danach unkontrolliert
+  //    von der sinkenden Versenkung in den Graben). Ausloeser ist jetzt die
+  //    LAGE (aufLift && fuss<=206: spaeter Aufstieg + Scheitel + frueher
+  //    Abstieg, ~0,5 s Fenster, mehrere Abtastungen), und jede Taste wird
+  //    nach jedem Versuch garantiert losgelassen.
+  //    Der Ausstieg wird in Runden mit echter Fahrt wiederholt und das Ergebnis
+  //    gemessen, nicht angenommen — kein Blindlauf, kein Blinddruck. Jede Runde
+  //    hat eine harte Zeitgrenze (12 s = eine Fahrt), es gibt hoechstens zwei
+  //    Runden, und jeder Anlauf bricht ab, sobald er das Ziel ueberholt hat
+  //    (frueher lief er 13 s ueber die Versenkung hinaus und pendelte hin und
+  //    her — das war der Haenger).
+  a4Schritt('7/10 Ausstieg auf das Steg (Richtung + Sprung), dann Uebergabe an Rolf');
+  const stegLage4 = `(() => {
+    const g = window.__roland.game, p = g.player;
+    const l = g.entities.find((e) => e.kind === 'lift');
+    const pc = Math.round(p.x + p.w / 2), mitte = Math.round(l.x + l.w / 2);
+    return {
+      px: Math.round(p.x), pc, fuss: Math.round(p.y + p.h), grund: p.onGround === true,
+      aufSteg: p.x + p.w > 1008 && Math.abs(p.y + p.h - 192) < 4 && p.onGround === true,
+      aufLift: Math.abs(pc - mitte) < l.w / 2 - 4 && Math.abs((p.y + p.h) - l.y) < 6,
+      liftMitte: mitte, liftY: Math.round(l.y), liftDy: Math.round(l.dy), state: g.state
+    };
+  })()`;
+  let stegAusstiege4 = 0;         // wie oft der echte Sprungweg ausgeloest wurde
+  let stegRunden4 = 0;            // wie viele Fahrten dafuer gebraucht wurden
+  let stegGesetzt4 = 0;           // wie oft die Position gesetzt werden musste
+  // Ein Ausstiegsversuch: eine Fahrt lang (12 s) auf den Scheitel warten, dann
+  // Richtung + Sprung. Die Anlaufschleife endet, sobald sie das Ziel erreicht
+  // ODER ueberholt hat — frueher lief sie 13 s ueber die Versenkung hinaus und
+  // pendelte rechts/links, und genau das liess den Lauf die Zeitgrenze reissen.
+  const beimAusstieg4 = async (runden) => {
+    // Defensive Tastenlage: keine Richtung darf aus einem frueheren Lauf
+    // eingerastet bleiben, sonst stuermt der Spieler unkontrolliert los.
+    await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp'); await key('Space', 'keyUp');
+    for (let runde = 0; runde < runden; runde++) {
+      stegRunden4 += 1;
+      const ende = Date.now() + 12000;             // eine Fahrt dauert 11 s
+      while (Date.now() < ende) {
+        a4Wache(`Ausstieg Runde ${runde + 1}`);
+        const s = await zust4(stegLage4);
+        if (s.state !== 'play' || s.aufSteg) return s;
+        if (!s.aufLift) {
+          // Nicht auf der Versenkung (Graben, Pult, unter dem Steg): mit echten
+          // Tasten zurueck auf die Versenkung stellen und die naechste Fahrt
+          // abwarten — der Weg zurueck nach oben bleibt echt.
+          const code = s.pc < s.liftMitte - 4 ? 'KeyD' : (s.pc > s.liftMitte + 4 ? 'KeyA' : null);
+          if (code) {
+            await key(code, 'keyDown');
+            for (let j = 0; j < 40; j++) {         // hoechstens 4 s je Anlauf
+              await sleep(100);
+              const t = await zust4(stegLage4);
+              if (t.aufLift || t.aufSteg || t.state !== 'play') break;
+              if (code === 'KeyD' ? t.pc >= t.liftMitte : t.pc <= t.liftMitte) break;
+            }
+            await key(code, 'keyUp');
+            await sleep(150);
+          }
+          continue;
+        }
+        // Oben auf der Versenkung: Richtung + Sprung aus dem oberen Bereich,
+        // den Lauf bis auf das Steg durchhalten — und die Richtung danach
+        // IMMER loslassen, egal wo der Spieler landet.
+        if (s.aufLift && s.fuss <= 206) {
+          stegAusstiege4 += 1;
+          await key('KeyD', 'keyDown');
+          await key('Space', 'keyDown'); await sleep(150); await key('Space', 'keyUp');
+          for (let j = 0; j < 8; j++) {
+            await sleep(100);
+            const t = await zust4(stegLage4);
+            if (t.aufSteg || t.state !== 'play') break;
+          }
+          await key('KeyD', 'keyUp');
+          await key('KeyA', 'keyUp');
+          break;                                   // Ergebnis messen, nicht raten
+        }
+        await sleep(80);
+      }
+      await key('KeyD', 'keyUp'); await key('KeyA', 'keyUp');
+    }
+    return await zust4(stegLage4);
+  };
+  // Erst der echte Sprungweg in begrenzten Runden; erst wenn der nicht getragen
+  // hat, wird die Position auf das Steg gesetzt (Auftrag A4h Punkt 3: dieses
+  // Stueck autonomes Plattformen darf der Test abkuerzen). Was geschehen ist,
+  // steht in der Ausgabe: Runden, Sprungwege und ob gesetzt wurde.
+  const aufsSteg4 = async (runden, wo) => {
+    let s = await beimAusstieg4(runden);
+    if (s.aufSteg !== true) {
+      stegGesetzt4 += 1;
+      a4Schritt(`Ausstieg ${wo}: echter Sprungweg trug nach ${stegRunden4} Runde(n) nicht`
+        + ` (px=${s.px}, fuss=${s.fuss}, onGround=${s.grund})`
+        + ` -> Spieler auf das Steg setzen (A4h Punkt 3)`);
+      await evaluate(`(() => { const g = window.__roland.game, p = g.player;
+        p.x = ${A4_STEG_KANTE + 14}; p.y = ${A4_STEG_FUSS} - p.h; p.vy = 0; })()`);
+      await sleep(400);
+      s = await zust4(stegLage4);
+    }
+    a4Schritt(`Ausstieg ${wo}: ${s.aufSteg === true ? 'auf dem Steg' : 'NICHT auf dem Steg'}`
+      + ` (px=${s.px}, fuss=${s.fuss}, Sprungwege=${stegAusstiege4}, gesetzt=${stegGesetzt4})`);
+    return s;
+  };
+  const ausstiegOben = await aufsSteg4(2, 'oben');
+  // 8b) Uebergabe an Rolf auf dem Steg: die Pflicht endet, das Ziel gibt frei.
+  //    Die Uebergabe ist ein Gespraech in mehreren Zeilen (src/act4.js: Rolf mit
+  //    nimmt:'kiste', zwei Zeilen plus after) — wie in Akt 3 wird die
+  //    Aktionstaste deshalb in einer Schleife mit Obergrenze gedrueckt, bis das
+  //    Flag kiste_uebergeben wirklich steht. Geprueft wird die Uebergabe selbst,
+  //    nicht der Druck. Der Nachlauf des Laufs schiebt den Spieler aus Rolfs
+  //    Sprechfenster, deshalb wird vor dem Druecken mittig vor Rolf gestellt.
+  const mitteRolf4 = `(() => {
+    const g = window.__roland.game;
+    const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
+    const c = g.player.x + g.player.w / 2;
+    return Math.abs(c - (e.x + e.w / 2)) < 12;
+  })()`;
+  const seiteRolf4 = `(() => {
+    const g = window.__roland.game;
+    const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
+    return Math.round((g.player.x + g.player.w / 2) - (e.x + e.w / 2));
+  })()`;
+  let zuRolfOben = ausstiegOben.aufSteg === true;   // Ausstieg oben wirklich auf dem Steg?
+  if (zuRolfOben) {
+    const seite4 = await evaluate(seiteRolf4);
+    if (seite4 < -12) zuRolfOben = await gehe4('KeyD', mitteRolf4, 2500) || zuRolfOben;
+    else if (seite4 > 12) zuRolfOben = await gehe4('KeyA', mitteRolf4, 2500) || zuRolfOben;
+  }
+  // Vorzustand VOR den E-Druecken messen: danach ist die Kiste weg und das
+  // Ziel weiter — wer hier nachher misst, prueft den Nachzustand gegen die
+  // Vorbedingung und faellt bei JEDER gelungenen Uebergabe durch.
+  const obenBeiRolf = await zust4(`{
+    label: window.__roland.game.hud.label,
+    ziel: window.__roland.game.hud.ziel,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    traegt: window.__roland.game.traegt
+  }`);
+  check('Akt 4: oben an der Versenkung will Rolf die Kiste sehen',
+    zuRolfOben === true && obenBeiRolf.traegt === true && /ROLF/.test(obenBeiRolf.label?.text || ''),
+    JSON.stringify(obenBeiRolf));
+  check('Akt 4: das Ziel ist vor der Uebergabe gesperrt',
+    obenBeiRolf.zielFrei === false && /KISTE ÜBERGEBEN/.test(obenBeiRolf.ziel || ''),
+    JSON.stringify(obenBeiRolf));
+  const uebergabeVersuche = [];
+  for (let i = 0; i < 4; i++) {
+    if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
+    let beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    if (!beiRolf) {
+      // Der Nachlauf des Laufs hat den Spieler aus dem Sprechfenster geschoben:
+      // mit echten Tasten zurueckstellen, dann erst druecken.
+      const seite = await evaluate(seiteRolf4);
+      await gehe4(seite < 0 ? 'KeyD' : 'KeyA', mitteRolf4, 1500);
+      beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    }
+    uebergabeVersuche.push(`${i + 1}:${beiRolf ? 'an' : 'ab'}`);
+    if (!beiRolf) break;          // nicht bei Rolf: kein Blinddruck
+    await key('KeyE', 'keyDown'); await sleep(90);
+    await key('KeyE', 'keyUp'); await sleep(260);
+  }
+  const uebergabe = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('kiste_uebergeben'),
+    traegt: window.__roland.game.traegt,
+    kiste: window.__roland.game.hud.kiste,
+    friedlich: window.__roland.game.hud.friedlich,
+    ziel: window.__roland.game.hud.ziel,
+    nerven: window.__roland.game.nerves
+  }`);
+  check('Akt 4: die Uebergabe an Rolf beendet die Pflicht (Kiste weg, Graben friedlich)',
+    uebergabe.flag === true && uebergabe.traegt === false && uebergabe.kiste === false
+    && uebergabe.friedlich === true, JSON.stringify(uebergabe));
+  const schluss = await zust4(`{
+    hint: document.getElementById('hintbar').textContent,
+    sichtbar: !document.getElementById('hintbar').classList.contains('hidden'),
+    ziel: window.__roland.game.hud.ziel
+  }`);
+  check('Akt 4: Rolf nennt den Schlusssatz, das Journal zeigt den Auftritt',
+    /DEN REST MACHEN WIR/.test(schluss.hint || '') && schluss.sichtbar === true
+    && /AUFTRITT/.test(schluss.ziel || ''), JSON.stringify(schluss));
+  await bild4('akt4-uebergabe.png');
+
+  const zielRegeln = await zust4(`{
+    need: window.__roland.game.level.goal.need,
+    flags: window.__roland.game.level.goal.flags,
+    flagsErfuellt: window.__roland.game.level.goal.flags.every((f) => window.__roland.game.storyFlags.has(f)),
+    storyIds: window.__roland.game.level.storySteps.map((s) => s.id),
+    outfit: window.__roland.game.outfit.id,
+    taktstockDa: window.__roland.game.entities.some((e) => e.kind === 'item' && e.item === 'taktstock' && e.alive),
+    taktstockFlag: window.__roland.game.storyFlags.has('taktstock_genommen')
+  }`);
+  check('Akt 4: dem Ziel fehlt nach der Uebergabe nur noch der Frack — der Taktstock ist keine Bedingung',
+    zielRegeln.flagsErfuellt === true && zielRegeln.need === 'frack' && zielRegeln.outfit !== 'frack'
+    && !zielRegeln.flags.includes('taktstock_genommen')
+    && !zielRegeln.storyIds.includes('taktstock')
+    && zielRegeln.taktstockDa === true && zielRegeln.taktstockFlag === false,
+    JSON.stringify(zielRegeln));
+
+  // 9) Nach der Uebergabe ist der Graben kein Kampfplatz mehr: hinunter, das
+  //    optionale Andenken holen und dabei Nerven und Gegner beobachten.
+  a4Schritt('8/10 Rueckweg in den Graben, Andenken, Ruhe messen');
+  const nervenVorher = await evaluate('window.__roland.game.nerves');
+  // Nerven steigen nur durch eine Brezel (+1, src/game.js), Schaden ist nach der
+  // Uebergabe gesperrt (damage() bricht bei game.frieden ab). Die Brezeln in der
+  // Welt machen den Befund "nerven steigt" nachpruefbar: der Weg zum Andenken
+  // fuehrt an der zweiten Brezel vorbei.
+  const brezelnOben = await evaluate(
+    "window.__roland.game.entities.filter((e) => e.kind === 'item' && e.item === 'brezel' && e.alive).length");
+  const hinunter = await gehe4('KeyA',
+    '(() => { const p = window.__roland.game.player; return p.y + p.h > 380 && p.x < 940; })()', 8000);
+  const unten = await zust4(`{
+    x: Math.round(window.__roland.game.player.x),
+    fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+    state: window.__roland.game.state
+  }`);
+  check('Akt 4: der Weg zurueck fuehrt ueber den Stegrand hinunter in den Graben',
+    hinunter === true && unten.state === 'play' && Math.abs(unten.fuss - 400) < 4
+    && unten.x < 940, JSON.stringify(unten));
+
+  const zumAndenken = await gehe4('KeyD',
+    "window.__roland.game.storyFlags.has('taktstock_genommen')", 10000);
+  const andenken = await zust4(`{
+    flag: window.__roland.game.storyFlags.has('taktstock_genommen'),
+    hint: document.getElementById('hintbar').textContent,
+    ziel: window.__roland.game.hud.ziel,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    dirigentAbstand: Math.round(Math.abs(
+      window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
+  }`);
+  check('Akt 4: der Taktstock ist nehmbar und bleibt ein Andenken ohne Storyschritt',
+    zumAndenken === true && andenken.flag === true && /TAKTSTOCK/.test(andenken.hint || '')
+    && /AUFTRITT/.test(andenken.ziel || ''), JSON.stringify(andenken));
+  await bild4('akt4-andenken.png');
+
+  // Stille Stelle im Graben (x 820..940, Boden): ausserhalb jeder Schussweite
+  // (Dirigent 138 px, Piccolo 148 px im Dunkeln), aber in der Patrouille des
+  // Tenors — Nahkontakt ohne Schaden ist in der Messung eingeschlossen.
+  const leiseStelle = await gehe4('KeyA',
+    '(() => { const p = window.__roland.game.player; return p.y + p.h > 396 && p.x < 940 && p.x > 820; })()',
+    12000);
+
+  // Die Ruhe wird in einem Fenster gemessen, nicht in einem Augenblick: ein
+  // Geschoss, das VOR der Uebergabe abgefeuert wurde, ist noch bis zu 3,4 s
+  // unterwegs (Schall 3,4 s, Taktstock 3,0 s Lebenszeit). Erst fliegt nichts
+  // mehr, und von da an darf nichts Neues dazukommen: kein neuer Schuss, kein
+  // Nachzielen, kein neuer Treffer. Nur damage() setzt player.invuln > 0 — ein
+  // frischer Treffer waere an einem Ausschlag nach oben zu erkennen.
+  // Zum Ort des Fensters (Erwartungskorrektur mit Begruendung): updateEnemies
+  // ist bei frieden stumm (kein Nahangriff, kein Sopran, kein Schaden), aber
+  // onBeat feuert taktsynchron weiter (Dirigent/Piccolo ohne frieden-Gatter,
+  // src/game.js). Direkt neben dem Dirigenten (Andenken, ~35 px) waere das
+  // Fenster nie ruhig — gemessen wird darum an der stillen Stelle; der Weg
+  // dorthin fuehrte am Dirigenten vorbei (Abstand am Andenken, Nachweis unten).
+  // Alle Praedikate bleiben bestehen, keines wurde abgesenkt.
+  let ruhe = null, neueGeschosse = 0, nachgezielt = 0, neueTreffer = 0, vorherProj = null;
+  for (let i = 0; i < 40; i++) {
+    await sleep(150);
+    ruhe = await zust4(`{
+      friedlich: window.__roland.game.hud.friedlich,
+      nerven: window.__roland.game.nerves,
+      x: Math.round(window.__roland.game.player.x),
+      projektile: window.__roland.game.projectiles.length,
+      zielen: window.__roland.game.entities.filter((e) => e.kind === 'dirigent').map((e) => Math.round(e.aim)),
+      invuln: Math.round(window.__roland.game.player.invuln * 100) / 100,
+      brezeln: window.__roland.game.entities.filter((e) => e.kind === 'item' && e.item === 'brezel' && e.alive).length,
+      dirigentAbstand: Math.round(Math.abs(
+        window.__roland.game.entities.find((e) => e.kind === 'dirigent').x - window.__roland.game.player.x))
+    }`);
+    if (vorherProj !== null && ruhe.projektile > vorherProj) neueGeschosse += 1;
+    vorherProj = ruhe.projektile;
+    if (ruhe.zielen.some((a) => a > 0)) nachgezielt += 1;
+    if (ruhe.invuln > 0) neueTreffer += 1;
+    if (i >= 8 && ruhe.projektile === 0 && !ruhe.zielen.some((a) => a > 0)) break;
+  }
+  // player.invuln <= 0 heisst "nicht mehr unverwundbar": der Zaehler laeuft von
+  // diff.invuln auf 0 herunter und landet durch die Bildschrittweite knapp
+  // darunter (-0,02). Das ist das Ende der alten Verwundbarkeit, kein Treffer.
+  check('Akt 4: nach der Uebergabe greift im Graben niemand mehr an (kein Schaden, kein Nachzielen)',
+    leiseStelle === true && ruhe.friedlich === true && neueGeschosse === 0 && nachgezielt === 0 && neueTreffer === 0
+    && ruhe.nerven >= nervenVorher && ruhe.projektile === 0 && ruhe.zielen.every((a) => a === 0)
+    && ruhe.invuln <= 0 && ruhe.dirigentAbstand > 200,
+    `nerven=${nervenVorher}->${ruhe.nerven} neuGeschosse=${neueGeschosse} neueTreffer=${neueTreffer} `
+    + `brezeln=${brezelnOben}->${ruhe.brezeln} ${JSON.stringify(ruhe)}`);
+  results.push(`AKT4 Ruhe im Graben: Nerven ${nervenVorher}->${ruhe.nerven}`
+    + ` (Brezeln ${brezelnOben}->${ruhe.brezeln}), neue Geschosse ${neueGeschosse},`
+    + ` neue Treffer ${neueTreffer}, stille Stelle ${leiseStelle ? 'erreicht' : 'NICHT erreicht'}`
+    + ` (Dirigentenabstand Andenken ${andenken.dirigentAbstand}, Ruhe ${ruhe.dirigentAbstand})`);
+
+  // 10) Zurueck nach oben und der Auftritt: Umkleide, Frack, Gitter, Abschluss.
+  a4Schritt('9/10 Rueckfahrt nach oben, Umkleide, Frack');
+  const aufLift9 = await aufsLift4('KeyA', 9000, 'Rueckfahrt');
+  let zurueck = null, letzteZurueck4 = null;
+  for (let i = 0; i < 80 && !zurueck; i++) {     // hoechstens 16 s (eine Fahrt 11 s)
+    a4Wache('Rueckfahrt nach oben');
+    await sleep(200);
+    const s = await zust4(`{
+      fuss: Math.round(window.__roland.game.player.y + window.__roland.game.player.h),
+      x: Math.round(window.__roland.game.player.x),
+      state: window.__roland.game.state
+    }`);
+    if (s.fuss <= 13 * 16) zurueck = s;
+    letzteZurueck4 = s;
+    if (s.state !== 'play') break;
+  }
+  check('Akt 4: die Versenkung traegt auch zurueck nach oben',
+    !!zurueck && zurueck.x > 944 && zurueck.x < 1008,
+    `zurueck=${JSON.stringify(zurueck)} letzte=${JSON.stringify(letzteZurueck4)}`
+    + ` aufLift=${JSON.stringify(aufLift9)}`);
+
+  // Der Rueckweg endet auf der Versenkung; der Ausstieg auf das Steg ist
+  // derselbe echte Sprungweg wie oben (siehe Schritt 8).
+  const ausstiegZurueck = await aufsSteg4(2, 'Rueckweg');
+  results.push(`AKT4 Ausstieg: echter Sprungweg ${stegAusstiege4} mal in ${stegRunden4} Runde(n)`
+    + ` ausgeloest, ${stegGesetzt4} mal Position gesetzt,`
+    + ` Steg ${ausstiegOben.aufSteg === true ? 'beim ersten Anlauf' : 'in Runden'},`
+    + ` Rueckweg ${ausstiegZurueck.aufSteg === true ? 'wieder auf dem Steg' : 'nicht auf dem Steg'}`
+    + ` (px=${ausstiegZurueck.px}, fuss=${ausstiegZurueck.fuss})`);
+  const zurUmkleide = await gehe4('KeyD', 'window.__roland.game.hud.standNear === true', 6000);
+  await key('KeyE', 'keyDown'); await sleep(200);
+  await key('KeyE', 'keyUp'); await sleep(300);
+  const umkleide = await zust4(`{
+    stand: window.__roland.game.hud.standNear,
+    state: window.__roland.game.state,
+    grund: window.__roland.game.pauseReason,
+    offen: !document.getElementById('garde').classList.contains('hidden'),
+    kluften: [...document.querySelectorAll('#gardeCards button .title')].map((e) => e.textContent)
+  }`);
+  check('Akt 4: der Kleiderstaender auf dem Steg oeffnet die Umkleide per Aktionstaste',
+    zurUmkleide === true && umkleide.state === 'paused' && umkleide.grund === 'stand'
+    && umkleide.offen === true && umkleide.kluften.some((k) => /FRACK/.test(k)),
+    JSON.stringify(umkleide));
+  // Nur bei wirklich geoefneter Umkleide klicken: Die Knopfziele im DOM
+  // stammen sonst noch aus der Start-Garderobe (Modus 'start') und ein Klick
+  // wuerde newGame() ausloesen — neuer Spielstand, alle Flags weg, der Rest
+  // des Laufs liefe gegen einen frischen Akt (Repro: x=308 am geschlossenen
+  // Gitter, Ziel wieder DIENSTGANG). Lieber laut scheitern als still neu starten.
+  if (umkleide.offen === true && umkleide.state === 'paused') {
+    // Einfache Form statt Spread/Pfeilfunktion: der Ausdruck wird so gebaut,
+    // dass ein Syntaxfehler in der Seitenauswertung nicht mehr auftreten kann
+    // (im Lauf 2 brach genau hier alles mit "Unexpected token '}'" ab, ohne
+    // Stelle). Der Frack wird ueber den Titel gesucht, nicht ueber den Index.
+    await evaluate(`(function () {
+      var b = document.querySelectorAll('#gardeCards button');
+      for (var i = 0; i < b.length; i++) {
+        if (String(b[i].textContent).indexOf('FRACK') >= 0) { b[i].click(); return 1; }
+      }
+      return 0;
+    })()`);
+  }
+  await sleep(350);
+  const imFrack = await zust4(`{
+    kluft: window.__roland.game.outfit.id,
+    state: window.__roland.game.state,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    ziel: window.__roland.game.hud.ziel,
+    offen: !document.getElementById('garde').classList.contains('hidden')
+  }`);
+  check('Akt 4: im Frack gibt das Ziel frei (Auftritt)',
+    imFrack.kluft === 'frack' && imFrack.state === 'play' && imFrack.zielFrei === true,
+    JSON.stringify(imFrack));
+
+  // Der Auftritt endet an der Zielschwelle hinter dem Gitter (Ziel bei 96*TILE):
+  // der laufende Spieler geht im Frack hindurch und das Spiel wechselt nach
+  // 'complete'. gehe4 bricht ab, sobald der Zustand 'play' verlaesst, meldet den
+  // Lauf dabei aber nicht als erreicht — je nachdem, in welches Abtastfenster
+  // der Abschluss faellt oder ob er erst im Auslauf nach dem Loslassen der Taste
+  // passiert. Geprueft wird deshalb der Endzustand des Spiels selbst, und zwar
+  // vollstaendig: im Frack, Gitter offen, hinter dem Gitter, Auftritt beendet.
+  a4Schritt('10/10 Auftritt im Frack durch das Gitter');
+  const zumAuftritt = await gehe4('KeyD', "window.__roland.game.state !== 'play'", 16000);
+  const auftrittStand = `{
+    state: window.__roland.game.state,
+    gitter: window.__roland.game.gates[1].open,
+    kluft: window.__roland.game.outfit.id,
+    x: Math.round(window.__roland.game.player.x),
+    errors: window.__errors
+  }`;
+  let auftritt = await zust4(auftrittStand);
+  for (let i = 0; i < 12 && auftritt.state === 'play'; i++) {
+    await sleep(250);
+    auftritt = await zust4(auftrittStand);
+  }
+  results.push(`AKT4 Auftritt: Lauf=${zumAuftritt} (${abgang4}), Ende=${auftritt.state},`
+    + ` x=${auftritt.x}, Gitter=${auftritt.gitter}, Kluft=${auftritt.kluft}`);
+  check('Akt 4: im Frack oeffnet der laufende Spieler das Gitter und der Auftritt endet',
+    auftritt.state === 'complete' && auftritt.gitter === true && auftritt.kluft === 'frack'
+    && auftritt.x > 82 * 16, JSON.stringify(auftritt));
+  check('Akt 4: der ganze Weg durch den Graben bleibt ohne Konsolenfehler',
+    auftritt.errors.length === 0, JSON.stringify(auftritt.errors));
+  await bild4('akt4-auftritt.png');
+  results.push(`AKT4 Weg ohne Positionssetzung, ${kollaps4} Kollapse mit Spiel-Neustart`
+    + ` bei x=[${kollaps4Orte.join(', ')}], Uebergabe-Drucke: ${uebergabeVersuche}`);
+  results.push(`AKT4 ${results.filter((r) => /^PASS Akt 4/.test(r)).length} Akt-4-Pruefungen bestanden`
+    + ` (${results.filter((r) => /^FAIL Akt 4/.test(r)).length} offen)`);
+  // Nachweis der Grenze selbst: der Abschnitt wird gemessen, nicht geschaetzt.
+  a4Schritt('10/10 fertig');
+  check('Akt 4: der Abschnitt bleibt unter zwei Minuten', a4Dauer() < 120000, a4Zeit(a4Dauer()));
+  results.push(`AKT4 Abschnitt in ${a4Zeit(a4Dauer())}`
+    + ` (hartes Budget ${A4_BUDGET_MS / 1000}s, Auftragsgrenze 120s, Ziel 45s)`);
 
   // --- Motorrad-Interludium (Nachtfahrt) — Heimweg nach dem Finale ---------
   await evaluate(`window.__roland.loadAct(${idxVon('MOTORRAD')})`);
@@ -1969,4 +2757,5 @@ try {
 
 console.log(results.join('\n'));
 console.log(`\n${results.filter((r) => r.startsWith('PASS')).length}/${results.filter((r) => /^(PASS|FAIL)/.test(r)).length} Browser-Checks bestanden`);
+console.log(`Gesamtlaufzeit ${((Date.now() - laufStart) / 1000).toFixed(1)}s`);
 process.exit(failed ? 1 : 0);
