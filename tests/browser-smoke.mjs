@@ -1595,17 +1595,85 @@ try {
     `einstieg=${JSON.stringify(einstieg)} mitte=${JSON.stringify(mitte)} oben=${JSON.stringify(oben)}`);
   await bild4('akt4-mitfahrt.png');
 
-  // 8) Uebergabe an Rolf oben: die Pflicht endet, das Ziel gibt frei.
-  //    Rolf verlangt zwei Gespraeche. Ein Tastendruck kann im Auslauf des Laufs
-  //    oder durch einen Rueckstoss verloren gehen: die Aktionstaste wird deshalb
-  //    bei Rolf wiederholt (und der Weg notfalls erneut gegangen), bis die
-  //    Uebergabe wirklich im Spiel steht. Nicht der Druck ist die Pruefung,
-  //    sondern die Uebergabe selbst.
-  //    Der Weg zu Rolf endet am Rand seines Sprechfensters; der Nachlauf des
-  //    Laufs schiebt den Spieler wieder heraus, dann kommt kein Gespraech mehr
-  //    zustande (gemessen: nach dem ersten Druck war Rolf nicht mehr in
-  //    Reichweite). Deshalb wird der Nachlauf abgefangen und der Spieler mit
-  //    echten Tasten mittig vor Rolf gestellt, bevor gedrueckt wird.
+  // 8) Ausstieg oben auf das Steg — der gemessene Kern des Fehlers.
+  //    Gemessen im Browser (nicht vermutet, Diagnoselauf mit Zustandstrace):
+  //    Die Hauptversenkung traegt den Spieler bis fuss 192, die Stegkante
+  //    beginnt bei x=1008 auf y=192. Ein reiner Rechtslauf am oberen Ende
+  //    fuehrt deshalb am Rand der Versenkung vorbei UNTER dem Steg hindurch in
+  //    den Graben (gemessen: px 1019, fuss 259, Versenkung 256, onGround false)
+  //    — genau dort endete der Walk bisher, und damit fielen alle neun
+  //    Pruefungen, die an der Uebergabe haengen. Ein reiner Sprung ohne
+  //    Richtungstaste bleibt auf der Versenkung (gemessen: px unveraendert 970).
+  //    Der Weg, der traegt, ist Richtung + Sprung im selben Moment, waehrend
+  //    die Versenkung oben steht: der Spieler laeuft ueber der Kante hinweg und
+  //    landet auf dem Steg (gemessen: px 1022, fuss 192, Schild "MIT ROLF
+  //    SPRECHEN"). Ab fuss 228 haelt die Stegkante den Lauf auf (darunter passt
+  //    der Spieler unter ihr durch), deshalb wird erst dann gelaufen.
+  //    Der Ausstieg wird in Runden mit echter Fahrt wiederholt und das Ergebnis
+  //    gemessen, nicht angenommen — kein Blindlauf, kein Blinddruck.
+  const stegLage4 = `(() => {
+    const g = window.__roland.game, p = g.player;
+    const l = g.entities.find((e) => e.kind === 'lift');
+    const pc = Math.round(p.x + p.w / 2), mitte = Math.round(l.x + l.w / 2);
+    return {
+      px: Math.round(p.x), pc, fuss: Math.round(p.y + p.h), grund: p.onGround === true,
+      aufSteg: p.x + p.w > 1008 && Math.abs(p.y + p.h - 192) < 4 && p.onGround === true,
+      aufLift: Math.abs(pc - mitte) < l.w / 2 - 4 && Math.abs((p.y + p.h) - l.y) < 6,
+      liftMitte: mitte, liftY: Math.round(l.y), liftDy: Math.round(l.dy), state: g.state
+    };
+  })()`;
+  let stegAusstiege4 = 0;         // wie oft der Ausstieg ueber den Sprung lief
+  const beimAusstieg4 = async (runden) => {
+    for (let runde = 0; runde < runden; runde++) {
+      for (let i = 0; i < 260; i++) {              // eine Fahrt dauert 11 s
+        const s = await zust4(stegLage4);
+        if (s.state !== 'play' || s.aufSteg) return s;
+        if (!s.aufLift) {
+          // Nicht auf der Versenkung (Graben, Pult, Brett): hinstellen und dort
+          // auf die naechste Fahrt warten — der Weg zurueck nach oben ist echt.
+          const code = s.pc < s.liftMitte - 4 ? 'KeyD' : (s.pc > s.liftMitte + 4 ? 'KeyA' : null);
+          if (code) {
+            await key(code, 'keyDown');
+            for (let j = 0; j < 130; j++) {
+              await sleep(100);
+              const t = await zust4(stegLage4);
+              if (t.aufLift || t.aufSteg || t.state !== 'play') break;
+              if (t.pc >= t.liftMitte - 4 && t.pc <= t.liftMitte + 4) break;
+            }
+            await key(code, 'keyUp');
+            await sleep(200);
+          }
+          continue;
+        }
+        // Oben auf der Versenkung: laufen (die Stegkante haelt auf), dann
+        // springen und den Lauf bis auf das Steg durchhalten.
+        if (s.liftDy < 0 && s.fuss <= 228) await key('KeyD', 'keyDown');
+        if (s.liftDy < 0 && s.fuss <= 212) {
+          stegAusstiege4 += 1;
+          await key('Space', 'keyDown'); await sleep(170); await key('Space', 'keyUp');
+          for (let j = 0; j < 14; j++) {
+            await sleep(100);
+            const t = await zust4(stegLage4);
+            if (t.aufSteg || t.state !== 'play') break;
+          }
+          await key('KeyD', 'keyUp');
+          break;                                   // Ergebnis messen, nicht raten
+        }
+        await sleep(100);
+      }
+      const s = await zust4(stegLage4);
+      if (s.state !== 'play' || s.aufSteg) return s;
+    }
+    return await zust4(stegLage4);
+  };
+  const ausstiegOben = await beimAusstieg4(4);
+  // 8b) Uebergabe an Rolf auf dem Steg: die Pflicht endet, das Ziel gibt frei.
+  //    Die Uebergabe ist ein Gespraech in mehreren Zeilen (src/act4.js: Rolf mit
+  //    nimmt:'kiste', zwei Zeilen plus after) — wie in Akt 3 wird die
+  //    Aktionstaste deshalb in einer Schleife mit Obergrenze gedrueckt, bis das
+  //    Flag kiste_uebergeben wirklich steht. Geprueft wird die Uebergabe selbst,
+  //    nicht der Druck. Der Nachlauf des Laufs schiebt den Spieler aus Rolfs
+  //    Sprechfenster, deshalb wird vor dem Druecken mittig vor Rolf gestellt.
   const mitteRolf4 = `(() => {
     const g = window.__roland.game;
     const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
@@ -1617,14 +1685,23 @@ try {
     const e = g.entities.find((x) => x.kind === 'npc' && x.nimmt === 'kiste');
     return Math.round((g.player.x + g.player.w / 2) - (e.x + e.w / 2));
   })()`;
-  let zuRolfOben = await gehe4('KeyD', nah4('nimmt', 'kiste'), 6000);
-  let seite4 = await evaluate(seiteRolf4);
-  if (seite4 < -12) zuRolfOben = await gehe4('KeyD', mitteRolf4, 2500) || zuRolfOben;
-  else if (seite4 > 12) zuRolfOben = await gehe4('KeyA', mitteRolf4, 2500) || zuRolfOben;
+  let zuRolfOben = ausstiegOben.aufSteg === true;   // Ausstieg oben wirklich auf dem Steg?
+  if (zuRolfOben) {
+    const seite4 = await evaluate(seiteRolf4);
+    if (seite4 < -12) zuRolfOben = await gehe4('KeyD', mitteRolf4, 2500) || zuRolfOben;
+    else if (seite4 > 12) zuRolfOben = await gehe4('KeyA', mitteRolf4, 2500) || zuRolfOben;
+  }
   const uebergabeVersuche = [];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 4; i++) {
     if (await evaluate("window.__roland.game.storyFlags.has('kiste_uebergeben')")) break;
-    const beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    let beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    if (!beiRolf) {
+      // Der Nachlauf des Laufs hat den Spieler aus dem Sprechfenster geschoben:
+      // mit echten Tasten zurueckstellen, dann erst druecken.
+      const seite = await evaluate(seiteRolf4);
+      await gehe4(seite < 0 ? 'KeyD' : 'KeyA', mitteRolf4, 1500);
+      beiRolf = await evaluate(nah4('nimmt', 'kiste'));
+    }
     uebergabeVersuche.push(`${i + 1}:${beiRolf ? 'an' : 'ab'}`);
     if (!beiRolf) break;          // nicht bei Rolf: kein Blinddruck
     await key('KeyE', 'keyDown'); await sleep(90);
@@ -1769,7 +1846,14 @@ try {
   check('Akt 4: die Versenkung traegt auch zurueck nach oben',
     !!zurueck && zurueck.x > 944 && zurueck.x < 1008, JSON.stringify(zurueck));
 
-  const zurUmkleide = await gehe4('KeyD', 'window.__roland.game.hud.standNear === true', 5000);
+  // Der Rueckweg endet auf der Versenkung; der Ausstieg auf das Steg ist
+  // derselbe echte Sprungweg wie oben (siehe Schritt 8).
+  const ausstiegZurueck = await beimAusstieg4(3);
+  results.push(`AKT4 Ausstieg oben: ${stegAusstiege4} Sprungwege noetig,`
+    + ` Steg ${ausstiegOben.aufSteg === true ? 'beim ersten Anlauf' : 'in Runden'},`
+    + ` Rueckweg ${ausstiegZurueck.aufSteg === true ? 'wieder auf dem Steg' : 'nicht auf dem Steg'}`
+    + ` (px=${ausstiegZurueck.px}, fuss=${ausstiegZurueck.fuss})`);
+  const zurUmkleide = await gehe4('KeyD', 'window.__roland.game.hud.standNear === true', 6000);
   await key('KeyE', 'keyDown'); await sleep(200);
   await key('KeyE', 'keyUp'); await sleep(300);
   const umkleide = await zust4(`{
