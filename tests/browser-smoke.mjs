@@ -1031,6 +1031,216 @@ try {
   check('Open Air zeigt Himmel statt Hoehlenwand', hell3 > hell1 + 60,
     `Akt3 ${JSON.stringify(obenAkt3)} vs Akt1 ${JSON.stringify(obenAkt1)}`);
   check('keine Fehler in Akt 3', windProbe.errors.length === 0, JSON.stringify(windProbe.errors));
+
+  // --- Akt 3 Open Air: Handlung, zwei Pulte, Rolfs Abschied -----------------
+  // Eigener Spielstand ohne Notenmappe: sonst legt der erste E-Druck am Pult
+  // erst die Mappe ab und zaehlt noch keinen Takt. Geprueft wird der
+  // Handlungsbogen mit echten Tastenanschlaegen; nur das Anlaufen der Figuren
+  // ist instrumentiert (wie im Akt-1-/Akt-2-Abschnitt).
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, act: 3 }))");
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(1600);
+  await evaluate('window.__roland.loadAct(3)');
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(300);
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(900);
+
+  const a3start = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const pulte = g.entities.filter((e) => e.kind === 'pult');
+    const klammern = g.entities.filter((e) => e.kind === 'decor' && e.spr === 'klammer');
+    return JSON.stringify({
+      name: g.level.name,
+      state: g.state,
+      pulte: pulte.length,
+      noetig: pulte.map((p) => p.noetig),
+      flags: pulte.map((p) => p.flag),
+      pultTiles: pulte.map((p) => Math.round(p.x / 16)),
+      klammerTiles: klammern.map((k) => Math.round(k.x / 16)),
+      bandZu: g.gates[0].open === false,
+      ziel: g.hud.ziel,
+      errors: window.__errors,
+    });
+  })()`));
+  check('Akt 3 laedt und laeuft ohne Konsolenfehler',
+    a3start.name.includes('AKT 3') && a3start.state === 'play' && a3start.errors.length === 0,
+    JSON.stringify(a3start));
+  check('Akt 3: zwei Pulte, jedes mit zwei Klammern und eigenem Flag',
+    a3start.pulte === 2 && a3start.noetig.every((n) => n === 2)
+    && a3start.flags.includes('pult_west_gesichert') && a3start.flags.includes('pult_ost_gesichert')
+    && a3start.pultTiles.every((tx) => a3start.klammerTiles.includes(tx)),
+    JSON.stringify(a3start));
+  check('Akt 3: das Journal beginnt bei Rolf, das Absperrband ist zu',
+    /ROLF/.test(a3start.ziel || '') && a3start.bandZu === true, JSON.stringify(a3start));
+
+  // Rolfs Briefing ueber die Aktionstaste: drei Zeilen, dann steht der Auftrag.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const r = g.entities.find((e) => e.kind === 'npc' && e.flag === 'openair_beauftragt');
+    g.player.x = r.x - 18; g.player.y = r.y + r.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+  })()`);
+  await sleep(300);
+  const briefingSchild = JSON.parse(await evaluate('JSON.stringify(window.__roland.game.hud.label)'));
+  check('Akt 3: Rolf wird als Gespraechspartner benannt',
+    briefingSchild?.action === true && /ROLF/.test(briefingSchild.text), JSON.stringify(briefingSchild));
+  for (let i = 0; i < 3; i++) {
+    await key('KeyE', 'keyDown'); await sleep(70);
+    await key('KeyE', 'keyUp'); await sleep(120);
+  }
+  const nachBriefing = JSON.parse(await evaluate(`JSON.stringify({
+    flag: window.__roland.game.storyFlags.has('openair_beauftragt'),
+    ziel: window.__roland.game.hud.ziel,
+  })`));
+  check('Akt 3: Rolfs Briefing setzt den Auftrag und das Journal wandert zum Westpult',
+    nachBriefing.flag === true && /WESTPULT/.test(nachBriefing.ziel || ''), JSON.stringify(nachBriefing));
+
+  // Erst der Auftrag oeffnet das Absperrband — der Spieler laeuft selbst dagegen.
+  await key('KeyD', 'keyDown');
+  await sleep(1300);
+  await key('KeyD', 'keyUp');
+  await sleep(200);
+  const nachBand = JSON.parse(await evaluate(`JSON.stringify({
+    band: window.__roland.game.gates[0].open,
+    x: Math.round(window.__roland.game.player.x),
+    state: window.__roland.game.state,
+  })`));
+  check('Akt 3: das Absperrband oeffnet sich auf dem Weg zur Wiese',
+    nachBand.band === true && nachBand.x > 20 * 16 && nachBand.state !== 'collapse', JSON.stringify(nachBand));
+
+  // Wind als Taktvorgabe: die Boee wird vorher angekuendigt und traegt die
+  // Notenblaetter mit — die Pulte bleiben dabei spielbar (kein Blocker).
+  await evaluate("window.__roland.game.wetterIdx = 1; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'wind'");
+  await sleep(300);
+  const wetterWind = JSON.parse(await evaluate(`JSON.stringify({
+    wetter: window.__roland.game.hud.wetter,
+    dom: document.getElementById('wetter').textContent,
+  })`));
+  let windspur = null;
+  for (let i = 0; i < 40 && !windspur; i++) {
+    const b = JSON.parse(await evaluate(`JSON.stringify({
+      weht: window.__roland.game.gustTimer > 0,
+      warnung: window.__roland.game.gustWarn > 0,
+      blaetter: window.__roland.game.blaetter.length,
+      state: window.__roland.game.state,
+    })`));
+    if (b.weht && (b.blaetter > 0 || b.warnung)) windspur = b;
+    else await sleep(280);
+  }
+  check('Akt 3: der Wind kuendigt die Boee an und traegt die Blaetter (Taktvorgabe)',
+    wetterWind.wetter === 'wind' && wetterWind.dom === 'WIND'
+    && windspur !== null && windspur.state === 'play', JSON.stringify({ wetterWind, windspur }));
+
+  // Beide Pulte im Takt sichern — bei laufendem Wind.
+  const pultLabel = `JSON.stringify(window.__roland.game.hud.label)`;
+  const sichern = async (flag) => {
+    await evaluate(`(() => {
+      const g = window.__roland.game;
+      const p = g.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}');
+      g.player.x = p.x + 4; g.player.y = p.y + p.h - g.player.h;
+      g.player.vx = 0; g.player.vy = 0;
+    })()`);
+    await sleep(300);
+    const schild = JSON.parse(await evaluate(pultLabel));
+    for (let i = 0; i < 6; i++) {
+      const teil = await evaluate(`window.__roland.game.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}').teil`);
+      if (teil >= 2) break;
+      // Vor jedem Schlag zurueck ans Pult und ins Taktfenster: Wind und
+      // Gegentreffer schieben den Spieler sonst aus der Reichweite.
+      await evaluate(`(() => {
+        const g = window.__roland.game;
+        const p = g.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}');
+        g.player.x = p.x + 4; g.player.y = p.y + p.h - g.player.h;
+        g.player.vx = 0; g.player.vy = 0;
+        g.beatPhase = 0.02;
+      })()`);
+      await key('KeyE', 'keyDown'); await sleep(70);
+      await key('KeyE', 'keyUp'); await sleep(130);
+    }
+    const stand = JSON.parse(await evaluate(`JSON.stringify({
+      teil: window.__roland.game.entities.find((e) => e.kind === 'pult' && e.flag === '${flag}').teil,
+      flag: window.__roland.game.storyFlags.has('${flag}'),
+      einsatz: window.__roland.game.einsatzGelungen,
+      zielFrei: window.__roland.game.goalErfuellt(),
+      wetter: window.__roland.game.hud.wetter,
+      state: window.__roland.game.state,
+    })`));
+    return { schild, ...stand };
+  };
+  const westPult = await sichern('pult_west_gesichert');
+  check('Akt 3: Westpult zeigt die zwei Klammern (0/2) und laesst sich im Takt sichern',
+    /SICHERN/.test(westPult.schild?.text || '') && /\(0\/2\)/.test(westPult.schild?.text || '')
+    && westPult.teil === 2 && westPult.flag === true, JSON.stringify(westPult));
+  check('Akt 3: nach dem Westpult steht der Einsatz, das Podium bleibt gesperrt',
+    westPult.einsatz === true && westPult.zielFrei === false && westPult.state === 'play',
+    JSON.stringify(westPult));
+  const ostPult = await sichern('pult_ost_gesichert');
+  check('Akt 3: Ostpult zeigt die zwei Klammern (0/2) und laesst sich im Takt sichern',
+    /SICHERN/.test(ostPult.schild?.text || '') && /\(0\/2\)/.test(ostPult.schild?.text || '')
+    && ostPult.teil === 2 && ostPult.flag === true, JSON.stringify(ostPult));
+  check('Akt 3: beide Pulte sind auch bei Wind spielbar (Wind gibt den Takt, sperrt nicht)',
+    westPult.wetter === 'wind' && ostPult.wetter === 'wind'
+    && westPult.state === 'play' && ostPult.state === 'play', JSON.stringify({ westPult, ostPult }));
+
+  // Fuer die Podiumspruefung zurueck auf ruhiges Wetter: die Windboeen schieben
+  // den Spieler sonst vom einen Kachel breiten Podium (Wind ist oben belegt).
+  await evaluate("window.__roland.game.wetterIdx = 0; window.__roland.game.wetterTimer = 9999; window.__roland.game.wetterKind = 'sonne'");
+  await sleep(250);
+
+  // Podiumstor: ohne Frack bleibt es zu, mit Frack oeffnet es der laufende Spieler.
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    g.player.x = 93 * 16 - 24; g.player.y = 11 * 16 - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    g.setOutfit('schwarz');
+  })()`);
+  await sleep(300);
+  const torDerFrack = JSON.parse(await evaluate(`JSON.stringify({
+    tor: window.__roland.game.gates[1].open,
+    frack: window.__roland.game.outfit.id,
+  })`));
+  check('Akt 3: das Podiumstor bleibt ohne Frack zu', torDerFrack.tor === false, JSON.stringify(torDerFrack));
+  await evaluate("window.__roland.game.setOutfit('frack')");
+  await sleep(150);
+  await key('KeyD', 'keyDown'); await sleep(900); await key('KeyD', 'keyUp');
+  await sleep(250);
+  const nachTor = JSON.parse(await evaluate(`JSON.stringify({
+    tor: window.__roland.game.gates[1].open,
+    x: Math.round(window.__roland.game.player.x),
+  })`));
+  check('Akt 3: im Frack oeffnet der Spieler das Podiumstor',
+    nachTor.tor === true && nachTor.x > 93 * 16, JSON.stringify(nachTor));
+
+  // Das Podium verlangt beide Pulte UND Rolfs Abschied.
+  const amPodium = JSON.parse(await evaluate(`JSON.stringify({
+    state: window.__roland.game.state,
+    zielFrei: window.__roland.game.goalErfuellt(),
+    ziel: window.__roland.game.hud.ziel,
+    label: window.__roland.game.hud.label,
+  })`));
+  check('Akt 3: das Podium gibt erst mit beiden Pulten und Rolfs Abschied frei',
+    amPodium.state === 'play' && amPodium.zielFrei === false
+    && /PODIUM/.test(amPodium.ziel || ''), JSON.stringify(amPodium));
+
+  // Rolfs Abschied ueber die Aktionstaste; danach endet der Auftritt.
+  for (let i = 0; i < 2; i++) {
+    await key('KeyE', 'keyDown'); await sleep(80);
+    await key('KeyE', 'keyUp'); await sleep(150);
+  }
+  const nachAbschied = JSON.parse(await evaluate(`JSON.stringify({
+    flag: window.__roland.game.storyFlags.has('openair_abgenommen'),
+  })`));
+  check('Akt 3: Rolfs Abschied ueber die Aktionstaste schliesst die Story ab',
+    nachAbschied.flag === true, JSON.stringify(nachAbschied));
+  await sleep(700);
+  const a3ende = JSON.parse(await evaluate(`JSON.stringify({
+    state: window.__roland.game.state,
+    errors: window.__errors,
+  })`));
+  check('Akt 3: mit beiden Pulten und Rolfs Abschied endet der Auftritt am Podium',
+    a3ende.state === 'complete', JSON.stringify(a3ende));
+  check('keine Fehler im Akt-3-Auftritt', a3ende.errors.length === 0, JSON.stringify(a3ende.errors));
   // --- Akt 4: Orchestergraben ---------------------------------------------
   await evaluate("window.__roland.loadAct(4)");
   await evaluate("document.getElementById('startBtn').click()");
