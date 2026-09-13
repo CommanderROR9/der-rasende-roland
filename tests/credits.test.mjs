@@ -1,8 +1,10 @@
-// tests/credits.test.mjs — der Abspann (Auftrag C1).
-// Prüft Inhalt (nur Vornamen, Widmung), die Pixeldaten und vor allem, dass die
-// Portraits wirklich gezeichnet werden — und nicht nur in den Daten stehen.
+// tests/credits.test.mjs — der Abspann (Auftrag C1, Fassung V3: Upload-Portraits).
+// Prüft Inhalt (nur Vornamen, Widmung), die Pixeldaten aus Rolands Uploads und vor
+// allem, dass die Portraits wirklich gezeichnet werden — und nicht nur in den Daten
+// stehen. V3 zeigt die Portraits als Filmfolge: eine Seite je Portrait.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -10,7 +12,7 @@ import {
   ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL, ABSPANN_WEITER,
   WIDMUNG, abspannLayout, abspannNamen, zeichneAbspann, zeichnePortrait, portraitKante,
 } from '../src/credits.js';
-import { PORTRAITS, PORTRAIT_PALETTE } from '../src/credits-portraits.js';
+import { PORTRAITS, PORTRAIT_PALETTE, PORTRAIT_KANTE } from '../src/credits-portraits.js';
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const WURZEL = join(HIER, '..');
@@ -18,6 +20,30 @@ const VIEWS = [
   { name: 'Rechner', w: 384, h: 216 },
   { name: 'Touch', w: 256, h: 144 },
 ];
+
+/**
+ * Prüfsummen der ausgelieferten Matrizen (Erzeugungsprotokoll
+ * portrait-vorlagen/ausgeschnitten -> daten/matrizen.json). Sie nageln fest,
+ * dass im Spiel genau die abgenommenen Upload-Portraits stehen.
+ */
+const MATRIX_SHA256 = {
+  anna: 'ea87c0c493fe24756bc6da60b7b7629740a889eaad50c17464a8d5e00a649f3b',
+  aoi: '6bd7f6a0d4e6cb30ce98541f82bd3b6890a1f92e1a69f27ca2c21ed5d5bc850b',
+  barbara: '43a12d9b303796627cdb00f37ae00ded738257413c24f7e28980f1264fc8ce12',
+  nicola: '9fafe76bb35b39ec59838fc16e648445d7e21c5d8f02cfd9440edbcdbca48d08',
+  annekatrin: 'd635e5c0631456a9274b0b23f3b7b9c1d8dde6a573883bbf3afee7aab4a8a231',
+  'roland-r': 'ac202486a9ff7b0169d0841771a345be981d5ea5c24d38a2b0af32568f8a8f38',
+  chenyan: '7d7e4f9770f95417883f229f5e3ab7a7dfdab53d33ff9ab285e071dc7f9f89df',
+  annett: '07490c9a5938ca4066c27b3333529443ec098084687277bc7d6e11351dafd4ac',
+  bruno: 'c9c64807647820a7b8c780d56feeb404548c508460c771e018a3a2bf42563bd5',
+  'roland-s': '55c6b6703842592c8260168375a61653c22c489ac25c5782bd1ba6b1b3291b29',
+};
+
+/** Farbpunkte je Portrait laut Erzeugungsprotokoll (Nachweis unveränderter Daten). */
+const FARBPUNKTE = {
+  anna: 5005, aoi: 5002, barbara: 5626, nicola: 3183, annekatrin: 4548,
+  'roland-r': 5931, chenyan: 4711, annett: 3404, bruno: 3724, 'roland-s': 5839,
+};
 
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log(`PASS ${name}`); }
@@ -36,11 +62,6 @@ function protokoll() {
 
 const PALETTE_FARBEN = new Set(Object.values(PORTRAIT_PALETTE).filter(Boolean));
 
-/** Mehrwortige Zeilen, die im Abspann vorkommen dürfen (geprüfte Texte). */
-const MEHRWORTIG = new Set([
-  ABSPANN_TITEL, ABSPANN_HINWEIS, ABSPANN_HINWEIS_KOMPAKT, WIDMUNG.zeile,
-]);
-
 /** Alle Texte, die der Abspann überhaupt zeichnen kann. */
 function alleTexte() {
   const gesehen = new Set();
@@ -52,6 +73,11 @@ function alleTexte() {
     }
   }
   return [...gesehen];
+}
+
+/** Bildpunkte, die auf einer Seite wirklich gemalt wurden (ohne Seitenhintergrund). */
+function gemaltePunkte(p, v) {
+  return p.rects.filter((r) => r.w !== v.w || r.h !== v.h).reduce((n, r) => n + r.w * r.h, 0);
 }
 
 test('Neun Portraits sind mit Vornamen verknüpft', () => {
@@ -67,27 +93,33 @@ test('Neun Portraits sind mit Vornamen verknüpft', () => {
   }
 });
 
-test('Portraitdaten sind nicht leer und haben die erwartete Größe', () => {
-  const erwartet = ['anna', 'nicola', 'aoi', 'barbara', 'annekatrin', 'annett', 'chenyan', 'roland-r', 'roland-s'];
+test('Portraitdaten sind die Upload-Ausschnitte: 96x96, Palettenzeichen, durchsichtiger Grund', () => {
+  const erwartet = ['anna', 'aoi', 'barbara', 'nicola', 'annekatrin', 'roland-r', 'chenyan', 'annett', 'bruno', 'roland-s'];
+  assert.equal(PORTRAIT_KANTE, 96, `Rasterkante ${PORTRAIT_KANTE} statt 96`);
+  assert.equal(portraitKante('bild'), 96, `portraitKante('bild') = ${portraitKante('bild')}`);
   for (const key of erwartet) {
     const satz = PORTRAITS[key];
     assert.ok(satz, `Portrait fehlt: ${key}`);
-    for (const [raster, kante] of [['gross', 48], ['klein', 24]]) {
-      const rows = satz[raster];
-      assert.equal(rows.length, kante, `${key}.${raster}: ${rows.length} Zeilen`);
-      for (const row of rows) {
-        assert.equal(row.length, kante, `${key}.${raster}: Zeile mit ${row.length} Zeichen`);
-        for (const ch of row) {
-          assert.ok(ch === ' ' || PORTRAIT_PALETTE[ch], `${key}.${raster}: unbekanntes Zeichen "${ch}"`);
-        }
+    const rows = satz.bild;
+    assert.ok(Array.isArray(rows), `${key}.bild fehlt`);
+    assert.equal(rows.length, 96, `${key}.bild: ${rows.length} Zeilen`);
+    for (const row of rows) {
+      assert.equal(row.length, 96, `${key}.bild: Zeile mit ${row.length} Zeichen`);
+      for (const ch of row) {
+        assert.ok(ch === ' ' || PORTRAIT_PALETTE[ch], `${key}.bild: unbekanntes Zeichen "${ch}"`);
       }
-      // Vollflächige Vorlagen: praktisch jeder Bildpunkt trägt Farbe.
-      const voll = rows.reduce((n, row) => n + [...row].filter((c) => c !== ' ').length, 0);
-      assert.ok(voll >= kante * kante * 0.95, `${key}.${raster}: nur ${voll} Bildpunkte`);
     }
+    const voll = rows.reduce((n, row) => n + [...row].filter((c) => c !== ' ').length, 0);
+    assert.equal(voll, FARBPUNKTE[key],
+      `${key}: ${voll} Farbpunkte statt ${FARBPUNKTE[key]} (Daten verändert?)`);
+    // Der helle Kachelhintergrund der Vorlage ist durchsichtig: die Figur deckt nur
+    // einen Teil des Feldes, nicht das ganze Blatt.
+    const anteil = voll / (96 * 96);
+    assert.ok(anteil > 0.3 && anteil < 0.75,
+      `${key}: ${(anteil * 100).toFixed(0)} % Farbpunkte — Hintergrund nicht freigestellt?`);
+    const sha = createHash('sha256').update(rows.join('\n')).digest('hex');
+    assert.equal(sha, MATRIX_SHA256[key], `${key}: Prüfsumme der Matrix weicht ab`);
   }
-  assert.equal(portraitKante('gross'), 48);
-  assert.equal(portraitKante('klein'), 24);
 });
 
 test('Nur Vornamen, keine Nachnamen und keine Funktionsbezeichnungen', () => {
@@ -105,10 +137,10 @@ test('Nur Vornamen, keine Nachnamen und keine Funktionsbezeichnungen', () => {
     }
     // Ein Nachname wäre ein zweites Wort in Großbuchstaben hinter einem Vornamen.
     assert.ok(!/^[A-ZÄÖÜ]{3,}\s+[A-ZÄÖÜ]{3,}$/.test(t), `"${t}" sieht nach Nachname aus`);
-    // Mehrwortige Zeilen müssen bekannte, geprüfte Texte sein: Titel, Hinweis-
-    // zeilen und die Widmung. Sonst könnte sich ein Name einschleichen.
-    if (t.trim().includes(' ')) {
-      assert.ok(MEHRWORTIG.has(t), `"${t}" ist mehrwortig, aber im Abspann nicht vorgesehen`);
+    // Nur Titel, Hinweiszeile und Widmung sind mehrwortig.
+    if (t.trim().includes(' ') && !namen.has(t)) {
+      assert.ok(t === ABSPANN_TITEL || t === ABSPANN_HINWEIS || t === ABSPANN_HINWEIS_KOMPAKT
+        || t === WIDMUNG.zeile, `"${t}" ist mehrwortig, aber im Abspann nicht vorgesehen`);
     }
   }
   // Gegenprobe zur Prüfung selbst: alle neun Namen kommen als Schrift vor.
@@ -124,75 +156,84 @@ test('Nur Vornamen, keine Nachnamen und keine Funktionsbezeichnungen', () => {
 test('Widmung an Roland Schreiber ist vorhanden', () => {
   assert.equal(WIDMUNG.zeile, 'FÜR ROLAND SCHREIBER');
   assert.equal(WIDMUNG.portrait, 'roland-s');
+  assert.equal(WIDMUNG.raster, 'bild', 'die Widmung nutzt das Upload-Portrait');
   const widmungsTexte = alleTexte().filter((t) => t.includes('SCHREIBER'));
   assert.deepEqual(widmungsTexte, ['FÜR ROLAND SCHREIBER'], `${widmungsTexte.join(' | ')}`);
-  assert.equal(ABSPANN_SEITEN, 2, 'die Widmung braucht eine eigene Seite');
+  // Neun Seiten Filmfolge plus die Widmung als eigene Seite.
+  assert.equal(ABSPANN_SEITEN, ABSPANN.length + 1, `${ABSPANN_SEITEN} Seiten statt ${ABSPANN.length + 1}`);
 });
 
-test('Die Portraits werden wirklich gezeichnet — beide Bildgrößen', () => {
+test('Filmfolge: jede Seite zeigt genau ein Portrait, der Vorname steht darunter', () => {
   for (const v of VIEWS) {
-    const L = abspannLayout(v, 0);
-    assert.equal(L.kacheln.length, 9, `${v.name}: ${L.kacheln.length} Kacheln im Layout`);
-    const p = protokoll();
-    const gezeichnet = zeichneAbspann(p.ctx, v, { seite: 0 });
-    // Alle Bildpunkte müssen im Bild liegen — sonst ist der Abspann abgeschnitten.
-    for (const r of p.rects) {
-      assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= v.w && r.y + r.h <= v.h,
-        `${v.name}: Rechteck ${r.x},${r.y} ${r.w}×${r.h} liegt außerhalb des Bildes`);
-    }
-    const kacheln = gezeichnet.kacheln;
-    for (const k of kacheln) {
-      // Sichtbarkeitsprüfung: Bildpunkte INNERHALB des Kachelrechtecks zählen —
-      // ohne den Hintergrund der ganzen Seite.
+    const gesehen = [];
+    for (let seite = 0; seite < ABSPANN.length; seite++) {
+      const p = protokoll();
+      const L = zeichneAbspann(p.ctx, v, { seite });
+      assert.equal(L.kacheln.length, 1, `${v.name}/Seite ${seite}: ${L.kacheln.length} Kacheln`);
+      assert.equal(L.widmung, null, `${v.name}/Seite ${seite}: Widmung statt Kachel`);
+      const k = L.kacheln[0];
+      assert.equal(k.portrait, ABSPANN[seite].portrait, `${v.name}/Seite ${seite}: falsches Portrait`);
+      assert.equal(k.name, ABSPANN[seite].name, `${v.name}/Seite ${seite}: falscher Vorname`);
+      assert.equal(k.size, 96, `${v.name}/Seite ${seite}: Kante ${k.size} statt 96`);
+      // Alle Bildpunkte müssen im Bild liegen — sonst ist der Abspann abgeschnitten.
+      for (const r of p.rects) {
+        assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= v.w && r.y + r.h <= v.h,
+          `${v.name}/${k.name}: Rechteck ${r.x},${r.y} ${r.w}×${r.h} liegt außerhalb des Bildes`);
+      }
+      // Sichtbarkeit: die gemalten Bildpunkte der Kachel müssen zur Matrix passen.
       const innen = p.rects.filter((r) => r.w !== v.w
         && r.x >= k.x && r.y >= k.y && r.x + r.w <= k.x + k.size && r.y + r.h <= k.y + k.size);
       const punkte = innen.reduce((n, r) => n + r.w * r.h, 0);
-      assert.ok(punkte >= k.size * k.size * 0.9,
-        `${v.name}/${k.name}: nur ${punkte} von ${k.size * k.size} Bildpunkten gezeichnet (gezeichnet=${k.gezeichnet})`);
       assert.equal(k.gezeichnet, punkte, `${k.name}: Rückgabewert ${k.gezeichnet} ≠ gezeichnete ${punkte}`);
+      const voll = PORTRAITS[k.portrait].bild.reduce((n, row) => n + [...row].filter((c) => c !== ' ').length, 0);
+      assert.equal(punkte, voll, `${v.name}/${k.name}: ${punkte} Bildpunkte gemalt, Matrix hat ${voll}`);
+      assert.ok(punkte < k.size * k.size, `${k.name}: die ganze Kachel ist deckend (Hintergrund nicht frei)`);
       for (const r of innen) {
         assert.ok(PALETTE_FARBEN.has(r.stil), `${k.name}: Farbe ${r.stil} ist nicht in der Palette`);
       }
-      // Der Vorname steht unter der Kachel, an der Stelle aus dem Layout.
+      // Der Vorname steht unter dem Portrait.
       const name = p.texte.find((t) => t.text === k.name);
       assert.ok(name, `${v.name}/${k.name}: Vorname wird nicht gezeichnet`);
       assert.equal(name.x, k.nameX, `${k.name}: Name x=${name.x} statt ${k.nameX}`);
       assert.equal(name.y, k.nameY, `${k.name}: Name y=${name.y} statt ${k.nameY}`);
       assert.ok(name.y > k.y + k.size, `${k.name}: Name steht nicht unter der Kachel`);
+      assert.ok(name.x >= k.x && name.x <= k.x + k.size, `${k.name}: Name steht nicht über der Kachel`);
       assert.ok(/^\d+px monospace$/.test(name.font), `${k.name}: Schrift ${name.font}`);
+      // Genau ein Vorname je Seite - kein Raster mehr.
+      const namensTexte = p.texte.filter((t) => abspannNamen().includes(t.text));
+      assert.deepEqual(namensTexte.map((t) => t.text), [k.name], `${v.name}/Seite ${seite}: ${namensTexte.length} Vornamen`);
+      // Titel und Hinweis stehen im Bild.
+      const titel = p.texte.find((t) => t.text === ABSPANN_TITEL);
+      assert.ok(titel, `${v.name}: Titel fehlt`);
+      assert.ok(titel.y <= k.y, `${v.name}: Titel steht nicht über dem Portrait`);
+      assert.ok(p.texte.some((t) => t.text === (v.w < 320 ? ABSPANN_HINWEIS_KOMPAKT : ABSPANN_HINWEIS)),
+        `${v.name}: Bedienhinweis fehlt`);
+      gesehen.push(k.portrait);
     }
-    // Kacheln dürfen sich nicht überlappen (auf beiden Ansichten lesbar).
-    for (let i = 0; i < kacheln.length; i++) {
-      for (let j = i + 1; j < kacheln.length; j++) {
-        const a = kacheln[i], b = kacheln[j];
-        const ueberlappt = a.x < b.x + b.size && a.x + a.size > b.x && a.y < b.y + b.size && a.y + a.size > b.y;
-        assert.ok(!ueberlappt, `${v.name}: ${a.name} und ${b.name} überlappen`);
-      }
-    }
-    // Titel und Hinweis stehen im Bild.
-    const titel = p.texte.find((t) => t.text === ABSPANN_TITEL);
-    assert.ok(titel, `${v.name}: Titel fehlt`);
-    assert.ok(titel.y <= L.kacheln[0].y, `${v.name}: Titel steht nicht über den Kacheln`);
-    assert.ok(p.texte.some((t) => t.text === (v.w < 320 ? ABSPANN_HINWEIS_KOMPAKT : ABSPANN_HINWEIS)),
-      `${v.name}: Bedienhinweis fehlt`);
+    // Filmfolge: jede Seite ein anderes Portrait, alle neun kommen vor.
+    assert.equal(new Set(gesehen).size, 9, `${v.name}: ${new Set(gesehen).size} verschiedene Portraits`);
+    assert.deepEqual(gesehen, ABSPANN.map((k) => k.portrait), `${v.name}: Reihenfolge weicht ab`);
   }
 });
 
-test('Die Widmungsseite zeigt das große Portrait', () => {
+test('Die letzte Seite ist die Widmung an den Geehrten', () => {
   for (const v of VIEWS) {
     const p = protokoll();
-    const L = zeichneAbspann(p.ctx, v, { seite: 1 });
+    const L = zeichneAbspann(p.ctx, v, { seite: ABSPANN_SEITEN - 1 });
     assert.ok(L.widmung, `${v.name}: keine Widmung im Layout`);
+    assert.equal(L.kacheln.length, 0, `${v.name}: Kollegenkacheln auf der Widmungsseite`);
     const g = L.widmung;
-    assert.equal(g.size, 48, `${v.name}: Widmungsportrait ${g.size}px statt 48px`);
+    assert.equal(g.size, 96, `${v.name}: Widmungsportrait ${g.size}px statt 96px`);
     assert.equal(g.portrait, 'roland-s');
+    assert.equal(g.raster, 'bild');
     const innen = p.rects.filter((r) => r.w !== v.w
       && r.x >= g.x && r.y >= g.y && r.x + r.w <= g.x + g.size && r.y + r.h <= g.y + g.size);
     const punkte = innen.reduce((n, r) => n + r.w * r.h, 0);
-    assert.ok(punkte >= 48 * 48 * 0.9, `${v.name}: nur ${punkte} Bildpunkte im Widmungsportrait`);
     assert.equal(g.gezeichnet, punkte, `${v.name}: Rückgabewert ${g.gezeichnet} ≠ ${punkte}`);
-    // Größer als eine Kachel der ersten Seite.
-    assert.ok(g.size > abspannLayout(v, 0).kacheln[0].size, `${v.name}: Widmung nicht größer als die Kacheln`);
+    const voll = PORTRAITS['roland-s'].bild.reduce((n, row) => n + [...row].filter((c) => c !== ' ').length, 0);
+    assert.equal(punkte, voll, `${v.name}: ${punkte} Bildpunkte im Widmungsportrait statt ${voll}`);
+    // Bildgröße wie auf den Portraitseiten, aber die Widmungszeile bleibt darunter.
+    assert.equal(g.size, abspannLayout(v, 0).kacheln[0].size, `${v.name}: Widmung anders groß als die Portraits`);
     const zeile = p.texte.find((t) => t.text === WIDMUNG.zeile);
     assert.ok(zeile, `${v.name}: Widmungszeile fehlt`);
     assert.ok(zeile.y > g.y + g.size, `${v.name}: Widmungszeile steht nicht unter dem Portrait`);
@@ -200,9 +241,33 @@ test('Die Widmungsseite zeigt das große Portrait', () => {
   }
 });
 
+test('Die Bildgröße ist auf beiden Ansichten dieselbe (keine geschrumpfte Winzmatrix)', () => {
+  for (const v of VIEWS) {
+    const k = abspannLayout(v, 0).kacheln[0];
+    assert.equal(k.size, 96, `${v.name}: ${k.size}px`);
+    const g = abspannLayout(v, ABSPANN_SEITEN - 1).widmung;
+    assert.equal(g.size, 96, `${v.name}: Widmung ${g.size}px`);
+    // Das Portrait ist größer als die halbe Bildhöhe — sonst ist es keine Filmfolge.
+    assert.ok(k.size >= v.h * 0.4, `${v.name}: Portrait nur ${k.size}px bei ${v.h}px Höhe`);
+  }
+});
+
+test('Die Seiten sind unterscheidbar: jede zeigt andere Bildpunkte', () => {
+  const spur = [];
+  for (let seite = 0; seite < ABSPANN.length; seite++) {
+    const p = protokoll();
+    const L = zeichneAbspann(p.ctx, VIEWS[0], { seite });
+    const k = L.kacheln[0];
+    const muster = p.rects.filter((r) => r.x >= k.x && r.x < k.x + k.size && r.y >= k.y && r.y < k.y + k.size)
+      .map((r) => `${r.x - k.x},${r.y - k.y},${r.stil}`).join(';');
+    spur.push(muster);
+  }
+  assert.equal(new Set(spur).size, 9, 'zwei Seiten zeigen dieselben Bildpunkte');
+});
+
 test('Ein unbekanntes Portrait zeichnet nichts (kein stiller Blindgänger)', () => {
   const p = protokoll();
-  assert.equal(zeichnePortrait(p.ctx, 'gibt-es-nicht', 0, 0, 'klein'), 0);
+  assert.equal(zeichnePortrait(p.ctx, 'gibt-es-nicht', 0, 0, 'bild'), 0);
   assert.equal(p.rects.length, 0);
 });
 
@@ -216,7 +281,7 @@ test('main.js verdrahtet den Abspann als Belohnung, nicht als Pflicht', () => {
   assert.match(main, /classList\.toggle\('hidden', LEVEL\.id !== 'epilog'\)/);
   // Rückweg: der Knopf führt zurück in Spiel bzw. Titel — kein Sackgassenbildschirm.
   assert.match(main, /ui\.abspannZurueck\.onclick = \(\) => abspannZu\(\)/);
-  assert.match(main, /function abspannZu\(\) \{\s*show\(abspannHerkunft === 'title' \? 'title' : 'reward'\)/);
+  assert.match(main, /function abspannZu\(\) \{\s*show\(abspannHerkunft === 'title' \? 'title' : 'reward'/);
   assert.ok(main.includes('ABSPANN_ZURUECK') && main.includes('ABSPANN_ZURUECK_TITEL'));
   // Tastatur gehört dem Abspann, solange er offen ist (sonst pausiert ESC das Spiel).
   assert.match(main, /if \(!ui\.abspann\.classList\.contains\('hidden'\)\) \{/);

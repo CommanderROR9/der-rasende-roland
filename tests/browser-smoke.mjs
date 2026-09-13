@@ -115,6 +115,7 @@ async function key(code, type) {
   const map = {
     KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'],
     ArrowDown: [40, 'ArrowDown'], KeyS: [83, 's'], ArrowUp: [38, 'ArrowUp'],
+    Escape: [27, 'Escape'],
   };
   const [vk, k] = map[code];
   await send('Input.dispatchKeyEvent', {
@@ -3340,6 +3341,153 @@ try {
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 
   await evaluate("window.__roland.loadAct(0)");
+
+  // --- Abspann im echten Browser (V3: Upload-Portraits als Filmfolge) ---------
+  // Der Abspann ist eine Belohnung: ohne geschafften Epilog gibt es keinen Zugang.
+  const abspannUrl = () => URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now();
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ v: 3, akt1: true, mappe: true, geschafft: { epilog: false } }))");
+  await send('Page.navigate', { url: abspannUrl() });
+  await sleep(2200);
+  const abspannGesperrt = JSON.parse(await evaluate(`(() => {
+    const b = document.getElementById('abspannTitleBtn');
+    return JSON.stringify({ da: !!b, versteckt: b ? b.classList.contains('hidden') : null });
+  })()`));
+  check('Abspann-Browser: ohne geschafften Epilog bleibt der Zugang im Titel verborgen',
+    abspannGesperrt.da === true && abspannGesperrt.versteckt === true, JSON.stringify(abspannGesperrt));
+
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ v: 3, akt1: true, mappe: true, geschafft: { epilog: true } }))");
+  await send('Page.navigate', { url: abspannUrl() });
+  await sleep(2200);
+  const abspannFrei = JSON.parse(await evaluate(`(() => {
+    const b = document.getElementById('abspannTitleBtn');
+    return JSON.stringify({ versteckt: b ? b.classList.contains('hidden') : null, text: (b.textContent || '').trim() });
+  })()`));
+  check('Abspann-Browser: nach dem Epilog ist er im Titel erreichbar',
+    abspannFrei.versteckt === false, JSON.stringify(abspannFrei));
+
+  // Bildpunkte im Portraitfeld zaehlen: Grund #0b0810 (11,8,16), Toleranz je Kanal.
+  const abspannMessung = `(() => {
+    const a = window.__roland.abspann;
+    const cv = a.canvas;
+    const g = cv.getContext('2d');
+    const L = a.layout(a.seite);
+    const feld = L.widmung || L.kacheln[0];
+    const d = g.getImageData(feld.x, feld.y, feld.size, feld.size).data;
+    let gemalt = 0, grund = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - 11) <= 3 && Math.abs(d[i + 1] - 8) <= 3 && Math.abs(d[i + 2] - 16) <= 3) grund++;
+      else gemalt++;
+    }
+    const ganz = g.getImageData(0, 0, cv.width, cv.height).data;
+    let seiteGemalt = 0;
+    for (let i = 0; i < ganz.length; i += 4) {
+      if (!(Math.abs(ganz[i] - 11) <= 3 && Math.abs(ganz[i + 1] - 8) <= 3 && Math.abs(ganz[i + 2] - 16) <= 3)) seiteGemalt++;
+    }
+    const kopf = g.getImageData(0, 0, cv.width, 36).data;
+    let kopfPunkte = 0;
+    for (let i = 0; i < kopf.length; i += 4) {
+      if (!(Math.abs(kopf[i] - 11) <= 3 && Math.abs(kopf[i + 1] - 8) <= 3 && Math.abs(kopf[i + 2] - 16) <= 3)) kopfPunkte++;
+    }
+    return JSON.stringify({
+      offen: a.offen, seite: a.seite, seiten: L.seiten,
+      kacheln: L.kacheln.length,
+      widmung: !!L.widmung,
+      portrait: L.widmung ? L.widmung.portrait : L.kacheln[0].portrait,
+      name: L.kacheln.length ? L.kacheln[0].name : null,
+      feld: { x: feld.x, y: feld.y, size: feld.size },
+      gemalt, grund, seiteGemalt, kopfPunkte,
+      flaeche: feld.size * feld.size,
+      raster: a.layout(0).kacheln[0].raster,
+    });
+  })()`;
+
+  await echterKlick('#abspannTitleBtn');
+  await sleep(500);
+  const seite0 = JSON.parse(await evaluate(abspannMessung));
+  check('Abspann-Browser: der Abspann oeffnet sich aus dem Titel',
+    seite0.offen === true && seite0.seite === 0 && seite0.seiten === 10, JSON.stringify(seite0));
+  check('Abspann-Browser: Seite 1 zeigt genau ein Portrait (ANNA) mit Vorname darunter',
+    seite0.kacheln === 1 && seite0.portrait === 'anna' && seite0.name === 'ANNA'
+      && seite0.raster === 'bild' && seite0.feld.size === 96,
+    JSON.stringify({ kacheln: seite0.kacheln, portrait: seite0.portrait, name: seite0.name, groesse: seite0.feld.size }));
+  // Der helle Kachelhintergrund der Vorlage darf nicht mitgekommen sein: das
+  // Portraitfeld ist zu rund 35-75 % bemalt, nicht vollflaechig.
+  const anteil0 = seite0.gemalt / seite0.flaeche;
+  check('Abspann-Browser: der Vorlagenhintergrund ist durchsichtig (kein helles Feld)',
+    anteil0 > 0.3 && anteil0 < 0.8,
+    `${(anteil0 * 100).toFixed(1)} % bemalt (${seite0.gemalt} von ${seite0.flaeche})`);
+
+  const shotDirAb = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDirAb, { recursive: true });
+  const abPortraitPfad = join(shotDirAb, 'abspann-portrait.png');
+  writeFileSync(abPortraitPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  results.push(`SCREENSHOT ${abPortraitPfad}`);
+
+  // Filmfolge: WEITER blaettert Portrait fuer Portrait, jedes anders.
+  const abspannGesehen = [seite0.portrait];
+  const abspannBemalt = [seite0.gemalt];
+  for (let i = 1; i < 10; i++) {
+    await echterKlick('#abspannWeiter');
+    await sleep(220);
+    const s = JSON.parse(await evaluate(abspannMessung));
+    if (s.seite !== i) { check(`Abspann-Browser: WEITER erreicht Seite ${i + 1}`, false, JSON.stringify(s)); break; }
+    abspannGesehen.push(s.portrait);
+    abspannBemalt.push(s.gemalt);
+    if (i === 9) {
+      check('Abspann-Browser: die letzte Seite ist die Widmung an den Geehrten',
+        s.widmung === true && s.kacheln === 0 && s.portrait === 'roland-s',
+        JSON.stringify({ kacheln: s.kacheln, widmung: s.widmung, portrait: s.portrait }));
+      const abWidmungPfad = join(shotDirAb, 'abspann-widmung.png');
+      writeFileSync(abWidmungPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+      results.push(`SCREENSHOT ${abWidmungPfad}`);
+      const widmungText = await evaluate(`(() => {
+        const t = window.__roland.abspann.layout(9).widmung;
+        return t ? t.text : null;
+      })()`);
+      check('Abspann-Browser: die Widmung nennt Roland Schreiber',
+        widmungText === 'FÜR ROLAND SCHREIBER', String(widmungText));
+      const wAnteil = s.gemalt / s.flaeche;
+      check('Abspann-Browser: auch das Widmungsportrait ist freigestellt',
+        wAnteil > 0.3 && wAnteil < 0.8, `${(wAnteil * 100).toFixed(1)} % bemalt`);
+    }
+    // Titel und Hinweis bleiben auf jeder Seite im Bild (Kopfband y=0..36).
+    if (s.kopfPunkte < 60) {
+      check(`Abspann-Browser: Seite ${i + 1} zeigt Titel und Ueberschrift`, false, JSON.stringify(s));
+      break;
+    }
+  }
+  check('Abspann-Browser: neun verschiedene Portraits in der Filmfolge',
+    new Set(abspannGesehen.slice(0, 9)).size === 9, abspannGesehen.join(' -> '));
+  check('Abspann-Browser: jede Portraitseite malt Bildpunkte',
+    abspannBemalt.slice(0, 9).every((n) => n > 2000), abspannBemalt.join(','));
+  check('Abspann-Browser: keine Fehler im Abspann',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
+
+  // Rueckweg: ZURUECK fuehrt in den Titel, ESC ebenso — kein Sackgassenbildschirm.
+  await echterKlick('#abspannZurueck');
+  await sleep(400);
+  const nachZurueck = JSON.parse(await evaluate(`JSON.stringify({
+    abspannOffen: window.__roland.abspann.offen,
+    titelOffen: !document.getElementById('title').classList.contains('hidden'),
+    knopfText: document.getElementById('abspannZurueck').textContent
+  })`));
+  check('Abspann-Browser: ZURUECK ZUM TITEL schliesst den Abspann und zeigt den Titel',
+    nachZurueck.abspannOffen === false && nachZurueck.titelOffen === true,
+    JSON.stringify(nachZurueck));
+  check('Abspann-Browser: der Rueckweg ist als Titel-Rueckweg beschriftet',
+    /TITEL/.test(String(nachZurueck.knopfText)), String(nachZurueck.knopfText));
+
+  await echterKlick('#abspannTitleBtn');
+  await sleep(400);
+  await key('Escape', 'keyDown');
+  await key('Escape', 'keyUp');
+  await sleep(300);
+  const nachEsc = JSON.parse(await evaluate(`JSON.stringify({
+    abspannOffen: window.__roland.abspann.offen,
+    titelOffen: !document.getElementById('title').classList.contains('hidden')
+  })`));
+  check('Abspann-Browser: ESC schliesst den Abspann',
+    nachEsc.abspannOffen === false && nachEsc.titelOffen === true, JSON.stringify(nachEsc));
 
   // --- Musik im echten Browser -------------------------------------------
   // Kein Tonvergleich (nicht messbar), aber: vor dem Start darf gar kein
