@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const URL_TO_TEST = process.argv[2] || 'http://127.0.0.1:8123/';
+const TESTMODUS = new URL(URL_TO_TEST).searchParams.get('test');
+const GEZIELTER_ABSCHLUSS = Symbol('gezielter Browserlauf abgeschlossen');
 // Zufallsport: ein alter, haengengebliebener Browser darf den Lauf nicht kapern
 const PORT = 9400 + Math.floor(Math.random() * 400);
 const results = [];
@@ -158,6 +160,98 @@ try {
   check('Titel gesetzt', (await evaluate('document.title')) === 'Der Rasende Roland');
   check('Fehlersammler installiert', Array.isArray(await evaluate('window.__errors')));
   check('Spielmodul geladen', (await evaluate('typeof window.__roland')) === 'object');
+
+  // Ein einziges, nicht interaktives DOM-Overlay nimmt spaeter alle hochaufgeloesten
+  // Spieltexte auf. Der gezielte Modus haelt den Rot-Gruen-Nachweis kurz.
+  const textEbeneStart = JSON.parse(await evaluate(`(() => {
+    const e = document.getElementById('gameTextLayer');
+    return JSON.stringify({
+      vorhanden: !!e,
+      imStage: !!e && e.parentElement?.id === 'stage',
+      pointer: e ? getComputedStyle(e).pointerEvents : null,
+      anzahl: document.querySelectorAll('#stage > .game-text-layer').length,
+    });
+  })()`));
+  check('DOM-Textvertrag: genau eine nicht interaktive Textebene liegt im Stage',
+    textEbeneStart.vorhanden && textEbeneStart.imStage && textEbeneStart.pointer === 'none'
+      && textEbeneStart.anzahl === 1,
+    JSON.stringify(textEbeneStart));
+
+  // Bewusst nicht 16:9: X und Y muessen aus dem echten Canvas-Rechteck
+  // stammen. Danach wird auf die kompakte VIEW gewechselt und ein
+  // Orientationchange erzwungen; derselbe zentrale Pfad muss alles nachziehen.
+  const textSkalierung = JSON.parse(await evaluate(`(async () => {
+    const api = window.__roland && window.__roland.textLayer;
+    const c = document.getElementById('game');
+    const layer = document.getElementById('gameTextLayer');
+    if (!api || typeof api.render !== 'function') return JSON.stringify({ fehlt: 'textLayer.render' });
+    const alteBreite = c.style.width, alteHoehe = c.style.height;
+    const altesW = c.width, altesH = c.height;
+    const probe = { id: 'vertrag-probe', text: 'PROBE', x: 41, y: 27, w: 103, h: 11,
+      fontSize: 7, align: 'center', color: '#e9e5d8' };
+    const messe = (daten, view) => {
+      const cr = c.getBoundingClientRect();
+      const lr = layer.getBoundingClientRect();
+      const e = layer.querySelector('[data-text-id="' + daten.id + '"]');
+      if (!e) return { fehlt: daten.id };
+      const er = e.getBoundingClientRect();
+      const sx = cr.width / view.w, sy = cr.height / view.h;
+      const stil = getComputedStyle(e);
+      const matrix = stil.transform === 'none' ? [1] : stil.transform.slice(7, -1).split(',').map(Number);
+      const schriftY = parseFloat(stil.fontSize);
+      return {
+        canvas: { left: cr.left, top: cr.top, width: cr.width, height: cr.height },
+        layer: { left: lr.left, top: lr.top, width: lr.width, height: lr.height },
+        sx, sy,
+        lageFehler: Math.max(Math.abs(er.left - (cr.left + daten.x * sx)), Math.abs(er.top - (cr.top + daten.y * sy))),
+        massFehler: Math.max(Math.abs(er.width - daten.w * sx), Math.abs(er.height - daten.h * sy)),
+        layerFehler: Math.max(Math.abs(lr.left - cr.left), Math.abs(lr.top - cr.top),
+          Math.abs(lr.width - cr.width), Math.abs(lr.height - cr.height)),
+        schriftYFehler: Math.abs(schriftY - daten.fontSize * sy),
+        schriftXFehler: Math.abs(schriftY * matrix[0] - daten.fontSize * sx),
+        innen: er.left >= cr.left - 0.5 && er.top >= cr.top - 0.5
+          && er.right <= cr.right + 0.5 && er.bottom <= cr.bottom + 0.5,
+        semantik: e.id === 'spieltext-' + daten.id && e.dataset.textId === daten.id
+          && Number(e.dataset.x) === daten.x && Number(e.dataset.y) === daten.y,
+        text: e.textContent,
+      };
+    };
+    c.style.width = '503px'; c.style.height = '271px';
+    api.render([probe], { w: 384, h: 216 });
+    const desktop = messe(probe, { w: 384, h: 216 });
+    const kompakt = { ...probe, id: 'vertrag-kompakt', x: 13, y: 19, w: 77, h: 14, fontSize: 6 };
+    c.width = 256; c.height = 144;
+    c.style.width = '517px'; c.style.height = '233px';
+    api.render([kompakt], { w: 256, h: 144 });
+    const viewWechsel = messe(kompakt, { w: 256, h: 144 });
+    c.width = altesW; c.height = altesH;
+    c.style.width = alteBreite; c.style.height = alteHoehe;
+    api.render([probe], { w: 384, h: 216 });
+    window.dispatchEvent(new Event('orientationchange'));
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const orientation = messe(probe, { w: 384, h: 216 });
+    api.clear();
+    return JSON.stringify({ desktop, viewWechsel, orientation });
+  })()`));
+  check('DOM-Textvertrag: logische Lage und Masse folgen dem echten Canvas-Rechteck',
+    !textSkalierung.fehlt && textSkalierung.desktop.lageFehler <= 1
+      && textSkalierung.desktop.massFehler <= 1 && textSkalierung.desktop.layerFehler <= 1
+      && textSkalierung.desktop.innen,
+    JSON.stringify(textSkalierung.desktop || textSkalierung));
+  check('DOM-Textvertrag: Schrift skaliert getrennt mit X und Y',
+    !textSkalierung.fehlt && textSkalierung.desktop.schriftXFehler <= 0.05
+      && textSkalierung.desktop.schriftYFehler <= 0.05,
+    JSON.stringify(textSkalierung.desktop || textSkalierung));
+  check('DOM-Textvertrag: stabile ID sowie logisches X/Y bleiben abfragbar',
+    !textSkalierung.fehlt && textSkalierung.desktop.semantik && textSkalierung.desktop.text === 'PROBE',
+    JSON.stringify(textSkalierung.desktop || textSkalierung));
+  check('DOM-Textvertrag: VIEW-Wechsel und Orientationchange aktualisieren denselben Pfad',
+    !textSkalierung.fehlt && textSkalierung.viewWechsel.lageFehler <= 1
+      && textSkalierung.viewWechsel.massFehler <= 1 && textSkalierung.viewWechsel.layerFehler <= 1
+      && textSkalierung.orientation.lageFehler <= 1 && textSkalierung.orientation.layerFehler <= 1,
+    JSON.stringify(textSkalierung));
+  if (TESTMODUS === 'textvertrag') throw GEZIELTER_ABSCHLUSS;
+
   check('Stationswahl ist zu Beginn verborgen',
     (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === true);
   const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
@@ -2984,7 +3078,7 @@ try {
   check('Dreh-Hinweis verschwindet im Querformat', land.drehHinweis === false);
   results.push(`QUER ${land.w}x${land.h} in ${land.fensterW}x${land.fensterH}`);
 } catch (e) {
-  check('Browserprüfung ohne Abbruch', false, e.message);
+  if (e !== GEZIELTER_ABSCHLUSS) check('Browserprüfung ohne Abbruch', false, e.message);
 } finally {
   try { ws.close(); } catch { /* egal */ }
   chrome.kill('SIGKILL');
