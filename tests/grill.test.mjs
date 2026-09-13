@@ -30,13 +30,7 @@ function neuerGrill(view = { w: 384, h: 216 }) {
     'grill-garstufe-2': 'ROH',
     'grill-teller': 'TELLER 0',
     'grill-vorrat': 'VORRAT 5',
-    'grill-status-offen': 'OFFEN 8',
-    'grill-status-punkte': '0 PUNKTE',
-    'grill-status-takt': 'IM TAKT 0',
-    'grill-status-rost-titel': 'AUF DEM ROST',
-    'grill-status-stufen': 'ROH · ROH · ROH',
-    'grill-status-fokus': 'FOKUS ROH',
-    'grill-status-verbrannt': 'VERBRANNT 0',
+    'grill-status': 'OFFEN 8 · FOKUS ROH · IM TAKT 0',
   };
   const vollstaendig = Object.entries(erwarteteTexte).every(([id, text]) => nachId[id]?.text === text);
   const strukturiert = texte.length === Object.keys(erwarteteTexte).length
@@ -51,6 +45,7 @@ function neuerGrill(view = { w: 384, h: 216 }) {
 {
   const grill = neuerGrill();
   grill.wuerserste[0].gar = 70;
+  grill.wuerserste[grill.auswahl].gar = 70;
   grill.punktestand = 340;
   grill.sauber = 3;
   grill.verbrannt = 1;
@@ -60,12 +55,23 @@ function neuerGrill(view = { w: 384, h: 216 }) {
   check('Grilltexte: dynamische Beschriftungen lesen immer den aktuellen Spielzustand',
     nachId['grill-garstufe-0'] === 'GOLDBRAUN'
       && nachId['grill-teller'] === 'TELLER 1'
-      && nachId['grill-status-offen'] === 'OFFEN 6'
-      && nachId['grill-status-punkte'] === '340 PUNKTE'
-      && nachId['grill-status-takt'] === 'IM TAKT 3'
-      && nachId['grill-status-verbrannt'] === 'VERBRANNT 1'
-      && nachId['grill-status-stufen'].startsWith('GOLDBRAUN'),
+      && nachId['grill-status'] === 'OFFEN 6 · FOKUS GOLDBRAUN · IM TAKT 3',
     JSON.stringify(nachId));
+}
+
+{
+  // Die eine Statuszeile des Grills kennt nur noch, was der Grill selbst zeigt:
+  // Punkte, Verbrannt und Serviert fuehrt das globale HUD (#grillReadout).
+  const grill = neuerGrill();
+  const daten = grill.beschriftungen();
+  check('Grilltexte: der Grillstatus ist eine Zeile ohne Punkte-, Verbrannt- und Serviertwerte',
+    daten.filter((text) => text.id.startsWith('grill-status')).length === 1
+      && daten.every((text) => !/PUNKTE|VERBRANNT|SERVIERT/.test(text.text)),
+    JSON.stringify(daten.map((t) => [t.id, t.text])));
+  check('Grilltexte: die Statuszeile steht oben und rueckt unter das globale HUD',
+    daten.find((t) => t.id === 'grill-status')?.unterHud === true
+      && daten.find((t) => t.id === 'grill-status').y < grill.layout().vh / 2,
+    JSON.stringify(daten.find((t) => t.id === 'grill-status')));
 }
 
 {

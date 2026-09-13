@@ -442,6 +442,68 @@ export class Racer {
     };
   }
 
+  /**
+   * Alle HUD-Texte des Fahr-Interludiums als logische Canvas-Rechtecke — dieselbe
+   * Form wie `Grill.beschriftungen()`: reine Daten, kein DOM, kein CSS. Die
+   * Fahrzeug-Art malt diese Texte seit Phase A nicht mehr; die einzige Abbildung
+   * ins Browserfenster liegt zentral in main.js. `unterHud` markiert Texte, die
+   * dort unter das globale HUD rücken.
+   */
+  beschriftungen() {
+    if (!this.level.journey) return [];
+    const d = drivingCue(this);
+    const sections = this.level.journey.sections;
+    const j = this.journeyState;
+    const index = sections.findIndex((s) => s.id === d.sectionId);
+    const compact = this.vw < 320;
+    const box = compact ? 121 : 151, right = compact ? 91 : 118;
+    const nacht = !!this.nacht;
+    const schrift = compact ? 7 : 8;
+    const panel = nacht ? 'rgba(10,16,34,.9)' : 'rgba(16,31,44,.88)';
+    const farbe = {
+      abschnitt: nacht ? '#e9e4cf' : '#f9e9c2',
+      richtung: d.braking ? '#ffad83' : '#9cdbd3',
+      tempo: nacht ? '#e8d5a8' : '#f5dfae',
+      cue: nacht ? '#d8d4c2' : '#e4e1ce',
+      sauber: '#85d6c6', unsauber: '#dfac81', jetzt: '#ffdc8b',
+      offen: nacht ? '#3a4a5c' : '#465b68',
+    };
+    const etikett = (id, text, x, y, w, h, fontSize, align, color, bg) =>
+      ({ id, text, x, y, w, h, fontSize, align, color, bg, unterHud: true });
+    const texte = [
+      etikett('ro-abschnitt', `${index + 1} / ${sections.length}  ${d.section}`,
+        10, 8, box - 10, 11, schrift, 'left', farbe.abschnitt, panel),
+    ];
+    for (let i = 0; i < sections.length; i++) {
+      const erledigt = i < j.results.length;
+      const color = erledigt ? (j.results[i].clean ? farbe.sauber : farbe.unsauber)
+        : i === index ? farbe.jetzt : farbe.offen;
+      texte.push(etikett(`ro-segmente-${i}`, erledigt || i === index ? '█' : '░',
+        Math.round(10 + (i * (box - 10)) / sections.length), 19,
+        Math.floor((box - 18) / sections.length), 7, 6, 'left', color, panel));
+    }
+    texte.push(etikett('ro-richtung',
+      d.braking ? 'BREMSE' : d.direction === 'straight' ? 'GERADEAUS'
+        : d.direction === 'right' ? 'RECHTS >' : '< LINKS',
+      this.vw - right - 5, 8, right - 6, 11, schrift, 'right', farbe.richtung, panel));
+    texte.push(etikett('ro-tempo', `RICHTTEMPO ${d.advisedSpeed}`,
+      this.vw - right - 5, 19, right - 6, 9, 6, 'right', farbe.tempo, panel));
+    texte.push(etikett('ro-cue', d.cue, 9, 38, compact ? 166 : 211, 12,
+      compact ? 6 : 7, 'left', farbe.cue,
+      nacht ? 'rgba(10,16,34,.82)' : 'rgba(16,31,44,.8)'));
+    if (this.panneTimer > 0) {
+      // "KURZE PAUSE" stand im Canvas ueber dem Fahrzeug. Hoehe wie in
+      // drawJourneyCar (mx5 44x27) bzw. drawNightBike (Motorrad 30x26) — ohne
+      // die Art-Module zu importieren.
+      const breite = nacht ? Math.round(this.vw * 0.20) : Math.round(this.vw * 0.26);
+      const hoehe = Math.round(breite * (nacht ? 26 / 30 : 27 / 44));
+      const w = compact ? 84 : 100;
+      texte.push(etikett('ro-pause', 'KURZE PAUSE', Math.round(this.vw / 2 - w / 2),
+        Math.max(0, this.vh - 8 - hoehe - 14), w, 10, 7, 'center', '#ffd675', null));
+    }
+    return texte;
+  }
+
   // --------------------------------------------------------------- Zeichnen --
   alignJourneyCamera() {
     // Der Kollisionspunkt liegt an den sichtbaren Hinterrädern, nicht unterhalb

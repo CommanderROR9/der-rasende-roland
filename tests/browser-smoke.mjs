@@ -185,6 +185,7 @@ async function pruefeGrilltexteMobil({ domAus = false } = {}) {
   await evaluate(`(() => {
     const g = window.__roland.grill;
     g.wuerserste[0].gar = 70;
+    g.wuerserste[g.auswahl].gar = 70;
     g.wuerserste[3].zustand = 'fertig';
     g.punktestand = 340;
     g.sauber = 3;
@@ -203,64 +204,109 @@ async function pruefeGrilltexteMobil({ domAus = false } = {}) {
     const g = window.__roland.grill;
     const c = document.getElementById('game');
     const layer = document.getElementById('gameTextLayer');
+    const hud = document.querySelector('.hud');
+    const pad = document.getElementById('pad');
     const cr = c.getBoundingClientRect();
     const canvas = rechteck(cr);
     if (!g || !layer) return JSON.stringify({ ausrichtung: ${JSON.stringify(ausrichtung)},
       fehlt: !g ? 'grill' : 'gameTextLayer', canvas });
     const lr = layer.getBoundingClientRect();
+    const hr = hud.getBoundingClientRect();
+    const pr = pad.getBoundingClientRect();
     const daten = g.beschriftungen();
-    const rep = daten.find((d) => d.id === 'grill-garstufe-0');
-    const el = layer.querySelector('[data-text-id="grill-garstufe-0"]');
-    const elemente = [...layer.querySelectorAll('[data-text-id]')];
-    if (!rep || !el) return JSON.stringify({ ausrichtung: ${JSON.stringify(ausrichtung)},
-      fehlt: !rep ? 'beschriftungsdaten' : 'grill-garstufe-0', canvas, overlay: rechteck(lr),
-      anzahl: elemente.length });
-    const er = el.getBoundingClientRect();
+    const staerke = [...layer.querySelectorAll('[data-text-id]')];
     const sx = cr.width / g.vw, sy = cr.height / g.vh;
-    const erwartet = {
-      left: cr.left + rep.x * sx, top: cr.top + rep.y * sy,
-      width: rep.w * sx, height: rep.h * sy,
-    };
+    // Phase A: Texte unter dem globalen HUD ruecken um den gemessenen HUD-Abstand
+    // nach unten. --hud-h wird in main.js aus dem echten HUD-Rechteck gesetzt.
+    const hudVar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-h')) || 0;
+    const grenze = Math.round(cr.height * 0.35);
+    const abstand = Math.min(Math.max(0, hr.bottom - cr.top + 4), grenze);
     const ids = ['grill-garstufe-0', 'grill-garstufe-1', 'grill-garstufe-2',
-      'grill-teller', 'grill-vorrat', 'grill-status-offen', 'grill-status-punkte',
-      'grill-status-takt', 'grill-status-rost-titel', 'grill-status-stufen',
-      'grill-status-fokus', 'grill-status-verbrannt'];
-    const texte = Object.fromEntries(elemente.map((e) => [e.dataset.textId, e.textContent]));
-    const alleInnen = elemente.every((e) => {
-      const r = e.getBoundingClientRect();
-      return r.left >= cr.left - 0.5 && r.top >= cr.top - 0.5
-        && r.right <= cr.right + 0.5 && r.bottom <= cr.bottom + 0.5;
+      'grill-teller', 'grill-vorrat', 'grill-status'];
+    const texte = Object.fromEntries(staerke.map((e) => [e.dataset.textId, e.textContent]));
+    const fehler = daten.map((d) => {
+      const e = layer.querySelector('[data-text-id="' + d.id + '"]');
+      if (!e) return { id: d.id, fehlt: true };
+      const er = e.getBoundingClientRect();
+      const zusatz = d.unterHud ? abstand : 0;
+      return {
+        id: d.id, text: e.textContent,
+        lage: Math.max(Math.abs(er.left - (cr.left + d.x * sx)),
+          Math.abs(er.top - (cr.top + d.y * sy + zusatz))),
+        mass: Math.max(Math.abs(er.width - d.w * sx), Math.abs(er.height - d.h * sy)),
+        schrift: parseFloat(getComputedStyle(e).fontSize),
+        unterHud: Math.round((er.top - hr.bottom) * 100) / 100,
+        ueberPad: Math.round((pr.top - er.bottom) * 100) / 100,
+        vonOben: Math.round((er.top - cr.top) * 100) / 100,
+      };
     });
+    const status = fehler.find((f) => f.id === 'grill-status') || {};
     return JSON.stringify({
       ausrichtung: ${JSON.stringify(ausrichtung)}, state: g.state,
-      view: { w: g.vw, h: g.vh }, canvas, overlay: rechteck(lr), label: rechteck(er),
-      scaleX: sx, scaleY: sy, erwartet,
-      abweichung: Math.max(Math.abs(er.left - erwartet.left), Math.abs(er.top - erwartet.top),
-        Math.abs(er.width - erwartet.width), Math.abs(er.height - erwartet.height)),
+      view: { w: g.vw, h: g.vh }, canvas, overlay: rechteck(lr), hud: rechteck(hr), pad: rechteck(pr),
+      scaleX: sx, scaleY: sy, hudVar, grenze, abstand,
       overlayAbweichung: Math.max(Math.abs(lr.left - cr.left), Math.abs(lr.top - cr.top),
         Math.abs(lr.width - cr.width), Math.abs(lr.height - cr.height)),
-      alleInnen, vollstaendig: ids.every((id) => Object.hasOwn(texte, id)),
-      semantik: el.id === 'spieltext-grill-garstufe-0'
-        && Number(el.dataset.x) === rep.x && Number(el.dataset.y) === rep.y,
+      anzahl: staerke.length, daten: daten.length,
+      lageFehler: Math.max(...fehler.map((f) => (f.lage === undefined ? 99 : f.lage))),
+      massFehler: Math.max(...fehler.map((f) => (f.mass === undefined ? 99 : f.mass))),
+      schriftMin: Math.min(...fehler.map((f) => (f.schrift === undefined ? 0 : f.schrift))),
+      alleInnen: staerke.every((e) => {
+        const r = e.getBoundingClientRect();
+        return r.left >= cr.left - 0.5 && r.top >= cr.top - 0.5
+          && r.right <= cr.right + 0.5 && r.bottom <= cr.bottom + 0.5;
+      }),
+      vollstaendig: ids.every((id) => Object.hasOwn(texte, id)) && staerke.length === ids.length,
+      semantik: staerke.every((e) => e.id === 'spieltext-' + e.dataset.textId),
       versalien: Object.values(texte).every((text) => text === text.toUpperCase()),
-      texte,
+      punkteImReadout: document.getElementById('gPunkte').textContent,
+      verbranntImReadout: document.getElementById('gVerbrannt').textContent,
+      texte, fehler, status,
     });
   })()`));
 
   const hoch = await messe('hoch');
-  check('Grill-DOM: Hochformat bildet ein echtes Label mit hoechstens 1 CSS-Pixel Abweichung ab',
-    !hoch.fehlt && hoch.abweichung <= 1 && hoch.overlayAbweichung <= 1,
-    JSON.stringify(hoch));
-  check('Grill-DOM: Hochformat behaelt alle Texte und Boxen im sichtbaren Canvas',
+  check('Grill-DOM: Hochformat bildet jedes Label mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !hoch.fehlt && hoch.lageFehler <= 1 && hoch.massFehler <= 1 && hoch.overlayAbweichung <= 1,
+    JSON.stringify({ lage: hoch.lageFehler, mass: hoch.massFehler,
+      overlay: hoch.overlayAbweichung, skala: [hoch.scaleX, hoch.scaleY] }));
+  check('Grill-DOM: Hochformat haelt alle Texte im sichtbaren Canvas',
     !hoch.fehlt && hoch.vollstaendig && hoch.alleInnen && hoch.semantik && hoch.versalien,
-    JSON.stringify(hoch));
-  check('Grill-DOM: dynamische Grillwerte stehen in der DOM-Textebene',
+    JSON.stringify({ vollstaendig: hoch.vollstaendig, innen: hoch.alleInnen,
+      semantik: hoch.semantik, versalien: hoch.versalien }));
+  check('Grill-DOM: Garstufen, Teller, Vorrat und die eine Statuszeile stehen in der Ebene',
     !hoch.fehlt && hoch.texte['grill-garstufe-0'] === 'GOLDBRAUN'
-      && hoch.texte['grill-teller'] === 'TELLER 1'
-      && hoch.texte['grill-vorrat'] === 'VORRAT 4'
-      && hoch.texte['grill-status-punkte'] === '340 PUNKTE'
-      && hoch.texte['grill-status-takt'] === 'IM TAKT 3',
+      && hoch.texte['grill-teller'] === 'TELLER 1' && hoch.texte['grill-vorrat'] === 'VORRAT 4'
+      && hoch.texte['grill-status'] === 'OFFEN 6 · FOKUS GOLDBRAUN · IM TAKT 3',
     JSON.stringify(hoch.texte || hoch));
+  check('Grill-DOM: Punkte und Verbrannt stehen nur im globalen Readout',
+    !hoch.fehlt && hoch.punkteImReadout === '340' && hoch.verbranntImReadout === '1'
+      && Object.values(hoch.texte || {}).every((t) => !/PUNKTE|VERBRANNT|SERVIERT/.test(t)),
+    JSON.stringify({ punkte: hoch.punkteImReadout, verbrannt: hoch.verbranntImReadout,
+      texte: Object.values(hoch.texte || {}) }));
+  check('Grill-DOM: kein Text der Ebene faellt unter 12 CSS-Pixel',
+    !hoch.fehlt && hoch.schriftMin >= 12, `kleinste Schrift ${hoch.schriftMin}px`);
+  check('Grill-DOM: die Statuszeile sitzt oben, unter dem HUD und ueber der Touch-Bedienung',
+    !hoch.fehlt && hoch.status.lage <= 1 && hoch.status.unterHud >= 3 && hoch.status.ueberPad >= 3
+      && hoch.status.vonOben < hoch.canvas.height / 2,
+    JSON.stringify(hoch.status));
+  check('Grill-DOM: --hud-h traegt die gemessene HUD-Hoehe in CSS-Pixeln',
+    !hoch.fehlt && hoch.hudVar > 20 && Math.abs(hoch.hudVar - hoch.hud.height) <= 1.5,
+    `--hud-h=${hoch.hudVar}px, HUD=${hoch.hud?.height}px`);
+
+  const artefaktDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(artefaktDir, { recursive: true });
+  const hochBild = join(artefaktDir, 'phase-a-grill-hoch.png');
+  const querBild = join(artefaktDir, 'phase-a-grill-quer.png');
+  const logPfad = join(artefaktDir, 'phase-a-grill-messung.json');
+  if (hoch.canvas?.width > 0 && hoch.canvas?.height > 0) {
+    const bild = await send('Page.captureScreenshot', {
+      format: 'png', fromSurface: true,
+      clip: { x: hoch.canvas.left, y: hoch.canvas.top,
+        width: hoch.canvas.width, height: hoch.canvas.height, scale: 1 },
+    });
+    writeFileSync(hochBild, Buffer.from(bild.data, 'base64'));
+  }
 
   await send('Emulation.setDeviceMetricsOverride', {
     width: 892, height: 412, deviceScaleFactor: 2.6, mobile: true,
@@ -269,17 +315,17 @@ async function pruefeGrilltexteMobil({ domAus = false } = {}) {
   await evaluate("window.dispatchEvent(new Event('orientationchange'))");
   await sleep(750);
   const quer = await messe('quer');
-  check('Grill-DOM: Querformat bildet dasselbe Label mit hoechstens 1 CSS-Pixel Abweichung ab',
-    !quer.fehlt && quer.abweichung <= 1 && quer.overlayAbweichung <= 1,
-    JSON.stringify(quer));
-  check('Grill-DOM: Querformat behaelt alle Textboxen im sichtbaren Canvas',
+  check('Grill-DOM: Querformat bildet dieselben Labels mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !quer.fehlt && quer.lageFehler <= 1 && quer.massFehler <= 1 && quer.overlayAbweichung <= 1,
+    JSON.stringify({ lage: quer.lageFehler, mass: quer.massFehler,
+      overlay: quer.overlayAbweichung, skala: [quer.scaleX, quer.scaleY] }));
+  check('Grill-DOM: Querformat haelt alle Textboxen im sichtbaren Canvas',
     !quer.fehlt && quer.vollstaendig && quer.alleInnen && quer.semantik && quer.versalien,
-    JSON.stringify(quer));
+    JSON.stringify({ vollstaendig: quer.vollstaendig, innen: quer.alleInnen }));
+  check('Grill-DOM: Statuszeile bleibt im Querformat unter dem HUD und ueber der Bedienung',
+    !quer.fehlt && quer.status.unterHud >= 3 && quer.status.ueberPad >= 3,
+    JSON.stringify(quer.status));
 
-  const artefaktDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
-  mkdirSync(artefaktDir, { recursive: true });
-  const bildPfad = join(artefaktDir, 'grill-dom-texte.png');
-  const logPfad = join(artefaktDir, 'grill-dom-messung.json');
   writeFileSync(logPfad, JSON.stringify({ hoch, quer }, null, 2) + '\n');
   if (quer.canvas?.width > 0 && quer.canvas?.height > 0) {
     const bild = await send('Page.captureScreenshot', {
@@ -287,20 +333,222 @@ async function pruefeGrilltexteMobil({ domAus = false } = {}) {
       clip: { x: quer.canvas.left, y: quer.canvas.top,
         width: quer.canvas.width, height: quer.canvas.height, scale: 1 },
     });
-    writeFileSync(bildPfad, Buffer.from(bild.data, 'base64'));
+    writeFileSync(querBild, Buffer.from(bild.data, 'base64'));
   }
-  check('Grill-DOM: Chromium-Bild und numerisches Messprotokoll sind geschrieben',
-    existsSync(bildPfad) && existsSync(logPfad));
-  check('Grill-DOM: keine Browserfehler im mobilen Grillpfad',
-    (await evaluate('JSON.stringify(window.__errors)')) === '[]',
-    await evaluate('JSON.stringify(window.__errors)'));
+  check('Grill-DOM: Chromium-Bilder und numerisches Messprotokoll sind geschrieben',
+    existsSync(hochBild) && existsSync(querBild) && existsSync(logPfad)
+      && !hoch.fehlt && !quer.fehlt);
+  if (!domAus) {
+    check('Grill-DOM: keine Browserfehler im mobilen Grillpfad',
+      (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+      await evaluate('JSON.stringify(window.__errors)'));
+  }
   results.push(`GRILL-DOM HOCH ${hoch.canvas?.width || 0}x${hoch.canvas?.height || 0}`
-    + ` sx=${hoch.scaleX ?? '-'} sy=${hoch.scaleY ?? '-'} Fehler=${hoch.abweichung ?? '-'}`);
+    + ` sx=${hoch.scaleX ?? '-'} sy=${hoch.scaleY ?? '-'} lage=${hoch.lageFehler ?? '-'}px`
+    + ` Schrift>=${hoch.schriftMin ?? '-'}px HUD-Abstand=${hoch.status?.unterHud ?? '-'}px`
+    + ` Pad-Abstand=${hoch.status?.ueberPad ?? '-'}px`);
   results.push(`GRILL-DOM QUER ${quer.canvas?.width || 0}x${quer.canvas?.height || 0}`
-    + ` sx=${quer.scaleX ?? '-'} sy=${quer.scaleY ?? '-'} Fehler=${quer.abweichung ?? '-'}`);
-  results.push(`GRILL-DOM SCREENSHOT ${bildPfad}`);
+    + ` sx=${quer.scaleX ?? '-'} sy=${quer.scaleY ?? '-'} lage=${quer.lageFehler ?? '-'}px`
+    + ` Schrift>=${quer.schriftMin ?? '-'}px HUD-Abstand=${quer.status?.unterHud ?? '-'}px`
+    + ` Pad-Abstand=${quer.status?.ueberPad ?? '-'}px`);
+  results.push(`GRILL-DOM BILDER ${hochBild} ${querBild}`);
   results.push(`GRILL-DOM MESSUNG ${logPfad}`);
   return { hoch, quer };
+}
+
+/**
+ * Startet das Cabrio-Interludium ueber den echten Spielpfad und vermisst die
+ * hochaufgeloeste Fahr-HUD-Ebene im mobilen Hoch- und Querformat. Negative
+ * Kontrolle: dieselben Pruefungen muessen ohne die eine Ebene rot werden.
+ */
+async function pruefeFahrHudMobil({ domAus = false } = {}) {
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
+    screenOrientation: { type: 'portraitPrimary', angle: 0 },
+  });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(2200);
+
+  const cabrioIndex = await evaluate("window.__roland.levelIds.indexOf('cabrio')");
+  check('Fahr-HUD: der mobile Bedienpfad findet das Cabrio-Interludium', cabrioIndex >= 0, String(cabrioIndex));
+  await evaluate(`window.__roland.loadAct(${cabrioIndex})`);
+  await echterKlick('#startBtn');
+  await sleep(900);
+  check('Fahr-HUD: das Interludium laeuft im mobilen Browser',
+    (await evaluate("window.__roland.racer && window.__roland.racer.hud.modus")) === 'racer',
+    await evaluate("String(window.__roland.racer && window.__roland.racer.state)"));
+  // Anhalten: gemessen wird die Ebene, nicht die Fahrt. Die Simulation selbst
+  // bleibt unangetastet (derselbe Racer, nur state === 'paused').
+  await evaluate("window.__roland.racer.state === 'play' && window.__roland.racer.pause('test')");
+  await sleep(500);
+
+  // Negative Kontrolle: ohne die eine Ebene darf keine dieser Pruefungen gruen sein.
+  if (domAus) await evaluate("document.getElementById('gameTextLayer')?.remove()");
+
+  const messe = async (ausrichtung) => JSON.parse(await evaluate(`(() => {
+    const rechteck = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+      width: r.width, height: r.height });
+    const r = window.__roland.racer;
+    const c = document.getElementById('game');
+    const layer = document.getElementById('gameTextLayer');
+    const hud = document.querySelector('.hud');
+    const cr = c.getBoundingClientRect();
+    const canvas = rechteck(cr);
+    if (!r || !layer) return JSON.stringify({ ausrichtung: ${JSON.stringify(ausrichtung)},
+      fehlt: !r ? 'racer' : 'gameTextLayer', canvas });
+    const lr = layer.getBoundingClientRect();
+    const hr = hud.getBoundingClientRect();
+    const daten = r.beschriftungen();
+    const staerke = [...layer.querySelectorAll('[data-text-id]')];
+    const sx = cr.width / r.vw, sy = cr.height / r.vh;
+    const hudVar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-h')) || 0;
+    const grenze = Math.round(cr.height * 0.35);
+    const abstand = Math.min(Math.max(0, hr.bottom - cr.top + 4), grenze);
+    const texte = Object.fromEntries(staerke.map((e) => [e.dataset.textId, e.textContent]));
+    const fehler = daten.map((d) => {
+      const e = layer.querySelector('[data-text-id="' + d.id + '"]');
+      if (!e) return { id: d.id, fehlt: true };
+      const er = e.getBoundingClientRect();
+      const zusatz = d.unterHud ? abstand : 0;
+      return {
+        id: d.id, text: e.textContent,
+        lage: Math.max(Math.abs(er.left - (cr.left + d.x * sx)),
+          Math.abs(er.top - (cr.top + d.y * sy + zusatz))),
+        mass: Math.max(Math.abs(er.width - d.w * sx), Math.abs(er.height - d.h * sy)),
+        schrift: parseFloat(getComputedStyle(e).fontSize),
+        unterHud: Math.round((er.top - hr.bottom) * 100) / 100,
+      };
+    });
+    return JSON.stringify({
+      ausrichtung: ${JSON.stringify(ausrichtung)}, state: r.state,
+      view: { w: r.vw, h: r.vh }, canvas, overlay: rechteck(lr), hud: rechteck(hr),
+      scaleX: sx, scaleY: sy, hudVar, grenze, abstand,
+      overlayAbweichung: Math.max(Math.abs(lr.left - cr.left), Math.abs(lr.top - cr.top),
+        Math.abs(lr.width - cr.width), Math.abs(lr.height - cr.height)),
+      anzahl: staerke.length, daten: daten.length,
+      lageFehler: Math.max(...fehler.map((f) => (f.lage === undefined ? 99 : f.lage))),
+      massFehler: Math.max(...fehler.map((f) => (f.mass === undefined ? 99 : f.mass))),
+      schriftMin: Math.min(...fehler.map((f) => (f.schrift === undefined ? 0 : f.schrift))),
+      alleInnen: staerke.every((e) => {
+        const k = e.getBoundingClientRect();
+        return k.left >= cr.left - 0.5 && k.top >= cr.top - 0.5
+          && k.right <= cr.right + 0.5 && k.bottom <= cr.bottom + 0.5;
+      }),
+      unterHud: Math.min(...fehler.map((f) => (f.unterHud === undefined ? -99 : f.unterHud))),
+      semantik: staerke.every((e) => e.id === 'spieltext-' + e.dataset.textId),
+      versalien: Object.values(texte).every((text) => text === text.toUpperCase()),
+      sig: (layer.dataset.sig || '').length,
+      texte, fehler,
+    });
+  })()`));
+
+  const hoch = await messe('hoch');
+  check('Fahr-HUD: Hochformat bildet jedes Label mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !hoch.fehlt && hoch.lageFehler <= 1 && hoch.massFehler <= 1 && hoch.overlayAbweichung <= 1,
+    JSON.stringify({ lage: hoch.lageFehler, mass: hoch.massFehler, overlay: hoch.overlayAbweichung }));
+  check('Fahr-HUD: Hochformat haelt alle Labels im sichtbaren Canvas',
+    !hoch.fehlt && hoch.alleInnen && hoch.semantik && hoch.versalien
+      && hoch.anzahl === hoch.daten && hoch.anzahl === 8,
+    JSON.stringify({ innen: hoch.alleInnen, semantik: hoch.semantik, anzahl: hoch.anzahl, daten: hoch.daten }));
+  check('Fahr-HUD: Abschnitt, Segmente, Richtung, Richttempo und Cue stehen im DOM',
+    !hoch.fehlt && /^1 \/ 4 /.test(hoch.texte['ro-abschnitt'] || '')
+      && hoch.texte['ro-richtung'] === 'GERADEAUS'
+      && /^RICHTTEMPO \d+$/.test(hoch.texte['ro-tempo'] || '')
+      && (hoch.texte['ro-cue'] || '').length > 6
+      && ['ro-segmente-0', 'ro-segmente-1', 'ro-segmente-2', 'ro-segmente-3']
+        .every((id) => hoch.texte[id] === '█' || hoch.texte[id] === '░'),
+    JSON.stringify(hoch.texte || hoch));
+  check('Fahr-HUD: kein Text der Ebene faellt unter 12 CSS-Pixel',
+    !hoch.fehlt && hoch.schriftMin >= 12, `kleinste Schrift ${hoch.schriftMin}px`);
+  check('Fahr-HUD: kein Label der Ebene liegt im globalen HUD',
+    !hoch.fehlt && hoch.unterHud >= 3, `kleinster HUD-Abstand ${hoch.unterHud}px`);
+
+  const artefaktDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(artefaktDir, { recursive: true });
+  const hochBild = join(artefaktDir, 'phase-a-fahrhud-hoch.png');
+  const querBild = join(artefaktDir, 'phase-a-fahrhud-quer.png');
+  const logPfad = join(artefaktDir, 'phase-a-fahrhud-messung.json');
+  if (hoch.canvas?.width > 0 && hoch.canvas?.height > 0) {
+    const bild = await send('Page.captureScreenshot', {
+      format: 'png', fromSurface: true,
+      clip: { x: hoch.canvas.left, y: hoch.canvas.top,
+        width: hoch.canvas.width, height: hoch.canvas.height, scale: 1 },
+    });
+    writeFileSync(hochBild, Buffer.from(bild.data, 'base64'));
+  }
+
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 892, height: 412, deviceScaleFactor: 2.6, mobile: true,
+    screenOrientation: { type: 'landscapePrimary', angle: 90 },
+  });
+  await evaluate("window.dispatchEvent(new Event('orientationchange'))");
+  await sleep(750);
+  const quer = await messe('quer');
+  check('Fahr-HUD: Querformat bildet dieselben Labels mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !quer.fehlt && quer.lageFehler <= 1 && quer.massFehler <= 1 && quer.overlayAbweichung <= 1,
+    JSON.stringify({ lage: quer.lageFehler, mass: quer.massFehler, overlay: quer.overlayAbweichung }));
+  check('Fahr-HUD: Querformat haelt alle Labels im sichtbaren Canvas',
+    !quer.fehlt && quer.alleInnen && quer.anzahl === quer.daten, JSON.stringify({ anzahl: quer.anzahl }));
+  check('Fahr-HUD: im Querformat schiebt --hud-h die Texte wirklich unter das HUD',
+    !quer.fehlt && quer.abstand > 0 && quer.unterHud >= 3,
+    JSON.stringify({ abstand: quer.abstand, hudVar: quer.hudVar, unterHud: quer.unterHud }));
+  check('Fahr-HUD: auch im Querformat nie unter 12 CSS-Pixel',
+    !quer.fehlt && quer.schriftMin >= 12, `kleinste Schrift ${quer.schriftMin}px`);
+
+  if (quer.canvas?.width > 0 && quer.canvas?.height > 0) {
+    const bild = await send('Page.captureScreenshot', {
+      format: 'png', fromSurface: true,
+      clip: { x: quer.canvas.left, y: quer.canvas.top,
+        width: quer.canvas.width, height: quer.canvas.height, scale: 1 },
+    });
+    writeFileSync(querBild, Buffer.from(bild.data, 'base64'));
+  }
+  writeFileSync(logPfad, JSON.stringify({ hoch, quer }, null, 2) + '\n');
+  check('Fahr-HUD: Chromium-Bilder und numerisches Messprotokoll sind geschrieben',
+    existsSync(hochBild) && existsSync(querBild) && existsSync(logPfad) && !quer.fehlt);
+
+  const mut = JSON.parse(await evaluate(`(async () => {
+    const layer = document.getElementById('gameTextLayer');
+    if (!layer) return JSON.stringify({ fehlt: 'gameTextLayer' });
+    let zaehler = 0;
+    const beobachter = new MutationObserver((eintraege) => { zaehler += eintraege.length; });
+    beobachter.observe(layer, { subtree: true, childList: true, characterData: true, attributes: true });
+    const sigVorher = (layer.dataset.sig || '').length;
+    await new Promise((r) => setTimeout(r, 1200));
+    const ruhig = zaehler;
+    const r = window.__roland.racer;
+    const abschnitte = r.level.journey.sections;
+    r.position = abschnitte[1].from * (r.trackLength / r.segments.length);
+    await new Promise((r2) => setTimeout(r2, 700));
+    beobachter.disconnect();
+    const el = layer.querySelector('[data-text-id="ro-abschnitt"]');
+    return JSON.stringify({ ruhig, gesamt: zaehler, sigVorher,
+      sigNachher: (layer.dataset.sig || '').length, text: el ? el.textContent : null });
+  })()`));
+  check('Fahr-HUD: eine ruhige Ebene schreibt nicht neu (Signatur-Guard)',
+    !mut.fehlt && mut.ruhig === 0 && mut.sigVorher > 0, JSON.stringify(mut));
+  check('Fahr-HUD: eine echte Aenderung schreibt die Ebene neu',
+    !mut.fehlt && mut.gesamt > 0 && /^2 \/ 4 /.test(mut.text || ''), JSON.stringify(mut));
+
+  writeFileSync(logPfad, JSON.stringify({ hoch, quer, mut }, null, 2) + '\n');
+  if (!domAus) {
+    check('Fahr-HUD: keine Browserfehler im mobilen Fahrpfad',
+      (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+      await evaluate('JSON.stringify(window.__errors)'));
+  }
+  results.push(`FAHR-HUD HOCH ${hoch.canvas?.width || 0}x${hoch.canvas?.height || 0}`
+    + ` sx=${hoch.scaleX ?? '-'} sy=${hoch.scaleY ?? '-'} lage=${hoch.lageFehler ?? '-'}px`
+    + ` Schrift>=${hoch.schriftMin ?? '-'}px HUD-Abstand=${hoch.unterHud ?? '-'}px`);
+  results.push(`FAHR-HUD QUER ${quer.canvas?.width || 0}x${quer.canvas?.height || 0}`
+    + ` sx=${quer.scaleX ?? '-'} sy=${quer.scaleY ?? '-'} lage=${quer.lageFehler ?? '-'}px`
+    + ` Schrift>=${quer.schriftMin ?? '-'}px HUD-Abstand=${quer.unterHud ?? '-'}px`
+    + ` --hud-h=${quer.hudVar ?? '-'}px Zug=${quer.abstand ?? '-'}px`);
+  results.push(`FAHR-HUD SIGNATUR ruhig=${mut.ruhig} Aenderungen=${mut.gesamt}`
+    + ` Sig=${mut.sigVorher}->${mut.sigNachher} Text=${mut.text}`);
+  results.push(`FAHR-HUD BILDER ${hochBild} ${querBild}`);
+  results.push(`FAHR-HUD MESSUNG ${logPfad}`);
+  return { hoch, quer, mut };
 }
 
 try {
@@ -345,8 +593,11 @@ try {
     if (!api || typeof api.render !== 'function') return JSON.stringify({ fehlt: 'textLayer.render' });
     const alteBreite = c.style.width, alteHoehe = c.style.height;
     const altesW = c.width, altesH = c.height;
+    // Zwei Proben: die grosse prueft die reine X/Y-Skalierung aus PR #6, die
+    // kleine den Schriftboden aus Phase A (nie unter 12 CSS-Pixel).
     const probe = { id: 'vertrag-probe', text: 'PROBE', x: 41, y: 27, w: 103, h: 11,
-      fontSize: 7, align: 'center', color: '#e9e5d8' };
+      fontSize: 20, align: 'center', color: '#e9e5d8' };
+    const klein = { ...probe, id: 'vertrag-klein', x: 13, y: 19, w: 77, h: 14, fontSize: 4 };
     const messe = (daten, view) => {
       const cr = c.getBoundingClientRect();
       const lr = layer.getBoundingClientRect();
@@ -365,8 +616,9 @@ try {
         massFehler: Math.max(Math.abs(er.width - daten.w * sx), Math.abs(er.height - daten.h * sy)),
         layerFehler: Math.max(Math.abs(lr.left - cr.left), Math.abs(lr.top - cr.top),
           Math.abs(lr.width - cr.width), Math.abs(lr.height - cr.height)),
-        schriftYFehler: Math.abs(schriftY - daten.fontSize * sy),
-        schriftXFehler: Math.abs(schriftY * matrix[0] - daten.fontSize * sx),
+        schriftYFehler: Math.abs(schriftY - Math.max(12, daten.fontSize * sy)),
+        schriftXFehler: Math.abs(schriftY * matrix[0] - Math.max(12, daten.fontSize * sx)),
+        schrift: schriftY,
         innen: er.left >= cr.left - 0.5 && er.top >= cr.top - 0.5
           && er.right <= cr.right + 0.5 && er.bottom <= cr.bottom + 0.5,
         semantik: e.id === 'spieltext-' + daten.id && e.dataset.textId === daten.id
@@ -377,6 +629,11 @@ try {
     c.style.width = '503px'; c.style.height = '271px';
     api.render([probe], { w: 384, h: 216 });
     const desktop = messe(probe, { w: 384, h: 216 });
+    // Bodenprobe: 4 logische Pixel muessen auf 12 CSS-Pixel angehoben werden,
+    // ohne die gemessene Box zu verschieben.
+    api.render([klein], { w: 384, h: 216 });
+    const boden = messe(klein, { w: 384, h: 216 });
+    api.render([probe], { w: 384, h: 216 });
     const kompakt = { ...probe, id: 'vertrag-kompakt', x: 13, y: 19, w: 77, h: 14, fontSize: 6 };
     c.width = 256; c.height = 144;
     c.style.width = '517px'; c.style.height = '233px';
@@ -389,7 +646,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 180));
     const orientation = messe(probe, { w: 384, h: 216 });
     api.clear();
-    return JSON.stringify({ desktop, viewWechsel, orientation });
+    return JSON.stringify({ desktop, boden, viewWechsel, orientation });
   })()`));
   check('DOM-Textvertrag: logische Lage und Masse folgen dem echten Canvas-Rechteck',
     !textSkalierung.fehlt && textSkalierung.desktop.lageFehler <= 1
@@ -403,6 +660,11 @@ try {
   check('DOM-Textvertrag: stabile ID sowie logisches X/Y bleiben abfragbar',
     !textSkalierung.fehlt && textSkalierung.desktop.semantik && textSkalierung.desktop.text === 'PROBE',
     JSON.stringify(textSkalierung.desktop || textSkalierung));
+  check('DOM-Textvertrag: die Schrift faellt nie unter 12 CSS-Pixel (Phase A)',
+    !textSkalierung.fehlt && Math.abs(textSkalierung.boden?.schrift - 12) <= 0.05
+      && textSkalierung.boden.lageFehler <= 1 && textSkalierung.boden.massFehler <= 1
+      && textSkalierung.boden.innen,
+    JSON.stringify(textSkalierung.boden || textSkalierung));
   check('DOM-Textvertrag: VIEW-Wechsel und Orientationchange aktualisieren denselben Pfad',
     !textSkalierung.fehlt && textSkalierung.viewWechsel.lageFehler <= 1
       && textSkalierung.viewWechsel.massFehler <= 1 && textSkalierung.viewWechsel.layerFehler <= 1
@@ -411,6 +673,10 @@ try {
   if (TESTMODUS === 'textvertrag') throw GEZIELTER_ABSCHLUSS;
   if (TESTMODUS === 'grilltexte' || TESTMODUS === 'grilltexte-ohne-dom') {
     await pruefeGrilltexteMobil({ domAus: TESTMODUS === 'grilltexte-ohne-dom' });
+    throw GEZIELTER_ABSCHLUSS;
+  }
+  if (TESTMODUS === 'fahrhud' || TESTMODUS === 'fahrhud-ohne-dom') {
+    await pruefeFahrHudMobil({ domAus: TESTMODUS === 'fahrhud-ohne-dom' });
     throw GEZIELTER_ABSCHLUSS;
   }
 
@@ -1248,6 +1514,45 @@ try {
   check('Cabrio zeigt Abschnitt und Fahrhinweis',
     journey.section === 'STADTAUSFAHRT' && !!journey.cue && journey.ziel.includes('MAPPE'),
     JSON.stringify(journey));
+  // Phase A: dieselben HUD-Texte liegen in der einen DOM-Ebene (Desktop-Massstab)
+  // und nicht mehr im Canvas — gemessen gegen das echte Canvas-Rechteck.
+  const fahrDom = JSON.parse(await evaluate(`(() => {
+    const r = window.__roland.racer;
+    const c = document.getElementById('game');
+    const layer = document.getElementById('gameTextLayer');
+    const cr = c.getBoundingClientRect();
+    const hud = document.querySelector('.hud').getBoundingClientRect();
+    const daten = r.beschriftungen();
+    const sx = cr.width / r.vw, sy = cr.height / r.vh;
+    const abstand = Math.min(Math.max(0, hud.bottom - cr.top + 4), Math.round(cr.height * 0.35));
+    let lage = 0, schrift = 99, innen = true;
+    for (const d of daten) {
+      const e = layer.querySelector('[data-text-id="' + d.id + '"]');
+      if (!e) { lage = 99; innen = false; continue; }
+      const er = e.getBoundingClientRect();
+      lage = Math.max(lage, Math.abs(er.left - (cr.left + d.x * sx)),
+        Math.abs(er.top - (cr.top + d.y * sy + (d.unterHud ? abstand : 0))));
+      schrift = Math.min(schrift, parseFloat(getComputedStyle(e).fontSize));
+      innen = innen && er.left >= cr.left - 0.5 && er.top >= cr.top - 0.5
+        && er.right <= cr.right + 0.5 && er.bottom <= cr.bottom + 0.5;
+    }
+    const texte = Object.fromEntries(daten.map((d) => [d.id,
+      (layer.querySelector('[data-text-id="' + d.id + '"]') || {}).textContent || null]));
+    return JSON.stringify({ daten: daten.length, elemente: layer.querySelectorAll('[data-text-id]').length,
+      lage, schrift, innen, texte, sig: (layer.dataset.sig || '').length });
+  })()`));
+  check('Cabrio: das Fahr-HUD liegt vollstaendig in der einen DOM-Textebene',
+    fahrDom.daten === 8 && fahrDom.elemente === 8 && fahrDom.sig > 0, JSON.stringify(fahrDom));
+  check('Cabrio: DOM-Texte sitzen auf dem Pixel, bleiben im Bild und nie unter 12px',
+    fahrDom.lage <= 1 && fahrDom.innen && fahrDom.schrift >= 12,
+    JSON.stringify({ lage: fahrDom.lage, innen: fahrDom.innen, schrift: fahrDom.schrift }));
+  check('Cabrio: Abschnitt, Richtung und Richttempo stehen als Text im DOM',
+    /^\d \/ 4 /.test(fahrDom.texte['ro-abschnitt'] || '')
+      && ['GERADEAUS', 'RECHTS >', '< LINKS', 'BREMSE'].includes(fahrDom.texte['ro-richtung'])
+      && /^RICHTTEMPO \d+$/.test(fahrDom.texte['ro-tempo'] || ''),
+    JSON.stringify(fahrDom.texte));
+  results.push('CABRIO-DOM ' + JSON.stringify({ daten: fahrDom.daten, lage: fahrDom.lage,
+    schrift: fahrDom.schrift, abschnitt: fahrDom.texte['ro-abschnitt'] }));
 
   await evaluate("window.__roland.loadAct(0)");
 
@@ -2565,6 +2870,17 @@ try {
     motoJourney.section === 'OPERNPLATZ' && !!motoJourney.cue
     && motoJourney.ziel.includes('NACH HAUSE') && motoJourney.tunnel === false,
     JSON.stringify(motoJourney));
+  const motoDom = JSON.parse(await evaluate(`JSON.stringify({
+    daten: window.__roland.racer.beschriftungen().length,
+    elemente: document.querySelectorAll('#gameTextLayer [data-text-id]').length,
+    abschnitt: (document.querySelector('#gameTextLayer [data-text-id="ro-abschnitt"]') || {}).textContent || null,
+    segment5: !!document.querySelector('#gameTextLayer [data-text-id="ro-segmente-4"]'),
+    schrift: parseFloat(getComputedStyle(document.querySelector('#gameTextLayer [data-text-id="ro-cue"]')).fontSize)
+  })`));
+  check('Motorrad: dasselbe Fahr-HUD liegt in der DOM-Ebene (fuenf Abschnitte)',
+    motoDom.daten === 9 && motoDom.elemente === 9 && motoDom.segment5 === true
+      && /^\d \/ 5 /.test(motoDom.abschnitt || '') && motoDom.schrift >= 12,
+    JSON.stringify(motoDom));
 
   // --- Akt 5 (Finale) — vor der Nachtfahrt --------------------------------
   await evaluate(`window.__roland.loadAct(${idxVon('DIE BÜHNE')})`);

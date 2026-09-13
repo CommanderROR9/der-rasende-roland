@@ -234,8 +234,8 @@ export class Grill {
     const l = this.layout();
     const h = this.buildHud();
     const gross = l.vw > 300;
-    const etikett = (id, text, x, y, w, hoehe, fontSize, align = 'left', color = '#e9e5d8') => ({
-      id, text, x, y, w, h: hoehe, fontSize, align, color,
+    const etikett = (id, text, x, y, w, hoehe, fontSize, align = 'left', color = '#e9e5d8', extra = null) => ({
+      id, text, x, y, w, h: hoehe, fontSize, align, color, ...(extra || {}),
     });
     const texte = [];
     const aufRost = this.grill;
@@ -266,26 +266,13 @@ export class Grill {
     texte.push(etikett('grill-vorrat', `VORRAT ${offenImVorrat}`, l.vw - 52, l.boden - 25,
       48, gross ? 8 : 7, gross ? 6 : 5, 'right'));
 
-    const obenY = l.vh - 20;
-    const untenY = l.vh - 12;
-    const obenFont = gross ? 7 : 6;
-    const untenFont = gross ? 5 : 4;
-    texte.push(etikett('grill-status-offen', `OFFEN ${h.offen}`, 6, obenY,
-      l.vw / 3 - 6, 8, obenFont));
-    texte.push(etikett('grill-status-punkte', `${h.punkte} PUNKTE`, l.vw / 3, obenY,
-      l.vw / 3, 8, obenFont, 'center'));
-    texte.push(etikett('grill-status-takt', `IM TAKT ${h.sauber}`, 2 * l.vw / 3, obenY,
-      l.vw / 3 - 6, 8, obenFont, 'right', '#9ff3ea'));
-    texte.push(etikett('grill-status-rost-titel', 'AUF DEM ROST', 6, untenY,
-      l.vw * 0.15, 8, untenFont, 'left', '#8a8a96'));
-    texte.push(etikett('grill-status-stufen', h.stufen.map((s) => GARSTUFEN_TEXT[s]).join(' · ') || '—',
-      6 + l.vw * 0.15, untenY, l.vw * 0.34, 8, untenFont, 'left', '#e8c46a'));
-    texte.push(etikett('grill-status-fokus', h.fokusName ? `FOKUS ${h.fokusName}` : 'FOKUS —',
-      6 + l.vw * 0.49, untenY, l.vw * 0.24, 8, untenFont, 'center',
-      h.fokusName ? FOKUS_FARBE : '#8a8a96'));
-    texte.push(etikett('grill-status-verbrannt', `VERBRANNT ${h.verbrannt}`,
-      6 + l.vw * 0.73, untenY, l.vw * 0.27 - 12, 8, untenFont, 'right',
-      h.verbrannt ? '#e08a52' : '#8a8a96'));
+    // Phase A: eine Statuszeile ganz oben statt zweier Reihen am unteren Rand —
+    // dort deckte die Touch-Bedienung sie ab. Punkte, Verbrannt und Serviert
+    // stehen nur noch im globalen #grillReadout, damit nichts doppelt zaehlt.
+    texte.push(etikett('grill-status',
+      `OFFEN ${h.offen} · FOKUS ${h.fokusName || '—'} · IM TAKT ${h.sauber}`,
+      6, 6, l.vw - 12, 9, gross ? 7 : 6, 'left', '#e9e5d8',
+      { bg: 'rgba(11,8,16,.72)', unterHud: true }));
     return texte;
   }
 
