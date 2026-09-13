@@ -124,7 +124,10 @@ export class Game {
     this.sitz = null;             // laufende Sitzszene auf der Bank
     this.bankSitz = null;         // seine und ihre Sitzplätze (bleibt stehen)
     // Die Schlussszene im Kleingarten (Auftrag CUT-1): läuft in der Simulation
-    // als eigener Zustand, `cutsceneGesehen` kommt aus dem Spielstand (main.js).
+    // als eigener Zustand. `cutsceneGesehen` kommt aus dem Spielstand (main.js)
+    // und ist seit Rolands Rückmeldung vom 13.09. nur noch eine Aufzeichnung:
+    // sie unterdrückt keinen zweiten Lauf mehr, die Szene läuft bei jedem
+    // Wechsel Frack -> Zivil am Kleiderschrank.
     this.szene = null;
     this.cutsceneGesehen = false;
     this.hint = null;
@@ -931,7 +934,8 @@ export class Game {
       this.message('FRACK AN. DAS HAWAII-HEMD BLEIBT IM SCHRANK.', 4.5, 2);
       return this.outfit.id;
     }
-    // Auftrag CUT-1: beim ersten Umziehen auf Zivil läuft die Schlussszene.
+    // Auftrag CUT-1: beim Umziehen auf Zivil läuft die Schlussszene — seit
+    // Rolands Rückmeldung vom 13.09. bei JEDEM Wechsel Frack -> Zivil.
     // Reihenfolge: erst die Szene, dann der vorhandene Wechsel (unten).
     if (this.cutsceneStarten()) return this.outfit.id;
     this.zivilAnziehen();
@@ -940,12 +944,16 @@ export class Game {
 
   /**
    * Die Schlussszene „Frack und Geige in den Schrank" (Auftrag CUT-1) starten.
-   * Läuft genau einmal: der Merker steht im Spielstand, main.js schreibt ihn
-   * beim Ereignis `cutscene`. Ohne Schrank in der Welt passiert nichts.
+   * Roland (13.09.): die kurzen Umzieh-Animationen laufen bei jedem Wechsel
+   * Frack -> Zivil. Der Merker im Spielstand (`cutFrackGeige`) wird weiter
+   * geschrieben — er hält nur noch fest, dass die Szene lief, und unterdrückt
+   * nichts mehr; vorhandene Spielstände spielen die Szene damit wieder.
+   * Läuft nichts, solange die Szene schon läuft; ohne Schrank in der Welt
+   * passiert nichts.
    * @returns true, wenn die Szene jetzt läuft (der Wechsel kommt danach)
    */
   cutsceneStarten() {
-    if (this.cutsceneGesehen || this.szene) return false;
+    if (this.szene) return false;
     const schrank = this.entities.find((en) => en.kind === 'garderobe');
     if (!schrank) return false;
     this.cutsceneGesehen = true;

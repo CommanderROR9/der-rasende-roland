@@ -786,6 +786,15 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     }
     return null;
   };
+  /** Warten, bis die Szene den gesuchten Fortschritt erreicht hat (0..1). */
+  const warteAufFortschritt = async (ziel, runden = 120) => {
+    for (let i = 0; i < runden; i++) {
+      const z = await zustand();
+      if (!z.aktiv || z.fortschritt >= ziel) return z;
+      await sleep(60);
+    }
+    return await zustand();
+  };
 
   // Nahaufnahme (4x) vom Schrank samt Figur — die Szene ist im Vollbild nur
   // wenige Pixel gross; fuer die Beurteilung des Looks braucht es den Zoom.
@@ -829,8 +838,11 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     await sleep(400);
   }
 
-  // Der Merker wird vor dem Lauf aus dem Spielstand genommen: sonst haengt es
-  // am Zufall des Profils, ob die Szene in diesem Lauf ueberhaupt laeuft.
+  // Seit Roland (13.09.) unterdrueckt der Merker die Szene nicht mehr: sie
+  // laeuft bei jedem Wechsel Frack -> Zivil. Fuer diesen Block wird der
+  // Spielstand trotzdem einmal sauber gestellt — der erste Lauf startet wie
+  // bei einem frischen Spielstand, der zweite Lauf weiter unten laeuft
+  // absichtlich mit gesetztem Merker (das ist der neue Vertrag).
   await evaluate(`(() => { try {
     const k = 'rasender-roland/v1';
     const s = JSON.parse(localStorage.getItem(k) || '{}');
@@ -930,6 +942,74 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
   }
   results.push(`CUTSCENE BILD DANACH ${nachPfad} outfit=${nach.outfit} x=${nach.x}`
     + ` zoom=${nachNah ? 'ok' : 'fehlt'}`);
+
+  // --- Roland (13.09.): die Szene laeuft bei JEDEM Frack -> Zivil-Wechsel -----
+  // Der Merker steht jetzt im Spielstand (gerade geprueft) — die Szene muss
+  // trotzdem wieder laufen. Also zurueck auf den Frack, erneut ausloesen und
+  // dieselben Pruefpunkte wie beim ersten Lauf: Anfang, Mitte (mit Bild),
+  // Umzieh-Moment, Ende, Merker und Stellung vor dem Schrank.
+  await sleep(900);                               // Schrank-Cooldown (0,5 s) abwarten
+  await tippeSzene(180, 700);                     // Zivil -> Frack: der schnelle Wechsel
+  const wiederFrack = await zustand();
+  check('Cutscene: der Rueckweg auf den Frack bleibt der schnelle Wechsel',
+    wiederFrack.aktiv === false && wiederFrack.outfit === 'frack' && wiederFrack.merker === true,
+    JSON.stringify(wiederFrack));
+
+  await tippeSzene(180, 120);                     // Frack -> Zivil: die Szene wieder
+  const lauf2 = await zustand();
+  check('Cutscene: der zweite Frack -> Zivil-Wechsel startet die Szene wieder',
+    lauf2.aktiv === true && lauf2.beat === 'gehen' && lauf2.outfit === 'frack',
+    JSON.stringify(lauf2));
+  check('Cutscene: die Szene ist auch beim zweiten Lauf wortlos',
+    lauf2.label === null && lauf2.hint === null, JSON.stringify([lauf2.label, lauf2.hint]));
+
+  // Kein Neustart, solange sie laeuft: der Druck mittendrin laesst den
+  // Fortschritt weiterlaufen — eine neue Szene faenge wieder bei 0 an.
+  await sleep(750);
+  const vorDruck = await zustand();
+  await tippeSzene(120, 0);
+  const nachDruck = await zustand();
+  check('Cutscene: ein Druck mitten im zweiten Lauf startet keine neue Szene',
+    vorDruck.aktiv === true && nachDruck.aktiv === true
+      && nachDruck.fortschritt >= vorDruck.fortschritt && vorDruck.fortschritt > 0.1,
+    `Fortschritt ${vorDruck.fortschritt} -> ${nachDruck.fortschritt}`);
+
+  const mitte2 = await warteAufFortschritt(0.3);
+  check('Cutscene: der zweite Lauf laeuft sichtbar (Mitte erreicht)',
+    mitte2.aktiv === true && mitte2.fortschritt >= 0.3 && mitte2.fortschritt < 0.95
+      && mitte2.outfit === 'frack', JSON.stringify(mitte2));
+  check('Cutscene: die Welt steht auch im zweiten Lauf still',
+    mitte2.zeit === nachDruck.zeit, `Zeit ${nachDruck.zeit} -> ${mitte2.zeit}`);
+  const zweiterPfad = join(shotDirSzene, 'cutscene-zweiter-lauf.png');
+  const zweiterBild = await bild(zweiterPfad);
+  writeFileSync(join(wurzel, 'screenshot-cutscene-zweiter-lauf.png'), zweiterBild);
+  results.push(`CUTSCENE BILD ZWEITER LAUF ${zweiterPfad} beat=${mitte2.beat}`
+    + ` fortschritt=${mitte2.fortschritt.toFixed(2)}`);
+  check('Cutscene: das Bild des zweiten Laufs ist geschrieben',
+    existsSync(zweiterPfad) && existsSync(join(wurzel, 'screenshot-cutscene-zweiter-lauf.png')));
+
+  // Derselbe Umzieh-Moment wie im ersten Lauf: das Hemd ueber dem Kopf.
+  const halb2 = await warteAufGriff('kopf');
+  check('Cutscene: auch der zweite Lauf zeigt das Umziehen (Hemd ueber dem Kopf)',
+    !!halb2 && halb2.bild === 'cut_figur_umzieh' && halb2.hemd > 0 && halb2.hose > 0
+      && halb2.outfit === 'frack' && halb2.aktiv === true,
+    JSON.stringify(halb2));
+  await evaluate('window.__roland.game.resume()');
+
+  // Bis zum Ende warten und dieselben Endpunkte messen wie beim ersten Lauf.
+  let ende2 = mitte2;
+  for (let i = 0; i < 40 && ende2.aktiv; i++) { await sleep(250); ende2 = await zustand(); }
+  await sleep(350);
+  const nach2 = await zustand();
+  check('Cutscene: der zweite Lauf endet im Normalzustand (Zivil, Spiel laeuft)',
+    nach2.aktiv === false && nach2.state === 'play' && nach2.outfit === 'zivil'
+      && nach2.zeit > mitte2.zeit, JSON.stringify(nach2));
+  check('Cutscene: der Merker steht auch nach dem zweiten Lauf im Spielstand',
+    nach2.merker === true, JSON.stringify({ merker: nach2.merker }));
+  check('Cutscene: die Figur steht wie beim ersten Lauf in Zivil vor dem Schrank',
+    nach2.outfit === 'zivil' && Math.abs(nach2.x - nach.x) < 1.5 && mitte2.x > nach2.x + 10,
+    `x ${mitte2.x} -> ${nach2.x} (erster Lauf endete bei ${nach.x})`);
+
   return nach;
 }
 
@@ -3732,18 +3812,27 @@ try {
   results.push(`SCREENSHOT ${epiZivilWurzel}`);
 
   // Umkehrbar: dreimal weiterschalten, am Ende steht wieder der Frack an.
+  // Seit Roland (13.09.) laeuft die Szene bei jedem Frack -> Zivil-Wechsel:
+  // der Block wartet sie ab und haelt fest, bei welchem Druck sie kommt.
   const kluften = [];
+  const szenen = [];
   for (let i = 0; i < 3; i++) {
-    await tippe(700);
+    await tippe(250);
+    const lief = (await evaluate('window.__roland.cutscene.aktiv')) === true;
+    for (let k = 0; k < 80 && lief
+      && (await evaluate('window.__roland.cutscene.aktiv')) === true; k++) await sleep(150);
+    await sleep(600);                       // Schrank-Cooldown abwarten
     kluften.push(await evaluate('window.__roland.game.outfit.id'));
+    szenen.push(lief);
   }
   check('Epilog-Browser: der Wechsel ist mehrfach umkehrbar',
     kluften.join(',') === 'frack,zivil,frack', kluften.join(' -> '));
-  // Der Merker haelt: die Szene laeuft kein zweites Mal, egal wie oft umgezogen wird.
-  check('Epilog-Browser: die Szene laeuft kein zweites Mal',
-    (await evaluate('window.__roland.cutscene.aktiv')) === false
+  // Der Merker unterdrueckt nichts mehr: der zweite Frack -> Zivil-Wechsel
+  // zeigt die Szene wieder, die Gegenrichtung bleibt der schnelle Wechsel.
+  check('Epilog-Browser: die Szene laeuft bei jedem Frack -> Zivil-Wechsel wieder',
+    szenen.join(',') === 'false,true,false' && kluften[1] === 'zivil'
       && (await evaluate('window.__roland.cutscene.gesehen')) === true,
-    await evaluate('JSON.stringify({ aktiv: window.__roland.cutscene.aktiv, gesehen: window.__roland.cutscene.gesehen })'));
+    `Szenen ${szenen.join(',')} / Kluften ${kluften.join(',')}`);
 
   // Der Frack bleibt aufhaengbar: an der Laube, im getragenen Frack. Der
   // Kleiderschrank ist ein zusaetzlicher Weg und darf das nicht verstellen.

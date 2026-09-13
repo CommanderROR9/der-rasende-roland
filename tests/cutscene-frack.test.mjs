@@ -1,8 +1,9 @@
 // tests/cutscene-frack.test.mjs — Auftrag CUT-1: die Schlussszene im Kleingarten.
 //
 // Prueft den Ausloeser (die Aktion „ZIVIL ANZIEHEN" am Kleiderschrank), den
-// Ablauf der Szene, ihr Ende im Normalzustand, den Merker im Spielstand (die
-// Szene laeuft genau einmal) und dass der Abschluss des Epilogs danach weiter
+// Ablauf der Szene, ihr Ende im Normalzustand, den Merker im Spielstand (seit
+// Roland vom 13.09. nur noch eine Aufzeichnung: die Szene laeuft bei JEDEM
+// Wechsel Frack -> Zivil) und dass der Abschluss des Epilogs danach weiter
 // erreichbar ist. Der Bildbeweis — die Szene im Bild — kommt aus dem
 // Browserlauf tests/browser-smoke.mjs; eine Palette allein beweist kein Bild.
 //
@@ -286,26 +287,78 @@ function vorDenSchrank(game) {
     `${game.outfit.id} / ${String(game.hud.hint)}`);
 }
 
-// ------------------------------------------------------ Der Merker ----------
+// ------------------------------------ Bei jedem Wechsel (Roland, 13.09.) -----
+// Der Live-Test zeigte: die Szene kam nur einmal pro Spielstand. Rolands
+// Auflage: bei jedem Wechsel Frack -> Zivil am Kleiderschrank laufen die
+// kurzen Animationen wieder. Drei volle Runden — jede mit Ausloeser, Ereignis
+// und Wechsel; die Gegenrichtung bleibt der schnelle Wechsel ohne Szene.
+{
+  const { game, input, events } = make(buildEpilog(), 'frack');
+  vorDenSchrank(game);
+  const szenen = [];
+  const kluften = [];
+  for (let runde = 1; runde <= 3; runde++) {
+    druecke(game, input);                       // Frack -> Zivil: erst die Szene
+    szenen.push(game.szene ? game.szene.beat : null);
+    durch(game);
+    kluften.push(game.outfit.id);
+    druecke(game, input);                       // Zivil -> Frack: der schnelle Wechsel
+    kluften.push(game.outfit.id);
+    if (game.szene) szenen.push('unerwartet');
+  }
+  check('Jeder Wechsel: die Szene laeuft in allen drei Runden wieder an',
+    szenen.join(',') === 'gehen,gehen,gehen', szenen.join(',') || 'keine Szene');
+  check('Jeder Wechsel: der Rueckweg bleibt der schnelle Wechsel (Frack sofort)',
+    kluften.join(',') === 'zivil,frack,zivil,frack,zivil,frack', kluften.join(','));
+  check('Jeder Wechsel: jeder Lauf meldet sein Ereignis (drei Schreibungen des Merkers)',
+    events.filter((e) => e.type === 'cutscene').length === 3,
+    String(events.filter((e) => e.type === 'cutscene').length));
+
+  // Kein Neustart, solange die Szene laeuft: der Druck mittendrin laesst sie
+  // weiterlaufen — eine neue Szene faenge wieder bei „gehen" an.
+  const laufend = make(buildEpilog(), 'frack');
+  vorDenSchrank(laufend.game);
+  druecke(laufend.game, laufend.input);
+  step(laufend.game, 1.5);
+  const bisher = laufend.game.szene
+    ? { beat: laufend.game.szene.beat, t: laufend.game.szene.fortschritt } : null;
+  laufend.input.setKey('action', true);
+  laufend.game.update(1 / 60);
+  laufend.input.setKey('action', false);
+  laufend.game.update(1 / 60);
+  const jetzt = laufend.game.szene
+    ? { beat: laufend.game.szene.beat, t: laufend.game.szene.fortschritt } : null;
+  check('Jeder Wechsel: ein Druck waehrend der Szene startet keine neue',
+    !!bisher && !!jetzt && jetzt.beat === bisher.beat && jetzt.t > bisher.t && bisher.t > 0.25,
+    `${JSON.stringify(bisher)} -> ${JSON.stringify(jetzt)}`);
+}
+
+// ------------------------- Der Merker (nur noch Aufzeichnung) --------------
+// Roland (13.09.): die Szene laeuft bei jedem Wechsel. Der Merker bleibt im
+// Spielstand (alte Spielstaende bleiben lesbar), er unterdrueckt aber nichts
+// mehr — er wird weiter geschrieben, damit die Datei kompatibel bleibt.
 {
   const { game, input, events } = make(buildEpilog(), 'frack', 'gemuetlich', true);
-  const g = vorDenSchrank(game, 'frack');
+  vorDenSchrank(game);
   druecke(game, input);
-  check('Merker: ist er gesetzt, laeuft die Szene nicht',
-    game.szene === null && game.outfit.id === 'zivil', `${game.outfit.id}`);
-  check('Merker: kein zweites Ereignis, kein zweiter Merker',
-    !events.some((e) => e.type === 'cutscene'));
-  const kluften = [game.outfit.id];
-  for (let i = 0; i < 3; i++) { druecke(game, input); kluften.push(game.outfit.id); }
-  check('Merker: danach zieht der Schrank sofort um (viermal hin und her)',
-    kluften.join(',') === 'zivil,frack,zivil,frack' && game.szene === null,
-    kluften.join(','));
+  check('Merker: ein gesetzter Merker unterdrueckt die Szene nicht mehr',
+    !!game.szene && game.szene.beat === 'gehen', game.szene ? game.szene.beat : 'keine Szene');
+  check('Merker: auch mit gesetztem Merker meldet sich die Szene als Ereignis',
+    events.filter((e) => e.type === 'cutscene').length === 1, JSON.stringify(events));
+  durch(game);
+  check('Merker: die Szene laeuft mit gesetztem Merker ganz durch',
+    game.szene === null && game.outfit.id === 'zivil' && game.cutsceneGesehen === true,
+    `${game.outfit.id} / gesehen=${game.cutsceneGesehen}`);
 
-  const lauf2 = make(buildEpilog(), 'frack', 'gemuetlich', true);
-  vorDenSchrank(lauf2.game);
-  druecke(lauf2.game, lauf2.input);
-  check('Merker: auch ein zweiter Durchgang zeigt die Szene nicht',
-    lauf2.game.szene === null && lauf2.game.outfit.id === 'zivil', lauf2.game.outfit.id);
+  // Ein Spielstand von gestern (Merker gesetzt): Rueckweg, dann wieder Zivil.
+  druecke(game, input);
+  druecke(game, input);
+  check('Merker: der naechste Frack -> Zivil-Wechsel zeigt die Szene wieder',
+    !!game.szene && game.szene.beat === 'gehen', game.szene ? game.szene.beat : 'keine Szene');
+  durch(game);
+  check('Merker: zwei Durchgaenge, zwei Ereignisse — der Merker wird weiter geschrieben',
+    events.filter((e) => e.type === 'cutscene').length === 2 && game.outfit.id === 'zivil',
+    `${events.filter((e) => e.type === 'cutscene').length} / ${game.outfit.id}`);
 
   check('Merker: main.js liest und schreibt den Schluessel im Spielstand',
     MAIN.includes(`CUT_MERKER`) && /writeSave\(\{ \[CUT_MERKER\]: true \}\)/.test(MAIN)
