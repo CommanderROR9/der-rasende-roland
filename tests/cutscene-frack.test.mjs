@@ -183,12 +183,12 @@ function vorDenSchrank(game) {
   step(game, 0.4);                    // noch im Abschnitt „gehen"
   const xMitte = game.player.x;
   check('Weg: die Figur geht zum Schrank, statt zu springen',
-    szene.beat === 'gehen' && xMitte < x0 && xMitte > szene.frontX,
-    `x ${x0.toFixed(1)} -> ${xMitte.toFixed(1)} -> ${szene.frontX}`);
+    !!szene && szene.beat === 'gehen' && xMitte < x0 && xMitte > szene.frontX,
+    szene ? `x ${x0.toFixed(1)} -> ${xMitte.toFixed(1)} -> ${szene.frontX}` : 'keine Szene');
   step(game, 0.45);                   // der Weg ist zu Ende
   check('Weg: am Schrank angekommen steht sie vor den Tueren',
-    Math.abs(game.player.x - szene.frontX) < 0.5 && szene.beat === 'oeffnen',
-    `x=${game.player.x.toFixed(2)} zu ${szene.frontX}, ${szene.beat}`);
+    !!szene && Math.abs(game.player.x - szene.frontX) < 0.5 && szene.beat === 'oeffnen',
+    szene ? `x=${game.player.x.toFixed(2)} zu ${szene.frontX}, ${szene.beat}` : 'keine Szene');
 }
 
 // ---------------------------------------------- Die Abschnitte der Szene -----

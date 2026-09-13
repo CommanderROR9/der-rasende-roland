@@ -551,6 +551,155 @@ async function pruefeFahrHudMobil({ domAus = false } = {}) {
   return { hoch, quer, mut };
 }
 
+/**
+ * Die Schlussszene im Kleingarten (Auftrag CUT-1) im echten Browser: erst die
+ * Szene, danach der vorhandene Wechsel auf Zivil. Legt zwei Bilder ab — eines
+ * mitten in der Szene, eines danach. `vorbereiten` faehrt fuer den gezielten
+ * Lauf (TESTMODUS=cutscene) selbst bis zum Kleiderschrank im Frack.
+ */
+async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
+  const shotDirSzene = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDirSzene, { recursive: true });
+  const wurzel = fileURLToPath(new URL('..', import.meta.url));
+  const bild = async (pfad) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    writeFileSync(pfad, daten);
+    return daten;
+  };
+  const zustand = () => evaluate(`JSON.stringify({
+    aktiv: window.__roland.cutscene.aktiv,
+    beat: window.__roland.cutscene.beat,
+    fortschritt: window.__roland.cutscene.fortschritt,
+    outfit: window.__roland.game.outfit.id,
+    state: window.__roland.aktiv.state,
+    zeit: window.__roland.game.time,
+    label: window.__roland.aktiv.hud.label,
+    hint: window.__roland.aktiv.hud.hint,
+    flag: window.__roland.aktiv.hud.zivilAn,
+    merker: window.__roland.cutscene.gesehen,
+    x: window.__roland.game.player.x,
+  })`).then((t) => JSON.parse(t));
+
+  // Nahaufnahme (4x) vom Schrank samt Figur — die Szene ist im Vollbild nur
+  // wenige Pixel gross; fuer die Beurteilung des Looks braucht es den Zoom.
+  // Fehler hier duerfen den Lauf nicht kippen: dann gibt es eben kein Zoom-Bild.
+  const nahaufnahme = async (faktor = 4) => {
+    const daten = await evaluate(`(() => { try {
+      const c = document.getElementById('game');
+      const g = window.__roland.game;
+      const en = g.entities.find((e) => e.kind === 'garderobe');
+      const w = 132, h = 104;
+      const x = Math.max(0, Math.min(c.width - w, Math.round(en.x - g.cam.x) - 66));
+      const y = Math.max(0, Math.min(c.height - h, Math.round(en.y - g.cam.y) - 6));
+      const t = document.createElement('canvas');
+      t.width = w * ${faktor}; t.height = h * ${faktor};
+      const tg = t.getContext('2d'); tg.imageSmoothingEnabled = false;
+      tg.drawImage(c, x, y, w, h, 0, 0, t.width, t.height);
+      return t.toDataURL('image/png').slice(22);
+    } catch { return ''; } })()`);
+    return daten && daten.length > 100 ? Buffer.from(daten, 'base64') : null;
+  };
+
+  if (vorbereiten) {
+    // Gezielter Lauf: frische Seite, Kleingarten, Frack, vor den Schrank stellen.
+    await send('Emulation.clearDeviceMetricsOverride');
+    await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+    await sleep(2200);
+    await evaluate("window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));");
+    const epiIndex = await evaluate("window.__roland.levelIds.indexOf('epilog')");
+    check('Cutscene: der Kleingarten ist erreichbar', epiIndex >= 0, String(epiIndex));
+    await evaluate(`window.__roland.loadAct(${epiIndex})`);
+    await sleep(200);
+    await echterKlick('#startBtn');
+    await sleep(300);
+    await evaluate("(() => { const b = [...document.querySelectorAll('#gardeCards button')].find((x) => x.textContent.includes('FRACK')); b.click(); })()");
+    await sleep(800);
+    await evaluate(`(() => { const g = window.__roland.game;
+      const en = g.entities.find((e) => e.kind === 'garderobe');
+      g.player.x = en.x - 18; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
+      return JSON.stringify({ x: en.x, h: en.h }); })()`);
+    await sleep(400);
+  }
+
+  // Der Merker wird vor dem Lauf aus dem Spielstand genommen: sonst haengt es
+  // am Zufall des Profils, ob die Szene in diesem Lauf ueberhaupt laeuft.
+  await evaluate(`(() => { try {
+    const k = 'rasender-roland/v1';
+    const s = JSON.parse(localStorage.getItem(k) || '{}');
+    delete s.cutFrackGeige;
+    localStorage.setItem(k, JSON.stringify(s));
+  } catch { /* privater Modus: egal */ }
+  if (window.__roland.game) window.__roland.game.cutsceneGesehen = false; })()`);
+
+  const vorher = await zustand();
+  check('Cutscene: die Figur steht im Frack vor dem Kleiderschrank',
+    vorher.aktiv === false && vorher.outfit === 'frack' && vorher.merker === false,
+    JSON.stringify(vorher));
+
+  // Die Aktion: ZIVIL ANZIEHEN. Erst die Szene, danach der Wechsel.
+  await tippeSzene(180, 120);
+  const lauf = await zustand();
+  check('Cutscene: die Aktionstaste startet die Schlussszene',
+    lauf.aktiv === true && lauf.beat === 'gehen' && lauf.outfit === vorher.outfit,
+    JSON.stringify(lauf));
+  check('Cutscene: die Szene ist wortlos (kein Interaktionspunkt, keine Meldung)',
+    lauf.label === null && lauf.hint === null, JSON.stringify([lauf.label, lauf.hint]));
+
+  await sleep(1900);
+  const mitte = await zustand();
+  check('Cutscene: die Szene laeuft sichtbar (Mitte erreicht)',
+    mitte.aktiv === true && mitte.fortschritt > 0.2 && mitte.fortschritt < 0.95
+      && mitte.outfit === vorher.outfit, JSON.stringify(mitte));
+  check('Cutscene: die Welt steht fuer die Dauer der Szene still',
+    mitte.zeit === lauf.zeit && mitte.zeit - vorher.zeit < 0.6,
+    `Zeit ${vorher.zeit} -> ${lauf.zeit} (Szene laeuft) -> ${mitte.zeit}`);
+  const mittePfad = join(shotDirSzene, 'cutscene-frack-mitte.png');
+  const mitteBild = await bild(mittePfad);
+  writeFileSync(join(wurzel, 'screenshot-cutscene-frack-mitte.png'), mitteBild);
+  const mitteNah = await nahaufnahme(4);
+  if (mitteNah) {
+    writeFileSync(join(shotDirSzene, 'cutscene-frack-mitte-zoom.png'), mitteNah);
+    writeFileSync(join(wurzel, 'screenshot-cutscene-frack-mitte-zoom.png'), mitteNah);
+  }
+  results.push(`CUTSCENE BILD MITTE ${mittePfad} beat=${mitte.beat} fortschritt=${mitte.fortschritt.toFixed(2)}`
+    + ` zoom=${mitteNah ? 'ok' : 'fehlt'}`);
+
+  // Bis zum Ende der Szene warten und dann den Normalzustand messen.
+  let ende = mitte;
+  for (let i = 0; i < 40 && ende.aktiv; i++) { await sleep(250); ende = await zustand(); }
+  await sleep(350);
+  const nach = await zustand();
+  check('Cutscene: die Szene endet im Normalzustand',
+    nach.aktiv === false && nach.state === 'play' && nach.outfit === 'zivil' && nach.zeit > mitte.zeit,
+    JSON.stringify(nach));
+  check('Cutscene: der Merker steht im Spielstand',
+    nach.merker === true, JSON.stringify({ merker: nach.merker, gespeichert: await evaluate(
+      "JSON.parse(localStorage.getItem('rasender-roland/v1') || '{}').cutFrackGeige === true") }));
+  check('Cutscene: die Figur steht in Zivil vor dem Schrank',
+    nach.outfit === 'zivil' && nach.x < vorher.x && nach.x > vorher.x - 40,
+    `x ${vorher.x} -> ${nach.x}`);
+  const nachPfad = join(shotDirSzene, 'cutscene-frack-danach.png');
+  const nachBild = await bild(nachPfad);
+  writeFileSync(join(wurzel, 'screenshot-cutscene-frack-danach.png'), nachBild);
+  const nachNah = await nahaufnahme(4);
+  if (nachNah) {
+    writeFileSync(join(shotDirSzene, 'cutscene-frack-danach-zoom.png'), nachNah);
+    writeFileSync(join(wurzel, 'screenshot-cutscene-frack-danach-zoom.png'), nachNah);
+  }
+  results.push(`CUTSCENE BILD DANACH ${nachPfad} outfit=${nach.outfit} x=${nach.x}`
+    + ` zoom=${nachNah ? 'ok' : 'fehlt'}`);
+  return nach;
+}
+
+/** Tastendruck im Browser (Szene): halten, loslassen, warten. */
+async function tippeSzene(halten = 180, danach = 120) {
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(halten);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  await sleep(danach);
+}
+
 try {
   await send('Runtime.enable');
   await send('Log.enable');
@@ -677,6 +826,12 @@ try {
   }
   if (TESTMODUS === 'fahrhud' || TESTMODUS === 'fahrhud-ohne-dom') {
     await pruefeFahrHudMobil({ domAus: TESTMODUS === 'fahrhud-ohne-dom' });
+    throw GEZIELTER_ABSCHLUSS;
+  }
+  if (TESTMODUS === 'cutscene') {
+    // Gezielter Lauf fuer die Schlussszene (Auftrag CUT-1): nur dieser Block,
+    // ohne den ganzen Weg durch die Akte davor.
+    await pruefeKleiderschrankSzene({ vorbereiten: true });
     throw GEZIELTER_ABSCHLUSS;
   }
 
@@ -3281,19 +3436,18 @@ try {
   writeFileSync(epiFrackPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   results.push(`FRACK-BILD ${epiFrackPfad}`);
 
-  await tippe();
-  const nachZivil = JSON.parse(await evaluate(`JSON.stringify({
-    outfit: window.__roland.game.outfit.id,
-    flag: window.__roland.aktiv.hud.zivilAn,
-    hint: window.__roland.aktiv.hud.hint,
-    label: window.__roland.aktiv.hud.label
-  })`));
+  // Auftrag CUT-1: die Aktion „ZIVIL ANZIEHEN" laeuft jetzt durch die
+  // Schlussszene — erst die Szene (4,4 s), danach der vorhandene Wechsel.
+  // Der Block legt das Bild der Szene und das Bild danach ab.
+  const nachZivil = await pruefeKleiderschrankSzene();
   check('Epilog-Browser: die Aktionstaste zieht Zivil an',
-    nachZivil.outfit === 'zivil' && nachZivil.flag === true, JSON.stringify(nachZivil));
+    nachZivil.outfit === 'zivil' && nachZivil.flag === true && nachZivil.merker === true,
+    JSON.stringify(nachZivil));
   check('Epilog-Browser: die Meldung nennt Shorts und Hawaii-Hemd',
     /HAWAII/.test(String(nachZivil.hint)), String(nachZivil.hint));
   check('Epilog-Browser: danach bietet er den Frack an',
-    !!nachZivil.label && /KLEIDERSCHRANK/.test(nachZivil.label.text) && /FRACK/.test(nachZivil.label.text),
+    nachZivil.aktiv === false && !!nachZivil.label
+      && /KLEIDERSCHRANK/.test(nachZivil.label.text) && /FRACK/.test(nachZivil.label.text),
     JSON.stringify(nachZivil.label));
 
   const farbenZivil = JSON.parse(await evaluate(figurFarben));
@@ -3321,6 +3475,11 @@ try {
   }
   check('Epilog-Browser: der Wechsel ist mehrfach umkehrbar',
     kluften.join(',') === 'frack,zivil,frack', kluften.join(' -> '));
+  // Der Merker haelt: die Szene laeuft kein zweites Mal, egal wie oft umgezogen wird.
+  check('Epilog-Browser: die Szene laeuft kein zweites Mal',
+    (await evaluate('window.__roland.cutscene.aktiv')) === false
+      && (await evaluate('window.__roland.cutscene.gesehen')) === true,
+    await evaluate('JSON.stringify({ aktiv: window.__roland.cutscene.aktiv, gesehen: window.__roland.cutscene.gesehen })'));
 
   // Der Frack bleibt aufhaengbar: an der Laube, im getragenen Frack. Der
   // Kleiderschrank ist ein zusaetzlicher Weg und darf das nicht verstellen.

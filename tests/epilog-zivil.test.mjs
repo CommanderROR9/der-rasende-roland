@@ -49,6 +49,17 @@ function druecke(game, input, warten = 0.6) {
   game.update(1 / 60);
   input.setKey('action', false);
   game.update(1 / 60);
+  // Seit CUT-1 haengt am ersten Umziehen auf Zivil die Schlussszene: sie laeuft
+  // hier mit ab, sonst stuende jede Pruefung auf halbem Weg. Ohne Szene (jeder
+  // weitere Druck) passiert hier nichts.
+  durch(game);
+}
+/** Die Schlussszene (CUT-1) bis zum Ende laufen lassen; @returns die Zeit. */
+function durch(game, maxSekunden = 12) {
+  const dt = 1 / 60;
+  let t = 0;
+  while (game.szene && t < maxSekunden) { game.update(dt); t += dt; }
+  return t;
 }
 const garderobeOf = (g) => g.entities.find((en) => en.kind === 'garderobe');
 const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
@@ -96,7 +107,19 @@ const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
   check('Kleiderschrank: die Beschriftung ist eine AKTION (kein TRITT)',
     !!label && label.action === true && label.key === 'E', JSON.stringify(label));
 
-  druecke(game, input);
+  // Auftrag CUT-1: das erste Umziehen auf Zivil geht durch die Schlussszene
+  // (erst die Szene, danach der Wechsel). Die Aktion selbst bleibt dieselbe.
+  input.setKey('action', false);
+  step(game, 0.6);
+  input.setKey('action', true);
+  game.update(1 / 60);
+  input.setKey('action', false);
+  game.update(1 / 60);
+  check('Kleiderschrank: das erste Umziehen auf Zivil laeuft durch die Szene',
+    !!game.szene && game.outfit.id === 'schwarz',
+    game.szene ? game.szene.beat : 'keine Szene');
+  durch(game);
+
   check('Kleiderschrank: die Aktionstaste zieht Zivil an',
     game.outfit.id === 'zivil', game.outfit.id);
   check('Kleiderschrank: das Flag wird gesetzt',
