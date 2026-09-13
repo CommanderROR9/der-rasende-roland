@@ -1,6 +1,6 @@
 // Original pixel art: small, deliberately layered matrices, no remote assets.
 import { hash2 } from './render.js';
-import { journeySection, drivingCue } from './cabrio-drive.js';
+import { journeySection } from './cabrio-drive.js';
 
 export const CABRIO_PALETTE = {
   '.':'#141e2a', d:'#293a47', g:'#526b79', G:'#9bafb6', w:'#eee8d0',
@@ -121,27 +121,10 @@ export function drawJourneyCar(r,ctx) {
   // A loose paper edge, not a new collectible or a loss of the actual mappe.
   const sway=r.journeyState.sway;
   if(Math.abs(sway)>.25){ctx.fillStyle='#fff0ba';ctx.fillRect(Math.round(x+w*.64+sway*4),y+Math.round(h*.3),5,2);}
-  if(r.panneTimer>0){ctx.fillStyle='#ffd675';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText('KURZE PAUSE',r.vw/2,y-4);ctx.textAlign='left';}
+  // KURZE PAUSE liegt hochaufgeloest im DOM (#roPause); Canvas malt hier nichts.
 }
 export function drawJourneyHud(r,ctx) {
-  const d=drivingCue(r), sections=r.level.journey.sections, j=r.journeyState;
-  const index=sections.findIndex(s=>s.id===d.sectionId), compact=r.vw<320;
-  const box=compact?121:151, right=compact?91:118;
-  ctx.fillStyle='rgba(16,31,44,.88)';ctx.fillRect(5,5,box,29);ctx.fillRect(r.vw-right-5,5,right,29);
-  ctx.fillStyle='#f9e9c2';ctx.font=`bold ${compact?7:8}px monospace`;ctx.textAlign='left';
-  ctx.fillText(`${index+1} / 4  ${d.section}`,10,15);
-  for(let i=0;i<sections.length;i++){
-    const x=10+i*(box-10)/4;
-    ctx.fillStyle=i<j.results.length?(j.results[i].clean?'#85d6c6':'#dfac81'):i===index?'#ffdc8b':'#465b68';
-    ctx.fillRect(Math.round(x),22,Math.floor((box-18)/4),3);
-  }
-  const rx=r.vw-right;
-  ctx.fillStyle=d.braking?'#ffad83':'#9cdbd3';ctx.font=`bold ${compact?7:8}px monospace`;
-  ctx.fillText(d.braking?'BREMSE':d.direction==='straight'?'GERADEAUS':d.direction==='right'?'RECHTS >':'< LINKS',rx,15);
-  ctx.fillStyle='#f5dfae';ctx.font='6px monospace';
-  ctx.fillText(`RICHTTEMPO ${d.advisedSpeed}`,rx,26);
-  // Persistent input help in the calm sky band, away from the road's vanishing point.
-  ctx.fillStyle='rgba(16,31,44,.8)';ctx.fillRect(5,37,compact?170:215,12);
-  ctx.fillStyle='#e4e1ce';ctx.font=compact?'6px monospace':'7px monospace';
-  ctx.fillText(d.cue,9,45);
+  // Phase A: Abschnitt/Zaehler, Segmente, Richtung/BREMSE, Richttempo und Cue
+  // liegen hochaufgeloest im DOM (#racerOverlay). Canvas malt sie nicht doppelt.
+  void r; void ctx;
 }

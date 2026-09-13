@@ -1,6 +1,6 @@
 // Original night pixel art for the motorcycle journey. Local matrices only.
 import { hash2 } from './render.js';
-import { journeySection, drivingCue } from './cabrio-drive.js';
+import { journeySection } from './cabrio-drive.js';
 
 export const MOTORRAD_PALETTE = {
   '.':'#101623', d:'#243040', g:'#3d4c5e', G:'#8b9bab', w:'#e8e2cd',
@@ -191,27 +191,10 @@ export function drawNightBike(r,ctx) {
   }
   ctx.fillStyle='rgba(14,24,30,.4)';ctx.fillRect(x+3,r.vh-11,w-6,5);
   ctx.drawImage(spr.canvas,0,0,spr.w,spr.h,x+turn,y,w,h);
-  if(r.panneTimer>0){ctx.fillStyle='#ffd675';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText('KURZE PAUSE',r.vw/2,y-4);ctx.textAlign='left';}
+  // KURZE PAUSE liegt hochaufgeloest im DOM (#roPause); Canvas malt hier nichts.
 }
 export function drawNightHud(r,ctx) {
   // Same journey HUD contract as the Cabrio; shared layout, night tint.
-  const d=drivingCue(r), sections=r.level.journey.sections, j=r.journeyState;
-  const index=sections.findIndex(s=>s.id===d.sectionId), compact=r.vw<320;
-  const box=compact?121:151, right=compact?91:118;
-  ctx.fillStyle='rgba(10,16,34,.9)';ctx.fillRect(5,5,box,29);ctx.fillRect(r.vw-right-5,5,right,29);
-  ctx.fillStyle='#e9e4cf';ctx.font=`bold ${compact?7:8}px monospace`;ctx.textAlign='left';
-  ctx.fillText(`${index+1} / 5  ${d.section}`,10,15);
-  for(let i=0;i<sections.length;i++){
-    const x=10+i*(box-10)/5;
-    ctx.fillStyle=i<j.results.length?(j.results[i].clean?'#85d6c6':'#dfac81'):i===index?'#ffdc8b':'#3a4a5c';
-    ctx.fillRect(Math.round(x),22,Math.floor((box-18)/5),3);
-  }
-  const rx=r.vw-right;
-  ctx.fillStyle=d.braking?'#ffad83':'#9cdbd3';ctx.font=`bold ${compact?7:8}px monospace`;
-  ctx.fillText(d.braking?'BREMSE':d.direction==='straight'?'GERADEAUS':d.direction==='right'?'RECHTS >':'< LINKS',rx,15);
-  ctx.fillStyle='#e8d5a8';ctx.font='6px monospace';
-  ctx.fillText(`RICHTTEMPO ${d.advisedSpeed}`,rx,26);
-  ctx.fillStyle='rgba(10,16,34,.82)';ctx.fillRect(5,37,compact?170:215,12);
-  ctx.fillStyle='#d8d4c2';ctx.font=compact?'6px monospace':'7px monospace';
-  ctx.fillText(d.cue,9,45);
+  // Phase A: liegt hochaufgeloest im DOM (#racerOverlay). Canvas malt nichts doppelt.
+  void r; void ctx;
 }

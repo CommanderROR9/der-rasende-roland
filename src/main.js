@@ -78,6 +78,15 @@ function spieltextMass(daten, view = spieltextView) {
   };
 }
 
+/** Unterkante des globalen HUD in CSS-Pixeln, gemessen am echten Layout. */
+function messeHudHoehe() {
+  const hud = document.querySelector('.hud');
+  if (!hud || !ui.stage) return 0;
+  const r = hud.getBoundingClientRect();
+  const stageRect = ui.stage.getBoundingClientRect();
+  return Math.max(0, Math.round((r.bottom - stageRect.top) * 100) / 100);
+}
+
 function aktualisiereSpieltextLayout() {
   if (!ui.textLayer) return;
   const rect = ui.canvas.getBoundingClientRect();
@@ -88,6 +97,9 @@ function aktualisiereSpieltextLayout() {
   ui.textLayer.style.top = layerTop + 'px';
   ui.textLayer.style.width = rect.width + 'px';
   ui.textLayer.style.height = rect.height + 'px';
+  // Phase A: die gemessene HUD-Hoehe steht als CSS-Variable bereit; die Texte
+  // mit `unterHud` ruecken damit per clamp() unter die Bedienleiste.
+  document.documentElement.style.setProperty('--hud-h', messeHudHoehe() + 'px');
   for (const daten of spieltextDaten) {
     const el = spieltextElemente.get(daten.id);
     if (!el) continue;
@@ -100,10 +112,16 @@ function aktualisiereSpieltextLayout() {
     // horizontale Schrift-/Boxskalierung aus dem unabhaengigen X-Faktor ab.
     el.style.width = (daten.w * mass.scaleY) + 'px';
     el.style.height = mass.height + 'px';
-    el.style.fontSize = mass.fontSize + 'px';
+    // Der Boden von 12 CSS-Pixeln steht im Stylesheet; hier kommt nur die
+    // gemessene Groesse an, damit beides zusammen max(--text-min, --text-fs) ist.
+    el.style.setProperty('--text-fs', mass.fontSize + 'px');
     el.style.lineHeight = mass.height + 'px';
     el.style.letterSpacing = ((daten.letterSpacing || 0) * mass.scaleY) + 'px';
-    el.style.transform = `scaleX(${mass.scaleX / mass.scaleY})`;
+    const unterHud = daten.unterHud
+      ? 'translateY(clamp(0px, calc(var(--hud-h, 0px) + var(--hud-lucke, 4px) - '
+        + `${mass.layerTop}px), ${Math.round(mass.canvasHeight * 0.35)}px)) `
+      : '';
+    el.style.transform = unterHud + `scaleX(${mass.scaleX / mass.scaleY})`;
   }
 }
 
@@ -135,6 +153,7 @@ function renderSpieltexte(daten = [], view = VIEW) {
     el.dataset.y = String(daten.y);
     el.textContent = String(daten.text || '').toUpperCase();
     el.style.color = daten.color || '#e9e5d8';
+    el.style.background = daten.bg || 'transparent';
     el.style.textAlign = daten.align || 'left';
     el.style.fontWeight = String(daten.weight || 700);
   }
@@ -385,15 +404,22 @@ function fmtTime(t) {
   return `${m}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
+// ---------------------------------------------------------------- Overlays --
+// Die eine Textebene: Grill und Fahr-Interludium liefern strukturierte
+// Beschriftungen, alles andere bleibt leer. Die Signatur der Daten steht als
+// `dataset.sig` an der Ebene — ohne echte Aenderung wird nicht neu geschrieben.
+function synchronisiereSpieltexte() {
+  const quelle = grill || racer;
+  const bereit = !!(quelle && typeof quelle.beschriftungen === 'function');
+  const daten = bereit ? quelle.beschriftungen() : [];
+  const view = bereit ? { w: quelle.vw, h: quelle.vh } : VIEW;
+  const sig = (bereit ? 'x' : 'leer') + JSON.stringify([view.w, view.h, daten]);
+  if (!ui.textLayer || ui.textLayer.dataset.sig === sig) return;
+  ui.textLayer.dataset.sig = sig;
+  renderSpieltexte(daten, view);
+}
 // -------------------------------------------------------------------- Loop --
 let last = 0, hudAcc = 0, hudPrev = '';
-function synchronisiereSpieltexte() {
-  if (grill) {
-    renderSpieltexte(grill.beschriftungen(), { w: grill.vw, h: grill.vh });
-    return;
-  }
-  if (spieltextDaten.length) leereSpieltexte();
-}
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));

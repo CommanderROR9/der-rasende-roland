@@ -21,11 +21,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 .actrow button{flex:1 1 46%;min-width:0;font-size:10px;padding:7px 6px}
 #game{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#141021;touch-action:none}
 /* Eine gemeinsame hochaufgeloeste Textebene; Lage und Masse kommen ausschliesslich
-   aus dem gemessenen Canvas-Rechteck (src/main.js). */
+   aus dem gemessenen Canvas-Rechteck (src/main.js).
+   Phase A: --text-min ist der Boden fuer die Schriftgroesse (nie unter 12 CSS-Pixel,
+   damit die Texte scharf bleiben), --hud-lucke der Luftspalt unter das globale HUD.
+   Keine Webfont: die Auslieferung laeuft als Datei (file://) ohne Netz. */
 .game-text-layer{position:absolute;z-index:4;overflow:hidden;pointer-events:none;
+  --text-min:12px; --hud-lucke:4px;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace}
 .game-text-label{position:absolute;display:block;margin:0;padding:0;overflow:hidden;white-space:nowrap;
-  box-sizing:border-box;transform-origin:0 0;text-rendering:geometricPrecision}
+  box-sizing:border-box;transform-origin:0 0;text-rendering:geometricPrecision;
+  font-family:inherit;font-size:max(var(--text-min,12px),var(--text-fs,12px))}
 
 /* HUD */
 .hud{position:absolute;z-index:5;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;
