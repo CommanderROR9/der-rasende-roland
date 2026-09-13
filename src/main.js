@@ -845,13 +845,18 @@ window.__roland = {
     layout: (seite = abspannSeite) => abspannLayout(VIEW, seite),
     zeichne: abspannZeichnen,
   },
-  // Die Schlussszene im Kleingarten (Auftrag CUT-1): Zustand für die Prüfungen.
+  // Die Schlussszene im Kleingarten (Auftrag CUT-1, Umziehen seit CUT-1b):
+  // Zustand für die Prüfungen.
   cutscene: {
     get aktiv() { return !!(game && game.szene); },
     get beat() { return game && game.szene ? game.szene.beat : null; },
     get fortschritt() { return game && game.szene ? game.szene.fortschritt : 0; },
     get dauer() { return game && game.szene ? game.szene.dauer : SZENE_DAUER; },
     get gesehen() { return loadSave()[CUT_MERKER] === true; },
+    // CUT-1b: der Griff des Umziehens und das Figurenbild dieses Moments.
+    get umziehPhase() { return game && game.szene ? game.szene.umziehPhase : null; },
+    get bild() { return game && game.szene ? game.szene.figurBild : null; },
+    get outfit() { return game ? game.outfit.id : null; },
   },
   // Einziger DOM-Textpfad: Tests duerfen denselben Vertrag mit synthetischen
   // logischen Daten vermessen, ohne einen zweiten Renderer einzufuehren.
