@@ -17,7 +17,7 @@ import {
 
 const $ = (s) => document.querySelector(s);
 const ui = {
-  stage: $('#stage'), canvas: $('#game'),
+  stage: $('#stage'), canvas: $('#game'), textLayer: $('#gameTextLayer'),
   aktsub: $('#aktsub'), hintbar: $('#hintbar'),
   deckel: $('#deckel'), ohro: $('#ohro'), kluft: $('#kluft'),
   hitze: $('#hitze i'), takt: $('#takt .beat'), bpm: $('#bpm'), nerven: $('#nerven'),
@@ -52,6 +52,96 @@ const VIEW = pickView(COARSE);
 ui.canvas.width = VIEW.w;
 ui.canvas.height = VIEW.h;
 let scaleNow = 1;
+
+// Ein Skalierungsvertrag fuer alle hochaufgeloesten Spieltexte. Die Daten
+// bleiben in logischen Canvas-Koordinaten; erst hier werden sie gegen das
+// tatsaechlich sichtbare Canvas-Rechteck gerechnet.
+let spieltextDaten = [];
+let spieltextView = { w: VIEW.w, h: VIEW.h };
+const spieltextElemente = new Map();
+
+function spieltextMass(daten, view = spieltextView) {
+  const rect = ui.canvas.getBoundingClientRect();
+  const stageRect = ui.stage.getBoundingClientRect();
+  const scaleX = rect.width / view.w;
+  const scaleY = rect.height / view.h;
+  const layerLeft = rect.left - stageRect.left;
+  const layerTop = rect.top - stageRect.top;
+  return {
+    left: layerLeft + daten.x * scaleX,
+    top: layerTop + daten.y * scaleY,
+    width: daten.w * scaleX,
+    height: daten.h * scaleY,
+    fontSize: daten.fontSize * scaleY,
+    layerLeft, layerTop, scaleX, scaleY,
+    canvasWidth: rect.width, canvasHeight: rect.height,
+  };
+}
+
+function aktualisiereSpieltextLayout() {
+  if (!ui.textLayer) return;
+  const rect = ui.canvas.getBoundingClientRect();
+  const stageRect = ui.stage.getBoundingClientRect();
+  const layerLeft = rect.left - stageRect.left;
+  const layerTop = rect.top - stageRect.top;
+  ui.textLayer.style.left = layerLeft + 'px';
+  ui.textLayer.style.top = layerTop + 'px';
+  ui.textLayer.style.width = rect.width + 'px';
+  ui.textLayer.style.height = rect.height + 'px';
+  for (const daten of spieltextDaten) {
+    const el = spieltextElemente.get(daten.id);
+    if (!el) continue;
+    const mass = spieltextMass(daten, spieltextView);
+    // Das Element liegt in der Canvas-grossen Ebene. `mass.left/top` sind
+    // trotzdem bewusst erst im Stage-System berechnet (Vertragsformel).
+    el.style.left = (mass.left - mass.layerLeft) + 'px';
+    el.style.top = (mass.top - mass.layerTop) + 'px';
+    // Schrift und Grundbox skalieren vertikal; scaleX bildet danach die
+    // horizontale Schrift-/Boxskalierung aus dem unabhaengigen X-Faktor ab.
+    el.style.width = (daten.w * mass.scaleY) + 'px';
+    el.style.height = mass.height + 'px';
+    el.style.fontSize = mass.fontSize + 'px';
+    el.style.lineHeight = mass.height + 'px';
+    el.style.letterSpacing = ((daten.letterSpacing || 0) * mass.scaleY) + 'px';
+    el.style.transform = `scaleX(${mass.scaleX / mass.scaleY})`;
+  }
+}
+
+function renderSpieltexte(daten = [], view = VIEW) {
+  if (!ui.textLayer) return;
+  spieltextView = {
+    w: Number(view && view.w) || VIEW.w,
+    h: Number(view && view.h) || VIEW.h,
+  };
+  spieltextDaten = Array.isArray(daten) ? daten.map((eintrag) => ({ ...eintrag })) : [];
+  const gebraucht = new Set(spieltextDaten.map((eintrag) => String(eintrag.id)));
+  for (const [id, el] of spieltextElemente) {
+    if (gebraucht.has(id)) continue;
+    el.remove();
+    spieltextElemente.delete(id);
+  }
+  for (const daten of spieltextDaten) {
+    daten.id = String(daten.id);
+    let el = spieltextElemente.get(daten.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'game-text-label';
+      spieltextElemente.set(daten.id, el);
+      ui.textLayer.appendChild(el);
+    }
+    el.id = 'spieltext-' + daten.id;
+    el.dataset.textId = daten.id;
+    el.dataset.x = String(daten.x);
+    el.dataset.y = String(daten.y);
+    el.textContent = String(daten.text || '').toUpperCase();
+    el.style.color = daten.color || '#e9e5d8';
+    el.style.textAlign = daten.align || 'left';
+    el.style.fontWeight = String(daten.weight || 700);
+  }
+  aktualisiereSpieltextLayout();
+}
+
+function leereSpieltexte() { renderSpieltexte([], spieltextView); }
 
 const input = createInput(window);
 const audio = createAudio();
@@ -106,6 +196,7 @@ function fit() {
   scaleNow = scale;
   ui.canvas.style.width = Math.floor(VIEW.w * scale) + 'px';
   ui.canvas.style.height = Math.floor(VIEW.h * scale) + 'px';
+  aktualisiereSpieltextLayout();
 }
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => setTimeout(fit, 120));
@@ -296,6 +387,13 @@ function fmtTime(t) {
 
 // -------------------------------------------------------------------- Loop --
 let last = 0, hudAcc = 0, hudPrev = '';
+function synchronisiereSpieltexte() {
+  if (grill) {
+    renderSpieltexte(grill.beschriftungen(), { w: grill.vw, h: grill.vh });
+    return;
+  }
+  if (spieltextDaten.length) leereSpieltexte();
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));
@@ -306,7 +404,11 @@ function frame(now) {
     a.draw(ctx);
     updateWorldLabel();
     hudAcc += dt;
-    if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
+    if (hudAcc > 0.08) {
+      hudAcc = 0;
+      refreshHud();
+      synchronisiereSpieltexte();
+    }
   }
   syncMusik();
 }
@@ -705,6 +807,14 @@ window.__roland = {
     get canvas() { return ui.abspannCanvas; },
     layout: (seite = abspannSeite) => abspannLayout(VIEW, seite),
     zeichne: abspannZeichnen,
+  },
+  // Einziger DOM-Textpfad: Tests duerfen denselben Vertrag mit synthetischen
+  // logischen Daten vermessen, ohne einen zweiten Renderer einzufuehren.
+  textLayer: {
+    get element() { return ui.textLayer; },
+    render: renderSpieltexte,
+    clear: leereSpieltexte,
+    map: spieltextMass,
   },
   loadAct, input, get scale() { return scaleNow; },
 };

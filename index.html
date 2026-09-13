@@ -20,6 +20,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 .actrow{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 2px}
 .actrow button{flex:1 1 46%;min-width:0;font-size:10px;padding:7px 6px}
 #game{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#141021;touch-action:none}
+/* Eine gemeinsame hochaufgeloeste Textebene; Lage und Masse kommen ausschliesslich
+   aus dem gemessenen Canvas-Rechteck (src/main.js). */
+.game-text-layer{position:absolute;z-index:4;overflow:hidden;pointer-events:none;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace}
+.game-text-label{position:absolute;display:block;margin:0;padding:0;overflow:hidden;white-space:nowrap;
+  box-sizing:border-box;transform-origin:0 0;text-rendering:geometricPrecision}
 
 /* HUD */
 .hud{position:absolute;z-index:5;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;
@@ -106,6 +112,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 <body>
 <div id="stage">
   <canvas id="game" width="384" height="216" aria-label="Spielbereich"></canvas>
+  <div id="gameTextLayer" class="game-text-layer" aria-hidden="true"></div>
 
   <div class="hud">
     <div class="brand">DER RASENDE ROLAND<small id="aktsub">AKT 1 — DIE KATAKOMBEN</small><small id="journal" class="hidden">ZIEL: —</small></div>

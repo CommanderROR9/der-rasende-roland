@@ -225,6 +225,70 @@ export class Grill {
     };
   }
 
+  /**
+   * Alle Spieltexte des Grills als logische Canvas-Rechtecke. Diese Daten
+   * kennen weder DOM noch CSS; die einzige Abbildung ins Browserfenster liegt
+   * zentral in main.js.
+   */
+  beschriftungen() {
+    const l = this.layout();
+    const h = this.buildHud();
+    const gross = l.vw > 300;
+    const etikett = (id, text, x, y, w, hoehe, fontSize, align = 'left', color = '#e9e5d8') => ({
+      id, text, x, y, w, h: hoehe, fontSize, align, color,
+    });
+    const texte = [];
+    const aufRost = this.grill;
+    for (let i = 0; i < aufRost.length; i++) {
+      const w = aufRost[i];
+      const slot = l.slot(i);
+      const stufe = this.stufe(w);
+      const matrix = SPRITES[stufe];
+      const spriteW = Math.max(...matrix.map((zeile) => zeile.length));
+      const spriteH = matrix.length;
+      const k = Math.max(2, Math.round((slot.w - 4) / spriteW));
+      const wurstY = l.rostY - spriteH * k;
+      const fontSize = gross ? 6 : 5;
+      const hoehe = fontSize + 2;
+      texte.push(etikett(
+        `grill-garstufe-${i}`, GARSTUFEN_TEXT[stufe],
+        l.links + i * l.rostBreite + 2, Math.max(0, wurstY - hoehe - 2),
+        l.rostBreite - 4, hoehe, fontSize, 'center',
+        i === this.auswahl ? FOKUS_FARBE : '#e9e5d8',
+      ));
+    }
+
+    const fertig = this.wuerserste.filter((w) => w.zustand === 'fertig').length;
+    const offenImVorrat = this.wuerserste.filter((w) => w.zustand === 'kiste').length;
+    const teller = SPRITES.teller;
+    const tellerY = l.boden + 8 + teller.length * 2 + 1;
+    texte.push(etikett('grill-teller', `TELLER ${fertig}`, 4, tellerY, 62, gross ? 8 : 7, gross ? 6 : 5));
+    texte.push(etikett('grill-vorrat', `VORRAT ${offenImVorrat}`, l.vw - 52, l.boden - 25,
+      48, gross ? 8 : 7, gross ? 6 : 5, 'right'));
+
+    const obenY = l.vh - 20;
+    const untenY = l.vh - 12;
+    const obenFont = gross ? 7 : 6;
+    const untenFont = gross ? 5 : 4;
+    texte.push(etikett('grill-status-offen', `OFFEN ${h.offen}`, 6, obenY,
+      l.vw / 3 - 6, 8, obenFont));
+    texte.push(etikett('grill-status-punkte', `${h.punkte} PUNKTE`, l.vw / 3, obenY,
+      l.vw / 3, 8, obenFont, 'center'));
+    texte.push(etikett('grill-status-takt', `IM TAKT ${h.sauber}`, 2 * l.vw / 3, obenY,
+      l.vw / 3 - 6, 8, obenFont, 'right', '#9ff3ea'));
+    texte.push(etikett('grill-status-rost-titel', 'AUF DEM ROST', 6, untenY,
+      l.vw * 0.15, 8, untenFont, 'left', '#8a8a96'));
+    texte.push(etikett('grill-status-stufen', h.stufen.map((s) => GARSTUFEN_TEXT[s]).join(' · ') || '—',
+      6 + l.vw * 0.15, untenY, l.vw * 0.34, 8, untenFont, 'left', '#e8c46a'));
+    texte.push(etikett('grill-status-fokus', h.fokusName ? `FOKUS ${h.fokusName}` : 'FOKUS —',
+      6 + l.vw * 0.49, untenY, l.vw * 0.24, 8, untenFont, 'center',
+      h.fokusName ? FOKUS_FARBE : '#8a8a96'));
+    texte.push(etikett('grill-status-verbrannt', `VERBRANNT ${h.verbrannt}`,
+      6 + l.vw * 0.73, untenY, l.vw * 0.27 - 12, 8, untenFont, 'right',
+      h.verbrannt ? '#e08a52' : '#8a8a96'));
+    return texte;
+  }
+
   update(dt) {
     this.effekte(dt);
     if (this.state !== 'play') return;
@@ -406,12 +470,7 @@ export class Grill {
         ctx.fillRect(x + 2, y + Math.round(h2 / 2), w2 - 4, 1);
         ctx.globalAlpha = 1;
       }
-      // Garstufe lesbar über der Wurst
-      ctx.font = `bold ${this.vw > 300 ? 6 : 5}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = i === this.auswahl ? FOKUS_FARBE : '#e9e5d8';
-      ctx.fillText(GARSTUFEN_TEXT[stufe], x + Math.round(w2 / 2), y - 3);
-      ctx.textAlign = 'left';
+      // Die Garstufe wird als strukturierte Beschriftung an main.js geliefert.
       this.zeichnung.push({
         i, stufe, x, y, w: w2, h: h2,
         farbe: GARSTUFEN_FARBE[stufe],
@@ -464,9 +523,6 @@ export class Grill {
       const y = py + 1 - h2 - reihe * (h2 + 1);
       ctx.drawImage(ms.canvas, px + 8 + spalte * (w2 + 1), y, w2, h2);
     }
-    ctx.fillStyle = '#e9e5d8';
-    ctx.font = `bold ${this.vw > 300 ? 6 : 5}px monospace`;
-    ctx.fillText(`TELLER ${fertig.length}`, px, py + s.h * 2 + 8);
   }
 
   /** Kiste mit dem Rest. */
@@ -481,9 +537,6 @@ export class Grill {
       ctx.fillStyle = '#c98a5a';
       ctx.fillRect(px + 3 + i * 7, py + 5, 5, 3);
     }
-    ctx.fillStyle = '#e9e5d8';
-    ctx.font = `bold ${l.vw > 300 ? 6 : 5}px monospace`;
-    ctx.fillText(`VORRAT ${offen}`, px, py - 3);
   }
 
   drawEffekte(ctx, l) {
@@ -511,32 +564,11 @@ export class Grill {
     }
   }
 
-  /** Ruhiges HUD: was noch offen ist, welche Stufen liegen, was im Takt lief. */
+  /** Ruhiges HUD: Flaeche und Taktpuls bleiben Grafik; die Texte liefert beschriftungen(). */
   drawHud(ctx, l) {
-    const h = this.hud;
-    const fs = this.vw > 300 ? 7 : 6;
     const y = l.vh - 12;
     ctx.fillStyle = 'rgba(11,8,16,0.55)';
     ctx.fillRect(0, y - 8, l.vw, 20);
-    ctx.font = `bold ${fs}px monospace`;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#e9e5d8';
-    ctx.fillText(`OFFEN ${h.offen}`, 6, y);
-    ctx.fillStyle = '#8a8a96';
-    ctx.fillText('AUF DEM ROST', 6, y + 8);
-    ctx.fillStyle = '#e8c46a';
-    ctx.fillText(h.stufen.map((s) => GARSTUFEN_TEXT[s]).join(' · ') || '—', 66, y + 8);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#9ff3ea';
-    ctx.fillText(`IM TAKT ${h.sauber}`, l.vw - 6, y);
-    ctx.fillStyle = h.verbrannt ? '#e08a52' : '#8a8a96';
-    ctx.fillText(`VERBRANNT ${h.verbrannt}`, l.vw - 6, y + 8);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#e9e5d8';
-    ctx.fillText(`${h.punkte} PUNKTE`, Math.round(l.vw / 2), y);
-    ctx.fillStyle = h.fokusName ? '#f2d24b' : '#8a8a96';
-    ctx.fillText(h.fokusName ? `FOKUS ${h.fokusName}` : 'FOKUS —', Math.round(l.vw / 2), y + 8);
-    ctx.textAlign = 'left';
     // Taktpuls: ruhiger Metronomschlag unten
     const puls = Math.max(0, 1 - this.beatPhase * 2.6);
     ctx.fillStyle = `rgba(93,224,207,${0.10 * puls + 0.04})`;
