@@ -10,6 +10,7 @@ import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.j
 import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
+import { CUT_MERKER, SZENE_DAUER } from './cutscene-frack.js';
 import {
   ABSPANN_SEITEN, ABSPANN_WEITER, ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL,
   abspannLayout, zeichneAbspann,
@@ -337,6 +338,9 @@ function newGame(outfitId) {
     racer = null;
     game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game.reset(outfitId);
+    // Die Schlussszene (CUT-1) ist gelaufen? Der Spielstand weiß es: der
+    // Merker verhindert den zweiten Lauf, egal wie oft umgezogen wird.
+    if (loadSave()[CUT_MERKER] === true) game.cutsceneGesehen = true;
     // Die Notenmappe reist mit: in Akt 1 zusammengesetzt, in Akt 2 aufs Pult
     // gelegt (DRR-04). Ohne diesen Griff in den Spielstand wäre der Schritt
     // „Mappe abgeben“ toter Code — getragen wird sie nur innerhalb eines Akts.
@@ -353,6 +357,9 @@ function onGameEvent(e) {
   if (e.type === 'stand') renderGarde('wechseln');
   else if (e.type === 'grill') startGrill();
   else if (e.type === 'mappe') writeSave({ mappe: true });   // reist in Akt 2 mit
+  // Die Schlussszene im Kleingarten (CUT-1) läuft genau einmal: der Merker
+  // steht im Spielstand, sobald sie begonnen hat.
+  else if (e.type === 'cutscene') writeSave({ [CUT_MERKER]: true });
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
     const s = e.stats || {};
@@ -445,9 +452,13 @@ function setzeKnopfBeschriftung() {
   // E ist im Laufmodus kontextsensitiv. Bei einer Figur oder einem Gegenstand
   // darf die Touch-Oberfläche nicht weiter behaupten, man würde zutreten.
   const hatAktion = modus === 'lauf' && !!(game?.hud?.label?.action);
+  // Während der Schlussszene (CUT-1) ist kein Knopf zuständig: die Figur wird
+  // geführt, bis der Schrank zu ist.
+  const szene = modus === 'lauf' && !!game?.szene;
   const akt = modus === 'racer' ? 'BREMSE'
     : modus === 'grill' ? ((grill?.hud?.fokusSeite === 1) ? 'SERVIEREN' : 'WENDEN')
-      : hatAktion ? 'AKTION' : 'TRITT';
+      : szene ? '—'
+        : hatAktion ? 'AKTION' : 'TRITT';
   if (ui.btnJump.textContent !== jump) ui.btnJump.textContent = jump;
   if (ui.btnAction.textContent !== akt) ui.btnAction.textContent = akt;
   ui.btnJump.style.opacity = modus === 'lauf' ? '' : '0.3';
@@ -833,6 +844,19 @@ window.__roland = {
     get canvas() { return ui.abspannCanvas; },
     layout: (seite = abspannSeite) => abspannLayout(VIEW, seite),
     zeichne: abspannZeichnen,
+  },
+  // Die Schlussszene im Kleingarten (Auftrag CUT-1, Umziehen seit CUT-1b):
+  // Zustand für die Prüfungen.
+  cutscene: {
+    get aktiv() { return !!(game && game.szene); },
+    get beat() { return game && game.szene ? game.szene.beat : null; },
+    get fortschritt() { return game && game.szene ? game.szene.fortschritt : 0; },
+    get dauer() { return game && game.szene ? game.szene.dauer : SZENE_DAUER; },
+    get gesehen() { return loadSave()[CUT_MERKER] === true; },
+    // CUT-1b: der Griff des Umziehens und das Figurenbild dieses Moments.
+    get umziehPhase() { return game && game.szene ? game.szene.umziehPhase : null; },
+    get bild() { return game && game.szene ? game.szene.figurBild : null; },
+    get outfit() { return game ? game.outfit.id : null; },
   },
   // Einziger DOM-Textpfad: Tests duerfen denselben Vertrag mit synthetischen
   // logischen Daten vermessen, ohne einen zweiten Renderer einzufuehren.
