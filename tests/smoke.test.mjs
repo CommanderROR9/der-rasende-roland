@@ -6,7 +6,7 @@ import { SPRITES, WURST_STUFEN, GARSTUFEN_FARBE, GARSTUFEN_TEXT, garstufeName } 
 import { Racer, buildTrack, project, CAM_H, SEG_LEN, DRAW_DIST } from '../src/racer.js';
 import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
-import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH, VIEW_DESKTOP } from '../src/config.js';
+import { PHYS, BPM_BASE, BPM_TENOR, VIEW_TOUCH, VIEW_DESKTOP, PAL } from '../src/config.js';
 import { STATIONEN, BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from '../src/story.js';
 
 const results = [];
@@ -81,6 +81,36 @@ function place(game, px, py) {
     level.grid[24][90] === 1 && level.grid[24][111] === 1);
   check('climb spans at least 10 tiles of height',
     level.spawns.find((s) => s.isSpawn).walkRow - 12 >= 10);
+}
+
+// ------------------------------------------- Figuren ohne geschlossenen Kasten --
+// Der Tenor und der Sopran waren als geschlossener Kasten gemalt: ihre
+// Randfuellung bestand aus dem Palettenzeichen '.', das in PAL die fast
+// schwarze Farbe #0b0810 traegt. Sobald der Grund heller war als diese Farbe,
+// stand um die Figur ein schwarzes Rechteck (Roland: „um den Tenor“). Figuren
+// duerfen deshalb an keiner der vier Kanten vollflaechig deckend sein.
+{
+  const FIGUREN = ['tenor', 'sopran', 'piccolo', 'dirigent', 'ramona', 'ada', 'rolf',
+    'roland_idle', 'roland_walk1', 'roland_walk2', 'roland_jump', 'roland_duck'];
+  const deckt = (rows, x, y) => !!(rows[y] && PAL[rows[y][x]]);
+  const zu = [];
+  for (const name of FIGUREN) {
+    const rows = SPRITES[name];
+    const w = Math.max(...rows.map((r) => r.length));
+    const h = rows.length;
+    const kanten = [
+      ['oben', Array.from({ length: w }, (_, x) => [x, 0])],
+      ['unten', Array.from({ length: w }, (_, x) => [x, h - 1])],
+      ['links', Array.from({ length: h }, (_, y) => [0, y])],
+      ['rechts', Array.from({ length: h }, (_, y) => [w - 1, y])],
+    ];
+    const geschlossen = kanten
+      .filter(([, zellen]) => zellen.every(([x, y]) => deckt(rows, x, y)))
+      .map(([kante]) => kante);
+    if (geschlossen.length) zu.push(`${name}:${geschlossen.join('/')}`);
+  }
+  check('Figuren-Sprites sind an keiner Kante ein geschlossener Kasten',
+    zu.length === 0, zu.join(' '));
 }
 
 // ------------------------------------------------------------------- Start --
