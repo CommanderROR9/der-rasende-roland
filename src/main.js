@@ -16,7 +16,7 @@ import { CUT_MERKER, SZENE_DAUER } from './cutscene-frack.js';
 import { EINSTIEG_MERKER, EINSTIEG_DAUER, einstiegGelaufen, einstiegStarten } from './cutscene-einstieg.js';
 import {
   ABSPANN_SEITEN, ABSPANN_WEITER, ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL,
-  abspannLayout, zeichneAbspann,
+  abspannBeschriftungen, abspannLayout, zeichneAbspann,
 } from './credits.js';
 
 const $ = (s) => document.querySelector(s);
@@ -34,6 +34,7 @@ const ui = {
   rewardEyebrow: $('#rewardEyebrow'), rewardTitle: $('#rewardTitle'), rewardText: $('#rewardText'), rewardNote: $('#rewardNote'),
   abspannBtn: $('#abspannBtn'), abspannTitleBtn: $('#abspannTitleBtn'),
   abspann: $('#abspann'), abspannCanvas: $('#abspannCanvas'),
+  abspannBild: $('#abspannBild'), abspannTextLayer: $('#abspannTextLayer'),
   abspannWeiter: $('#abspannWeiter'), abspannZurueck: $('#abspannZurueck'),
   actRow: $('#actRow'),
   worldlabel: $('#worldlabel'), soundBtn: $('#soundBtn'), diffBtn: $('#diffBtn'), diffBtn2: $('#diffBtn2'),
@@ -59,18 +60,21 @@ let scaleNow = 1;
 
 // Ein Skalierungsvertrag fuer alle hochaufgeloesten Spieltexte. Die Daten
 // bleiben in logischen Canvas-Koordinaten; erst hier werden sie gegen das
-// tatsaechlich sichtbare Canvas-Rechteck gerechnet.
+// tatsaechlich sichtbare Canvas-Rechteck gerechnet. `canvasEl` ist die Leinwand,
+// deren Raster die Daten beschreiben, `elternEl` der Bezugsrahmen der Textebene
+// (die Ebene liegt genau auf der Leinwand). Abspann (F2) und Spieltexte nutzen
+// denselben Vertrag.
 let spieltextDaten = [];
 let spieltextView = { w: VIEW.w, h: VIEW.h };
 const spieltextElemente = new Map();
 
-function spieltextMass(daten, view = spieltextView) {
-  const rect = ui.canvas.getBoundingClientRect();
-  const stageRect = ui.stage.getBoundingClientRect();
+function textMass(daten, view, canvasEl, elternEl) {
+  const rect = canvasEl.getBoundingClientRect();
+  const elternRect = elternEl.getBoundingClientRect();
   const scaleX = rect.width / view.w;
   const scaleY = rect.height / view.h;
-  const layerLeft = rect.left - stageRect.left;
-  const layerTop = rect.top - stageRect.top;
+  const layerLeft = rect.left - elternRect.left;
+  const layerTop = rect.top - elternRect.top;
   return {
     left: layerLeft + daten.x * scaleX,
     top: layerTop + daten.y * scaleY,
@@ -80,6 +84,27 @@ function spieltextMass(daten, view = spieltextView) {
     layerLeft, layerTop, scaleX, scaleY,
     canvasWidth: rect.width, canvasHeight: rect.height,
   };
+}
+
+function spieltextMass(daten, view = spieltextView) {
+  return textMass(daten, view, ui.canvas, ui.stage);
+}
+
+/**
+ * Setzt Lage, Masse und Schrift eines Textelements — der Vertrag aus Phase A:
+ * Schrift und Box skalieren vertikal, `scaleX` bildet danach die horizontale
+ * Schrift-/Boxskalierung ab; der Boden von 12 CSS-Pixeln steht im Stylesheet,
+ * hier kommt nur die gemessene Groesse als `--text-fs` an.
+ */
+function setzeTextElement(el, daten, mass, extraTransform = '') {
+  el.style.left = (mass.left - mass.layerLeft) + 'px';
+  el.style.top = (mass.top - mass.layerTop) + 'px';
+  el.style.width = (daten.w * mass.scaleY) + 'px';
+  el.style.height = mass.height + 'px';
+  el.style.setProperty('--text-fs', mass.fontSize + 'px');
+  el.style.lineHeight = mass.height + 'px';
+  el.style.letterSpacing = ((daten.letterSpacing || 0) * mass.scaleY) + 'px';
+  el.style.transform = extraTransform + `scaleX(${mass.scaleX / mass.scaleY})`;
 }
 
 /** Unterkante des globalen HUD in CSS-Pixeln, gemessen am echten Layout. */
@@ -108,24 +133,11 @@ function aktualisiereSpieltextLayout() {
     const el = spieltextElemente.get(daten.id);
     if (!el) continue;
     const mass = spieltextMass(daten, spieltextView);
-    // Das Element liegt in der Canvas-grossen Ebene. `mass.left/top` sind
-    // trotzdem bewusst erst im Stage-System berechnet (Vertragsformel).
-    el.style.left = (mass.left - mass.layerLeft) + 'px';
-    el.style.top = (mass.top - mass.layerTop) + 'px';
-    // Schrift und Grundbox skalieren vertikal; scaleX bildet danach die
-    // horizontale Schrift-/Boxskalierung aus dem unabhaengigen X-Faktor ab.
-    el.style.width = (daten.w * mass.scaleY) + 'px';
-    el.style.height = mass.height + 'px';
-    // Der Boden von 12 CSS-Pixeln steht im Stylesheet; hier kommt nur die
-    // gemessene Groesse an, damit beides zusammen max(--text-min, --text-fs) ist.
-    el.style.setProperty('--text-fs', mass.fontSize + 'px');
-    el.style.lineHeight = mass.height + 'px';
-    el.style.letterSpacing = ((daten.letterSpacing || 0) * mass.scaleY) + 'px';
     const unterHud = daten.unterHud
       ? 'translateY(clamp(0px, calc(var(--hud-h, 0px) + var(--hud-lucke, 4px) - '
         + `${mass.layerTop}px), ${Math.round(mass.canvasHeight * 0.35)}px)) `
       : '';
-    el.style.transform = unterHud + `scaleX(${mass.scaleX / mass.scaleY})`;
+    setzeTextElement(el, daten, mass, unterHud);
   }
 }
 
@@ -223,6 +235,9 @@ function fit() {
   ui.canvas.style.width = Math.floor(VIEW.w * scale) + 'px';
   ui.canvas.style.height = Math.floor(VIEW.h * scale) + 'px';
   aktualisiereSpieltextLayout();
+  // F2: die Namentexte des Abspanns hängen an derselben Messung (Canvas-Breite
+  // aus dem CSS) und müssen beim Größenwechsel mitwandern.
+  aktualisiereAbspannTextLayout();
 }
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => setTimeout(fit, 120));
@@ -265,7 +280,12 @@ function abspannZeichnen() {
   }
   const g = ui.abspannCanvas.getContext('2d');
   g.imageSmoothingEnabled = false;
-  return zeichneAbspann(g, VIEW, { seite: abspannSeite });
+  const L = zeichneAbspann(g, VIEW, { seite: abspannSeite });
+  // F2: die Namentexte gehören in die Textebene, nicht ins Bild. Sie wird hier
+  // mitgezogen, weil das Öffnen unmittelbar davor liegt (Panel ist dann sichtbar
+  // und hat echte Masse).
+  synchronisiereAbspannTexte(abspannSeite);
+  return L;
 }
 /** Abspann öffnen. `herkunft` bestimmt nur die Beschriftung des Rückwegs. */
 function abspannZeigen(herkunft = 'reward', seite = 0) {
@@ -293,6 +313,92 @@ function aktualisiereAbspannZugang() {
   const fertig = geschafft.epilog === true;
   if (ui.abspannTitleBtn) ui.abspannTitleBtn.classList.toggle('hidden', !fertig);
   return fertig;
+}
+
+// ------------------------------------------------------- Abspann-Textebene --
+// F2: die Namentexte des Abspanns liegen nicht mehr im 384x216-Bild (dort waren
+// sie 5-10 Pixel groß und wurden mit dem Bild hochskaliert = verpixelt), sondern
+// in einer eigenen Textebene über der Leinwand — derselbe Skalierungsvertrag wie
+// die Spieltexte aus Phase A (textMass/setzeTextElement, Boden 12 CSS-Pixel).
+let abspannTexteDaten = [];
+const abspannTexteElemente = new Map();
+
+function abspannTextMass(daten, view = VIEW) {
+  return textMass(daten, view, ui.abspannCanvas, ui.abspannBild);
+}
+
+/**
+ * Legt die Textebene genau auf die Leinwand und jedes Element an seinen Platz.
+ * Solange das Panel verborgen ist, sind alle Masse 0 — dann gibt es nichts zu
+ * legen (die Ebene wird beim Öffnen gesetzt, `abspannZeichnen` läuft danach).
+ */
+function aktualisiereAbspannTextLayout() {
+  const ebene = ui.abspannTextLayer;
+  if (!ebene || !ui.abspannCanvas || !ui.abspannBild) return;
+  const cRect = ui.abspannCanvas.getBoundingClientRect();
+  const bRect = ui.abspannBild.getBoundingClientRect();
+  if (!cRect.width || !cRect.height || !bRect.width) return;
+  ebene.style.left = (cRect.left - bRect.left) + 'px';
+  ebene.style.top = (cRect.top - bRect.top) + 'px';
+  ebene.style.width = cRect.width + 'px';
+  ebene.style.height = cRect.height + 'px';
+  for (const daten of abspannTexteDaten) {
+    const el = abspannTexteElemente.get(daten.id);
+    if (!el) continue;
+    setzeTextElement(el, daten, abspannTextMass(daten));
+  }
+}
+
+/** Schreibt die Namentexte der aktuellen Seite in die Ebene (ein Element je id). */
+function renderAbspannTexte(daten = []) {
+  const ebene = ui.abspannTextLayer;
+  if (!ebene) return;
+  abspannTexteDaten = Array.isArray(daten) ? daten.map((eintrag) => ({ ...eintrag })) : [];
+  const gebraucht = new Set(abspannTexteDaten.map((eintrag) => String(eintrag.id)));
+  for (const [id, el] of abspannTexteElemente) {
+    if (gebraucht.has(id)) continue;
+    el.remove();
+    abspannTexteElemente.delete(id);
+  }
+  for (const eintrag of abspannTexteDaten) {
+    eintrag.id = String(eintrag.id);
+    let el = abspannTexteElemente.get(eintrag.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'game-text-label';
+      abspannTexteElemente.set(eintrag.id, el);
+      ebene.appendChild(el);
+    }
+    el.id = 'abspanntext-' + eintrag.id;
+    el.dataset.textId = eintrag.id;
+    el.dataset.x = String(eintrag.x);
+    el.dataset.y = String(eintrag.y);
+    el.textContent = String(eintrag.text || '').toUpperCase();
+    el.style.color = eintrag.color || '#f0eee4';
+    el.style.background = eintrag.bg || 'transparent';
+    el.style.textAlign = eintrag.align || 'left';
+    el.style.fontWeight = String(eintrag.weight || 700);
+  }
+  aktualisiereAbspannTextLayout();
+}
+
+/**
+ * Hält die Textebene auf dem Stand der gezeigten Seite. Die Signatur der Daten
+ * steht als `dataset.sig` an der Ebene — ohne echte Änderung wird nicht neu
+ * geschrieben (dasselbe Muster wie `synchronisiereSpieltexte`).
+ */
+function synchronisiereAbspannTexte(seite = abspannSeite) {
+  const ebene = ui.abspannTextLayer;
+  const daten = abspannBeschriftungen(VIEW, seite);
+  if (!ebene) return daten;
+  const sig = JSON.stringify([VIEW.w, VIEW.h, daten]);
+  if (ebene.dataset.sig === sig) {
+    aktualisiereAbspannTextLayout();
+    return daten;
+  }
+  ebene.dataset.sig = sig;
+  renderAbspannTexte(daten);
+  return daten;
 }
 
 function renderGarde(mode) {
@@ -909,6 +1015,11 @@ window.__roland = {
     get canvas() { return ui.abspannCanvas; },
     layout: (seite = abspannSeite) => abspannLayout(VIEW, seite),
     zeichne: abspannZeichnen,
+    // F2: die Namentexte liegen als DOM-Beschriftung über der Leinwand.
+    texte: (seite = abspannSeite) => abspannBeschriftungen(VIEW, seite),
+    get texteEbene() { return ui.abspannTextLayer; },
+    textMass: abspannTextMass,
+    legeTexte: aktualisiereAbspannTextLayout,
   },
   // Die Schlussszene im Kleingarten (Auftrag CUT-1, Umziehen seit CUT-1b):
   // Zustand für die Prüfungen.
