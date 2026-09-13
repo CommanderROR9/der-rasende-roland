@@ -11,6 +11,9 @@ import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
 import { CUT_MERKER, SZENE_DAUER } from './cutscene-frack.js';
+// Die Einstiegs-Cutscenes vor den Fahr-Interludien (Auftrag CUT-2): ein Aufruf
+// am Start der Fahrt, je ein Merker im Spielstand.
+import { EINSTIEG_MERKER, EINSTIEG_DAUER, einstiegStarten } from './cutscene-einstieg.js';
 import {
   ABSPANN_SEITEN, ABSPANN_WEITER, ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL,
   abspannLayout, zeichneAbspann,
@@ -199,6 +202,9 @@ function updateActLabels() {
 let game = null;      // Seitenscroller-Simulation
 let racer = null;     // Fahr-Interludium
 let grill = null;     // Bratwurst-Minispiel im Epilog
+// Die Einstiegs-Cutscene vor der Fahrt (Auftrag CUT-2): läuft als eigener
+// Zustand neben dem Racer, der so lange unangetastet stehenbleibt.
+let einstieg = null;
 const aktiv = () => grill || racer || game;
 const aktivModus = () => grill || racer || game;
 let gardeMode = 'start';
@@ -334,8 +340,13 @@ function newGame(outfitId) {
     // Fahr-Interludium: gleiche Steuerung, andere Simulation
     racer = new Racer({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game = null;
+    // Auftrag CUT-2: der eine Aufruf am Start der Fahrt. Ist der Merker im
+    // Spielstand noch nicht gesetzt, läuft erst die Einstiegs-Cutscene und
+    // danach unverändert die Fahrt; sonst fährt sie sofort los.
+    einstieg = einstiegStarten(LEVEL, { save: loadSave(), view: VIEW, events: onGameEvent });
   } else {
     racer = null;
+    einstieg = null;
     game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game.reset(outfitId);
     // Die Schlussszene (CUT-1) ist gelaufen? Der Spielstand weiß es: der
@@ -360,6 +371,9 @@ function onGameEvent(e) {
   // Die Schlussszene im Kleingarten (CUT-1) läuft genau einmal: der Merker
   // steht im Spielstand, sobald sie begonnen hat.
   else if (e.type === 'cutscene') writeSave({ [CUT_MERKER]: true });
+  // Die Einstiegs-Cutscene (CUT-2) läuft genau einmal je Fahrzeug: der Merker
+  // steht im Spielstand, sobald sie begonnen hat.
+  else if (e.type === 'einstieg') writeSave({ [e.merker]: true });
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
     const s = e.stats || {};
@@ -416,7 +430,9 @@ function fmtTime(t) {
 // Beschriftungen, alles andere bleibt leer. Die Signatur der Daten steht als
 // `dataset.sig` an der Ebene — ohne echte Aenderung wird nicht neu geschrieben.
 function synchronisiereSpieltexte() {
-  const quelle = grill || racer;
+  // Während der Einstiegs-Cutscene (CUT-2) liegt kein Fahr-HUD im DOM: die
+  // Szene ist wortlos und die Fahrt hat noch nicht begonnen.
+  const quelle = einstieg ? null : (grill || racer);
   const bereit = !!(quelle && typeof quelle.beschriftungen === 'function');
   const daten = bereit ? quelle.beschriftungen() : [];
   const view = bereit ? { w: quelle.vw, h: quelle.vh } : VIEW;
@@ -431,6 +447,22 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));
   last = now;
+  // Auftrag CUT-2: die Einstiegs-Cutscene führt sich selbst. Der Racer steht
+  // dabei still (kein Tacho, keine Strecke) und fährt genau danach unverändert
+  // weiter — im letzten Bild der Szene zeichnet schon die Fahrt.
+  if (einstieg) {
+    const pausiert = !!(racer && racer.state === 'paused');
+    if (!pausiert && einstieg.update(dt)) einstieg = null;
+    (einstieg || racer).draw(ctx);
+    hudAcc += dt;
+    if (hudAcc > 0.08) {
+      hudAcc = 0;
+      refreshHud();
+      synchronisiereSpieltexte();
+    }
+    syncMusik();
+    return;
+  }
   const a = aktiv();
   if (a) {
     a.update(dt);
@@ -447,7 +479,9 @@ function frame(now) {
 }
 // Die Knoepfe heissen in jedem Modus anders — sonst luegen sie (Review Befund 8).
 function setzeKnopfBeschriftung() {
-  const modus = grill ? 'grill' : racer ? 'racer' : 'lauf';
+  // Während der Einstiegs-Cutscene (CUT-2) ist kein Knopf zuständig: die Szene
+  // ist kurz und läuft durch, die Fahrt beginnt direkt danach.
+  const modus = einstieg ? 'einstieg' : grill ? 'grill' : racer ? 'racer' : 'lauf';
   const jump = modus === 'lauf' ? 'SPRUNG' : '—';
   // E ist im Laufmodus kontextsensitiv. Bei einer Figur oder einem Gegenstand
   // darf die Touch-Oberfläche nicht weiter behaupten, man würde zutreten.
@@ -456,7 +490,8 @@ function setzeKnopfBeschriftung() {
   // geführt, bis der Schrank zu ist.
   const szene = modus === 'lauf' && !!game?.szene;
   const akt = modus === 'racer' ? 'BREMSE'
-    : modus === 'grill' ? ((grill?.hud?.fokusSeite === 1) ? 'SERVIEREN' : 'WENDEN')
+    : modus === 'einstieg' ? '—'
+      : modus === 'grill' ? ((grill?.hud?.fokusSeite === 1) ? 'SERVIEREN' : 'WENDEN')
       : szene ? '—'
         : hatAktion ? 'AKTION' : 'TRITT';
   if (ui.btnJump.textContent !== jump) ui.btnJump.textContent = jump;
@@ -468,6 +503,22 @@ function refreshHud() {
   const a = aktiv();
   setzeKnopfBeschriftung();
   if (!a) return;
+  // Auftrag CUT-2: während der Einstiegs-Cutscene gibt es kein Fahr-HUD — erst
+  // einsteigen, dann fahren. Die Stationszeile bleibt, sie sagt, wohin es geht.
+  if (einstieg) {
+    ui.walkReadout.classList.add('hidden');
+    ui.racerReadout.classList.add('hidden');
+    ui.grillReadout.classList.add('hidden');
+    ui.aktsub.textContent = LEVEL.name;
+    setzeJournal(null);
+    ui.hintbar.classList.add('hidden');
+    // Ein Objektname aus dem Lauf davor gehoert zur alten Welt: die wortlose
+    // Szene setzt keinen eigenen, also darf hier auch keiner stehenbleiben.
+    labelPrev = '';
+    ui.worldlabel.classList.add('hidden');
+    hudPrev = 'einstieg';
+    return;
+  }
   const h = a.hud;
   if (h.modus === 'grill') {
     ui.walkReadout.classList.add('hidden');
@@ -698,7 +749,7 @@ function syncMusik() {
 function musikAnhalten() { try { musik.stop(); } catch { /* still weiter */ } }
 applyDifficulty();
 ui.resumeBtn.onclick = () => { const a = aktivModus(); if (a && a.resume) a.resume(); hideAll(); };
-ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); musikAnhalten(); show('title'); };
+ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; einstieg = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); musikAnhalten(); show('title'); };
 ui.collapseBtn.onclick = () => { if (game) game.respawnFromCheckpoint(); hideAll(); };
 ui.rewardBtn.onclick = () => {
   if (ui.rewardBtn.dataset.modus === 'grill') {
@@ -857,6 +908,31 @@ window.__roland = {
     get umziehPhase() { return game && game.szene ? game.szene.umziehPhase : null; },
     get bild() { return game && game.szene ? game.szene.figurBild : null; },
     get outfit() { return game ? game.outfit.id : null; },
+  },
+  // Die Einstiegs-Cutscene vor der Fahrt (Auftrag CUT-2): Zustand für die Prüfungen.
+  einstieg: {
+    get aktiv() { return !!einstieg; },
+    /** Die laufende Szene selbst (Bild- und Zustandsprüfungen im Browser). */
+    get szene() { return einstieg; },
+    get fahrzeug() { return einstieg ? einstieg.fahrzeug : null; },
+    get beat() { return einstieg ? einstieg.beat : null; },
+    get fortschritt() { return einstieg ? einstieg.fortschritt : 0; },
+    get dauer() { return einstieg ? einstieg.dauer : null; },
+    get outfit() { return einstieg ? einstieg.outfit : null; },
+    get merker() { return EINSTIEG_MERKER; },
+    get dauerJeFahrzeug() { return EINSTIEG_DAUER; },
+    get gesehen() {
+      const save = loadSave();
+      return {
+        cabrio: save[EINSTIEG_MERKER.cabrio] === true,
+        motorrad: save[EINSTIEG_MERKER.motorrad] === true,
+      };
+    },
+    /** Die Szene von Hand starten (nur wenn der Merker es zulässt). */
+    starten: (level = LEVEL) => {
+      einstieg = einstiegStarten(level, { save: loadSave(), view: VIEW, events: onGameEvent });
+      return !!einstieg;
+    },
   },
   // Einziger DOM-Textpfad: Tests duerfen denselben Vertrag mit synthetischen
   // logischen Daten vermessen, ohne einen zweiten Renderer einzufuehren.

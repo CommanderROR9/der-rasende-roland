@@ -553,6 +553,163 @@ async function pruefeFahrHudMobil({ domAus = false } = {}) {
 }
 
 /**
+ * Die Einstiegs-Cutscenes vor den Fahr-Interludien (Auftrag CUT-2) im echten
+ * Browser: der Start des Interludiums setzt die Szene, die Fahrt steht dabei
+ * still, am Ende faehrt sie unveraendert los, der Merker steht im Spielstand und
+ * der zweite Start zeigt die Szene nicht erneut. Legt je Fahrzeug zwei Bilder
+ * ab: mitten in der Szene und direkt beim Uebergang in die Fahrt.
+ * `vorbereiten` faehrt fuer den gezielten Lauf (TESTMODUS=einstieg) eine frische
+ * Seite an.
+ */
+async function pruefeEinstiegSzene(fahrzeug, { vorbereiten = false } = {}) {
+  const merker = fahrzeug === 'cabrio' ? 'cutEinstiegCabrio' : 'cutEinstiegMotorrad';
+  const zielOrdner = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(zielOrdner, { recursive: true });
+  const wurzel = fileURLToPath(new URL('..', import.meta.url));
+  const bild = async (pfad) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    writeFileSync(pfad, daten);
+    return daten;
+  };
+  /** Nahaufnahme (3x): waehrend der Szene aus ihren Massen, sonst das Fahrzeug. */
+  const nahaufnahme = async (faktor = 3) => {
+    const daten = await evaluate(`(() => { try {
+      const c = document.getElementById('game');
+      const s = window.__roland.einstieg.szene;
+      const x = s ? Math.max(0, Math.round(s.fahrzeugX) - 34) : Math.round(c.width / 2 - 95);
+      const y = s ? Math.max(0, s.boden - 60) : Math.round(c.height - 110);
+      const t = document.createElement('canvas');
+      t.width = 170 * ${faktor}; t.height = 56 * ${faktor};
+      const tg = t.getContext('2d'); tg.imageSmoothingEnabled = false;
+      tg.drawImage(c, x, y, 170, 56, 0, 0, t.width, t.height);
+      return t.toDataURL('image/png').slice(22);
+    } catch { return ''; } })()`);
+    return daten && daten.length > 100 ? Buffer.from(daten, 'base64') : null;
+  };
+  const zustand = () => evaluate(`JSON.stringify((() => {
+    const e = window.__roland.einstieg; const s = e.szene; const r = window.__roland.racer;
+    const k = 'rasender-roland/v1';
+    return {
+      aktiv: e.aktiv, fahrzeug: e.fahrzeug, beat: e.beat, fortschritt: e.fortschritt,
+      dauer: e.dauer, gesehen: e.gesehen,
+      tuerWeite: s && s.fahrzeug === 'cabrio' ? s.tuerWeite() : null,
+      helmAuf: s && s.fahrzeug === 'motorrad' ? s.helmAuf() : null,
+      sitzt: s && s.fahrzeug === 'motorrad' ? s.sitztAuf() : null,
+      figurX: s ? s.figurX() : null,
+      speed: r.hud.speed, zeit: r.hud.zeit, strecke: r.hud.strecke, position: r.position,
+      hudStill: document.getElementById('racerReadout').classList.contains('hidden'),
+      gespeichert: JSON.parse(localStorage.getItem(k) || '{}')[${JSON.stringify(merker)}] === true,
+      fehler: window.__errors.length,
+    };
+  })())`).then((t) => JSON.parse(t));
+
+  const idx = await evaluate(`window.__roland.levelIds.indexOf('${fahrzeug}')`);
+  check(`Einstieg ${fahrzeug}: das Interludium ist erreichbar`, idx >= 0, String(idx));
+
+  if (vorbereiten) {
+    await send('Emulation.clearDeviceMetricsOverride');
+    await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+    await sleep(2200);
+    await evaluate("window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));");
+  }
+
+  // Merker entfernen: sonst haengt es am Zufall des Profils, ob die Szene laeuft.
+  await evaluate(`(() => { const k = 'rasender-roland/v1';
+    const s = JSON.parse(localStorage.getItem(k) || '{}');
+    delete s.${merker};
+    localStorage.setItem(k, JSON.stringify(s)); })()`);
+  await evaluate(`window.__roland.loadAct(${idx})`);
+  await sleep(200);
+  // Ein Objektname aus dem Lauf davor (im vollen Lauf der letzte Gegenstand in
+  // Reichweite) — er gehoert zur alten Welt und darf in der wortlosen Szene
+  // nicht stehenbleiben. Hier bewusst sichtbar gemacht, damit die Pruefung
+  // etwas zu verstecken hat.
+  await evaluate("document.getElementById('worldlabel').classList.remove('hidden')");
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(260);
+
+  const start = await zustand();
+  check(`Einstieg ${fahrzeug}: der Start des Interludiums setzt die Szene`,
+    start.aktiv === true && start.fahrzeug === fahrzeug && start.beat === 'gehen',
+    JSON.stringify(start));
+  check(`Einstieg ${fahrzeug}: die Fahrt steht waehrend der Szene still`,
+    start.speed === 0 && start.zeit === 0 && start.strecke === 0 && start.position === 0,
+    JSON.stringify({ speed: start.speed, zeit: start.zeit, strecke: start.strecke }));
+  check(`Einstieg ${fahrzeug}: kein Fahr-HUD waehrend der Szene`,
+    start.hudStill === true, JSON.stringify({ hudStill: start.hudStill }));
+  check(`Einstieg ${fahrzeug}: der Merker steht schon mit dem Start der Szene im Spielstand`,
+    start.gespeichert === true, JSON.stringify({ gesehen: start.gesehen, gespeichert: start.gespeichert }));
+  check(`Einstieg ${fahrzeug}: kein Name aus dem Lauf bleibt in der Szene stehen`,
+    (await evaluate("document.getElementById('worldlabel').classList.contains('hidden')")) === true,
+    await evaluate("document.getElementById('worldlabel').textContent"));
+
+  await sleep(fahrzeug === 'cabrio' ? 2350 : 2050);
+  const mitte = await zustand();
+  check(`Einstieg ${fahrzeug}: die Szene laeuft sichtbar (Mitte erreicht)`,
+    mitte.aktiv === true && mitte.fortschritt > 0.45 && mitte.fortschritt < 0.97,
+    JSON.stringify(mitte));
+  check(`Einstieg ${fahrzeug}: die Fahrt steht auch in der Mitte der Szene still`,
+    mitte.speed === 0 && mitte.position === 0, JSON.stringify({ speed: mitte.speed, position: mitte.position }));
+  if (fahrzeug === 'cabrio') {
+    check('Einstieg cabrio: beim Einsteigen steht die Fahrertuer offen',
+      mitte.tuerWeite > 0, `tuerWeite=${mitte.tuerWeite}`);
+    check('Einstieg cabrio: die Szene steht an der Tuer oder beim Einsteigen',
+      mitte.beat === 'tuer' || mitte.beat === 'einsteigen', String(mitte.beat));
+  } else {
+    check('Einstieg motorrad: der Helm sitzt auf dem Kopf',
+      mitte.helmAuf === true, JSON.stringify({ helmAuf: mitte.helmAuf, beat: mitte.beat }));
+  }
+  const mittePfad = join(zielOrdner, `cutscene-einstieg-${fahrzeug}-mitte.png`);
+  const mitteBild = await bild(mittePfad);
+  writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-mitte.png`), mitteBild);
+  const mitteNah = await nahaufnahme(3);
+  if (mitteNah) {
+    writeFileSync(join(zielOrdner, `cutscene-einstieg-${fahrzeug}-mitte-zoom.png`), mitteNah);
+    writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-mitte-zoom.png`), mitteNah);
+  }
+  results.push(`EINSTIEG BILD MITTE ${fahrzeug} ${mittePfad} beat=${mitte.beat}`
+    + ` fortschritt=${mitte.fortschritt.toFixed(2)} zoom=${mitteNah ? 'ok' : 'fehlt'}`);
+
+  // Bis zum Ende der Szene warten — danach muss die Fahrt von allein laufen.
+  let uebergang = await zustand();
+  for (let i = 0; i < 80 && uebergang.aktiv; i++) { await sleep(120); uebergang = await zustand(); }
+  await sleep(200);
+  uebergang = await zustand();
+  check(`Einstieg ${fahrzeug}: das Ende der Szene geht in die unveraenderte Fahrt ueber`,
+    uebergang.aktiv === false && uebergang.speed > 0 && uebergang.zeit > 0 && uebergang.position > 0,
+    JSON.stringify(uebergang));
+  check(`Einstieg ${fahrzeug}: nach der Szene steht der Merker im Spielstand`,
+    uebergang.gespeichert === true, JSON.stringify({ gesehen: uebergang.gesehen }));
+  const ueberPfad = join(zielOrdner, `cutscene-einstieg-${fahrzeug}-uebergang.png`);
+  const ueberBild = await bild(ueberPfad);
+  writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-uebergang.png`), ueberBild);
+  const ueberNah = await nahaufnahme(3);
+  if (ueberNah) {
+    writeFileSync(join(zielOrdner, `cutscene-einstieg-${fahrzeug}-uebergang-zoom.png`), ueberNah);
+    writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-uebergang-zoom.png`), ueberNah);
+  }
+  results.push(`EINSTIEG BILD UEBERGANG ${fahrzeug} ${ueberPfad} speed=${uebergang.speed}`
+    + ` zeit=${uebergang.zeit.toFixed(2)} zoom=${ueberNah ? 'ok' : 'fehlt'}`);
+
+  // Zweiter Start: dieselbe Station noch einmal — die Szene darf nicht wiederkommen.
+  await evaluate(`window.__roland.loadAct(${idx})`);
+  await sleep(150);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(750);
+  const zweite = await zustand();
+  check(`Einstieg ${fahrzeug}: der zweite Start zeigt die Szene nicht erneut`,
+    zweite.aktiv === false && zweite.gespeichert === true,
+    JSON.stringify({ aktiv: zweite.aktiv, gespeichert: zweite.gespeichert }));
+  check(`Einstieg ${fahrzeug}: der zweite Start faehrt sofort los`,
+    zweite.speed > 25 && zweite.zeit > 0.5, JSON.stringify({ speed: zweite.speed, zeit: zweite.zeit }));
+  check(`Einstieg ${fahrzeug}: keine Fehler in der Szene`,
+    start.fehler === 0 && uebergang.fehler === 0 && zweite.fehler === 0,
+    JSON.stringify([start.fehler, uebergang.fehler, zweite.fehler]));
+  return zweite;
+}
+
+/**
  * Die Schlussszene im Kleingarten (Auftrag CUT-1) im echten Browser: erst die
  * Szene, danach der vorhandene Wechsel auf Zivil. Legt zwei Bilder ab — eines
  * mitten in der Szene, eines danach. `vorbereiten` faehrt fuer den gezielten
@@ -911,6 +1068,14 @@ try {
     // Gezielter Lauf fuer die Schlussszene (Auftrag CUT-1): nur dieser Block,
     // ohne den ganzen Weg durch die Akte davor.
     await pruefeKleiderschrankSzene({ vorbereiten: true });
+    throw GEZIELTER_ABSCHLUSS;
+  }
+
+  if (TESTMODUS === 'einstieg') {
+    // Gezielter Lauf fuer die Einstiegs-Cutscenes (Auftrag CUT-2): beide
+    // Fahrzeuge, ohne den ganzen Weg durch die Akte davor.
+    await pruefeEinstiegSzene('cabrio', { vorbereiten: true });
+    await pruefeEinstiegSzene('motorrad');
     throw GEZIELTER_ABSCHLUSS;
   }
 
@@ -1678,6 +1843,12 @@ try {
     a2payoff.flag === true && a2payoff.zielFrei === true, JSON.stringify(a2payoff));
 
   await evaluate("window.__roland.loadAct(0)");
+
+  // --- Einstiegs-Cutscene vor dem Cabrio-Interludium (Auftrag CUT-2) --------
+  // Die Szene laeuft hier wirklich durch (Merker vorher entfernt); danach steht
+  // der Merker im Spielstand, deshalb faehrt der Abschnitt weiter unten direkt
+  // los — genau das prueft er mit.
+  await pruefeEinstiegSzene('cabrio');
 
   // --- Cabrio-Interludium im Browser --------------------------------------
   await evaluate("window.__roland.loadAct(2)");
@@ -3067,6 +3238,11 @@ try {
     + ` (hartes Budget ${A4_BUDGET_MS / 1000}s, Auftragsgrenze 120s, Ziel 45s)`);
 
   // --- Motorrad-Interludium (Nachtfahrt) — Heimweg nach dem Finale ---------
+  // Auftrag CUT-2: erst die Einstiegs-Cutscene (Helm aufsetzen, aufsteigen).
+  // Der Spielstand wurde seit dem Cabrio-Abschnitt neu geschrieben, deshalb
+  // steht der Merker hier nicht mehr — die Szene kommt genau einmal und
+  // danach faehrt die Nachtfahrt wie geprueft direkt los.
+  await pruefeEinstiegSzene('motorrad');
   await evaluate(`window.__roland.loadAct(${idxVon('MOTORRAD')})`);
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(1500);
