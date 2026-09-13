@@ -352,7 +352,7 @@ function onGameEvent(e) {
     zeigeZeilen(e.rows || [
       ['ZEIT', fmtTime(s.time)],
       ['BESTE ZEIT', fmtTime(best)],
-      ['BIERDECKEL', `${s.deckel} / ${LEVEL.deckelTotal}`],
+      ['STIMMZIMMER KEKSE', `${s.deckel} / ${LEVEL.deckelTotal}`],
       ['IM TAKT GETROFFEN', String(s.taktHits)],
     ]);
     const icon = document.createElement('canvas');

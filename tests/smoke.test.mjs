@@ -457,13 +457,13 @@ function place(game, px, py) {
   const deck = game.entities.find((e) => e.kind === 'item' && e.item === 'bierdeckel');
   place(game, deck.x - 34, deck.y - 6);   // in Reichweite, aber ohne aufzusammeln
   game.update(1 / 60);
-  check('Fundstück wird benannt', !!game.hud.label && game.hud.label.text === 'BIERDECKEL',
+  check('Fundstück wird benannt', !!game.hud.label && game.hud.label.text === 'STIMMZIMMER KEKSE',
     JSON.stringify(game.hud.label));
   check('Schild hat Bildschirmkoordinaten',
     game.hud.label && Number.isFinite(game.hud.label.sx) && Number.isFinite(game.hud.label.sy));
   place(game, 300, 25 * TILE - PHYS.playerH);
   game.update(1 / 60);
-  check('kein Schild ohne Objekt in Reichweite', game.hud.label === null || game.hud.label.text !== 'BIERDECKEL');
+  check('kein Schild ohne Objekt in Reichweite', game.hud.label === null || game.hud.label.text !== 'STIMMZIMMER KEKSE');
 }
 
 // ---------------------------------------------------- Zusammenbruch/Respawn --

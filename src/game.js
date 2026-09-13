@@ -7,7 +7,7 @@ import { spriteCanvas, blit, hash2 } from './render.js';
 import { PROBEN_MOTIV } from './act2.js';
 
 const ITEM_DEFS = {
-  bierdeckel: { spr: 'bierdeckel', w: 8, h: 8, label: 'BIERDECKEL' },
+  bierdeckel: { spr: 'bierdeckel', w: 8, h: 8, label: 'STIMMZIMMER KEKSE' },
   ohropax: { spr: 'ohropax', w: 8, h: 6, label: 'OHROPAX' },
   wasser: { spr: 'wasser', w: 6, h: 10, label: 'WASSERFLASCHE' },
   mappe: { spr: 'mappe', w: 12, h: 12, label: 'NOTENMAPPE' },
@@ -1670,7 +1670,7 @@ export class Game {
       case 'bierdeckel':
         this.deckel += 1;
         this.audio.play('pickup');
-        this.message(`BIERDECKEL ${this.deckel}/${this.level.deckelTotal}`, 4.5, 2);
+        this.message(`STIMMZIMMER KEKSE ${this.deckel}/${this.level.deckelTotal}`, 4.5, 2);
         break;
       case 'ohropax':
         this.ohropax = TUNE.ohropaxTime;
@@ -1747,7 +1747,7 @@ export class Game {
   complete() {
     this.rows = [
       ['ZEIT', `${Math.floor(this.time / 60)}:${String(Math.floor(this.time % 60)).padStart(2, '0')}`],
-      ['BIERDECKEL', `${this.deckel} / ${this.level.deckelTotal}`],
+      ['STIMMZIMMER KEKSE', `${this.deckel} / ${this.level.deckelTotal}`],
       ['IM TAKT GETROFFEN', String(this.taktHits)],
       ['NERVEN', String(this.nerves)],
     ];
