@@ -2,10 +2,12 @@
 // vor den beiden Fahr-Interludien.
 //
 // Prueft den Ausloeser (der Start des Interludiums), den Ablauf beider Szenen
-// (Schluessel, Tuer, einsteigen / Helm, aufsteigen), das Ende, den Merker je
-// Fahrzeug (jede Szene laeuft genau einmal) und dass die Fahrt danach
-// unveraendert weitergeht. Der Bildbeweis kommt aus dem Browserlauf
-// tests/browser-smoke.mjs; eine Palette allein beweist kein Bild.
+// (Schluessel, Tuer, einsteigen / Helm, aufsteigen), das Ende und dass die Fahrt
+// danach unveraendert weitergeht. Seit Rolands Rueckmeldung vom 13.09. laeuft
+// die Szene bei JEDEM Start des jeweiligen Interludiums; der Merker je Fahrzeug
+// ist nur noch eine Aufzeichnung im Spielstand (er unterdrueckt nichts mehr).
+// Der Bildbeweis kommt aus dem Browserlauf tests/browser-smoke.mjs; eine
+// Palette allein beweist kein Bild.
 //
 // Start mit `node tests/cutscene-einstieg.test.mjs`.
 import { readFileSync } from 'node:fs';
@@ -20,7 +22,7 @@ import {
   EINSTIEG_MERKER, EINSTIEG_DAUER, EINSTIEG_BEATS, EINSTIEG_SPRITES, EINSTIEG_FIGUREN,
   CABRIO_TUER_AB, CABRIO_TUER_BIS, CABRIO_WEG_AB, CABRIO_FAHRER_AB, CABRIO_SCHLIESS_AB,
   CABRIO_ZU_BIS, MOTORRAD_GREIF_AB, MOTORRAD_HELM_AB, MOTORRAD_SITZT_AB, TUER_WEITE,
-  beatBei, einstiegMoeglich, einstiegMoeglichFuerLevel, einstiegStarten, EinstiegSzene,
+  beatBei, einstiegGelaufen, einstiegMoeglichFuerLevel, einstiegStarten, EinstiegSzene,
   zeichenInPalette, mitHelm,
 } from '../src/cutscene-einstieg.js';
 
@@ -149,7 +151,7 @@ const szeneFuer = (fahrzeug, extra = {}) => new EinstiegSzene({
       && einstiegMoeglichFuerLevel(null) === false);
 
   const ereignisse = [];
-  const neu = einstiegStarten(buildCabrio(), { save: {}, view: VIEW_DESKTOP, events: (e) => ereignisse.push(e) });
+  const neu = einstiegStarten(buildCabrio(), { view: VIEW_DESKTOP, events: (e) => ereignisse.push(e) });
   check('Ausloeser: der Start des Interludiums setzt die Szene',
     !!neu && neu.fahrzeug === 'cabrio' && neu.t === 0 && neu.fertig === false,
     JSON.stringify({ fahrzeug: neu && neu.fahrzeug, t: neu && neu.t }));
@@ -157,22 +159,64 @@ const szeneFuer = (fahrzeug, extra = {}) => new EinstiegSzene({
     ereignisse.length === 1 && ereignisse[0].type === 'einstieg'
       && ereignisse[0].fahrzeug === 'cabrio' && ereignisse[0].merker === EINSTIEG_MERKER.cabrio,
     JSON.stringify(ereignisse));
-
-  const zweite = [];
-  check('Ausloeser: mit gesetztem Merker kommt die Fahrt direkt (kein zweiter Lauf)',
-    einstiegStarten(buildCabrio(), { save: { [EINSTIEG_MERKER.cabrio]: true }, events: (e) => zweite.push(e) }) === null
-      && zweite.length === 0);
-  check('Ausloeser: der Merker des einen Fahrzeugs laesst das andere laufen',
-    einstiegStarten(buildMotorrad(), { save: { [EINSTIEG_MERKER.cabrio]: true } }) !== null
-      && einstiegStarten(buildCabrio(), { save: { [EINSTIEG_MERKER.motorrad]: true } }) !== null);
   check('Ausloeser: ein Akt ohne Fahrt bekommt keine Szene',
-    einstiegStarten(buildAkt2(), { save: {} }) === null
-      && einstiegStarten(null, { save: {} }) === null);
+    einstiegStarten(buildAkt2(), { view: VIEW_DESKTOP }) === null
+      && einstiegStarten(null, { view: VIEW_DESKTOP }) === null);
   check('Ausloeser: ein fremdes Fahrzeug bekommt keine Szene',
-    einstiegStarten({ mode: 'racer', journey: { art: 'raumschiff' } }, { save: {} }) === null);
-  check('Ausloeser: ohne Merker ist die Szene moeglich, mit Merker nicht',
-    einstiegMoeglich('cabrio', {}) === true && einstiegMoeglich('cabrio', { [EINSTIEG_MERKER.cabrio]: true }) === false
-      && einstiegMoeglich('raumschiff', {}) === false);
+    einstiegStarten({ mode: 'racer', journey: { art: 'raumschiff' } }, { view: VIEW_DESKTOP }) === null);
+  // Der Startpfad liest den Spielstand nicht mehr: der Merker kann den zweiten
+  // Lauf nicht unterdruecken. Die Aufzeichnung selbst bleibt lesbar.
+  check('Ausloeser: der Startpfad liest den Merker nicht mehr (keine Unterdrueckung)',
+    (() => {
+      const koerper = (QUELLE.match(/export function einstiegStarten\([\s\S]*?\n}/) || [''])[0];
+      return koerper.length > 0 && !/save\[|einstiegGelaufen|einstiegMoeglich/.test(koerper);
+    })(),
+    (QUELLE.match(/export function einstiegStarten\([\s\S]*?\n}/) || [''])[0].split('\n')[0]);
+  check('Ausloeser: die Aufzeichnung im Spielstand bleibt lesbar (einstiegGelaufen)',
+    einstiegGelaufen('cabrio', {}) === false
+      && einstiegGelaufen('cabrio', { [EINSTIEG_MERKER.cabrio]: true }) === true
+      && einstiegGelaufen('raumschiff', { [EINSTIEG_MERKER.cabrio]: true }) === false,
+    JSON.stringify(EINSTIEG_MERKER));
+}
+
+// --------------------------- Bei jedem Start (Roland, 13.09.) ----------------
+// Der Live-Test zeigte: die Einstiegs-Szene kam nur einmal je Fahrzeug. Rolands
+// Auflage: bei jedem Start des jeweiligen Fahr-Interludiums laeuft sie wieder.
+// Drei volle Runden je Fahrzeug — jede mit Ausloeser, Ereignis und durchgelaufener
+// Szene; der Spielstand wird dabei genau wie in main.js gefuehrt (der Merker
+// steht ab der ersten Runde drin und aendert am naechsten Lauf nichts).
+{
+  const szenen = [];
+  const ereignis = [];
+  const merkerSpur = { cabrio: [], motorrad: [] };
+  for (const fahrzeug of ['cabrio', 'motorrad']) {
+    const level = fahrzeug === 'cabrio' ? buildCabrio() : buildMotorrad();
+    const save = {};
+    for (let runde = 1; runde <= 3; runde++) {
+      const vorher = save[EINSTIEG_MERKER[fahrzeug]] === true;
+      const s = einstiegStarten(level, {
+        save,
+        view: VIEW_DESKTOP,
+        events: (e) => { ereignis.push(e); save[e.merker] = true; },
+      });
+      if (!s) { szenen.push(`${fahrzeug}:${runde}:keine`); continue; }
+      szenen.push(`${fahrzeug}:${runde}:${s.beat}`);
+      merkerSpur[fahrzeug].push(`${vorher ? 'war' : 'leer'}->${save[EINSTIEG_MERKER[fahrzeug]] === true}`);
+      lauf(s, s.dauer);
+    }
+  }
+  check('Jeder Start: die Szene laeuft in allen drei Runden je Fahrzeug wieder an',
+    szenen.join(',') === 'cabrio:1:gehen,cabrio:2:gehen,cabrio:3:gehen,'
+      + 'motorrad:1:gehen,motorrad:2:gehen,motorrad:3:gehen',
+    szenen.join(',') || 'keine Szene');
+  check('Jeder Start: jeder Lauf meldet sein Ereignis (sechs Laeufe, sechs Schreibungen)',
+    ereignis.filter((e) => e.type === 'einstieg').length === 6
+      && ereignis.every((e) => e.merker === EINSTIEG_MERKER[e.fahrzeug]),
+    `${ereignis.length} Ereignisse`);
+  check('Jeder Start: der Merker steht ab der zweiten Runde im Spielstand — die Szene laeuft trotzdem',
+    merkerSpur.cabrio.join(',') === 'leer->true,war->true,war->true'
+      && merkerSpur.motorrad.join(',') === 'leer->true,war->true,war->true',
+    JSON.stringify(merkerSpur));
 }
 
 // ------------------------------------------------------- Die Cabrio-Szene ----
@@ -352,6 +396,12 @@ const szeneFuer = (fahrzeug, extra = {}) => new EinstiegSzene({
       && /racer = new Racer\([\s\S]{0,400}?einstieg = einstiegStarten\(LEVEL, \{ save: loadSave\(\), view: VIEW, events: onGameEvent \}\)/.test(MAIN)
       && /starten: \(level = LEVEL\)/.test(MAIN),
     String((MAIN.match(/einstiegStarten\(/g) || []).length));
+  check('Verdrahtung: kein Doppelstart, waehrend die Szene laeuft (der Pruefhaken startet keine zweite)',
+    /starten: \(level = LEVEL\) => \{[\s\S]{0,300}?if \(einstieg\) return false;/.test(MAIN),
+    'starten-Haken ohne Guard');
+  check('Verdrahtung: die Aufzeichnung im Spielstand bleibt lesbar (einstieg.gesehen ueber einstiegGelaufen)',
+    /gesehen\(\) \{[\s\S]{0,240}?einstiegGelaufen\('cabrio'/.test(MAIN)
+      && /einstiegGelaufen\('motorrad'/.test(MAIN));
   check('Verdrahtung: ein Merker wird beim Start der Szene in den Spielstand geschrieben',
     /e\.type === 'einstieg'\)\s*writeSave\(\{ \[e\.merker\]: true \}\)/.test(MAIN)
       || /type === 'einstieg'[\s\S]{0,80}writeSave\(\{ \[e\.merker\]: true \}\)/.test(MAIN));

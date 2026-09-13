@@ -380,6 +380,10 @@ async function pruefeFahrHudMobil({ domAus = false } = {}) {
   check('Fahr-HUD: der mobile Bedienpfad findet das Cabrio-Interludium', cabrioIndex >= 0, String(cabrioIndex));
   await evaluate(`window.__roland.loadAct(${cabrioIndex})`);
   await echterKlick('#startBtn');
+  // Seit Roland (13.09.) laeuft die Einstiegs-Cutscene bei JEDEM Start der
+  // Fahrt: erst sie abwarten — waehrend der Szene liegt kein Fahr-HUD in der
+  // Ebene (genau die Labels, die dieser Block vermisst).
+  await warteEinstiegVorbei();
   await sleep(900);
   check('Fahr-HUD: das Interludium laeuft im mobilen Browser',
     (await evaluate("window.__roland.racer && window.__roland.racer.hud.modus")) === 'racer',
@@ -560,11 +564,13 @@ async function pruefeFahrHudMobil({ domAus = false } = {}) {
 /**
  * Die Einstiegs-Cutscenes vor den Fahr-Interludien (Auftrag CUT-2) im echten
  * Browser: der Start des Interludiums setzt die Szene, die Fahrt steht dabei
- * still, am Ende faehrt sie unveraendert los, der Merker steht im Spielstand und
- * der zweite Start zeigt die Szene nicht erneut. Legt je Fahrzeug zwei Bilder
- * ab: mitten in der Szene und direkt beim Uebergang in die Fahrt.
- * `vorbereiten` faehrt fuer den gezielten Lauf (TESTMODUS=einstieg) eine frische
- * Seite an.
+ * still, am Ende faehrt sie unveraendert los und der Merker steht im Spielstand.
+ * Seit Rolands Rueckmeldung vom 13.09. laeuft die Szene bei JEDEM Start des
+ * Interludiums: der zweite Start zeigt sie wieder (mit Bildbeleg des zweiten
+ * Laufs), ohne dass sie doppelt ausgeloest wird. Legt je Fahrzeug Bilder ab:
+ * mitten in der Szene, direkt beim Uebergang in die Fahrt und mitten im
+ * zweiten Lauf. `vorbereiten` faehrt fuer den gezielten Lauf (TESTMODUS=einstieg)
+ * eine frische Seite an.
  */
 async function pruefeEinstiegSzene(fahrzeug, { vorbereiten = false } = {}) {
   const merker = fahrzeug === 'cabrio' ? 'cutEinstiegCabrio' : 'cutEinstiegMotorrad';
@@ -619,7 +625,9 @@ async function pruefeEinstiegSzene(fahrzeug, { vorbereiten = false } = {}) {
     await evaluate("window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));");
   }
 
-  // Merker entfernen: sonst haengt es am Zufall des Profils, ob die Szene laeuft.
+  // Definierter Startzustand: den Merker aus dem Profil entfernen. Der
+  // Szenenlauf haengt seit Roland (13.09.) NICHT mehr daran — die Szene laeuft
+  // bei jedem Start; der Merker wird nur noch aufgezeichnet.
   await evaluate(`(() => { const k = 'rasender-roland/v1';
     const s = JSON.parse(localStorage.getItem(k) || '{}');
     delete s.${merker};
@@ -697,21 +705,80 @@ async function pruefeEinstiegSzene(fahrzeug, { vorbereiten = false } = {}) {
   results.push(`EINSTIEG BILD UEBERGANG ${fahrzeug} ${ueberPfad} speed=${uebergang.speed}`
     + ` zeit=${uebergang.zeit.toFixed(2)} zoom=${ueberNah ? 'ok' : 'fehlt'}`);
 
-  // Zweiter Start: dieselbe Station noch einmal — die Szene darf nicht wiederkommen.
+  // Zweiter Start: dieselbe Station noch einmal — die Szene laeuft wieder.
+  // Roland (13.09.): genau hier kam sie frueher nicht mehr; der Merker steht
+  // jetzt im Spielstand (gespeichert) und darf nichts mehr unterdruecken.
   await evaluate(`window.__roland.loadAct(${idx})`);
   await sleep(150);
   await evaluate("document.getElementById('startBtn').click()");
-  await sleep(750);
+  await sleep(420);
   const zweite = await zustand();
-  check(`Einstieg ${fahrzeug}: der zweite Start zeigt die Szene nicht erneut`,
-    zweite.aktiv === false && zweite.gespeichert === true,
-    JSON.stringify({ aktiv: zweite.aktiv, gespeichert: zweite.gespeichert }));
-  check(`Einstieg ${fahrzeug}: der zweite Start faehrt sofort los`,
-    zweite.speed > 25 && zweite.zeit > 0.5, JSON.stringify({ speed: zweite.speed, zeit: zweite.zeit }));
+  check(`Einstieg ${fahrzeug}: der zweite Start zeigt die Szene wieder (der Merker unterdrueckt nicht)`,
+    zweite.aktiv === true && zweite.fahrzeug === fahrzeug && zweite.beat === 'gehen'
+      && zweite.gespeichert === true,
+    JSON.stringify({ aktiv: zweite.aktiv, fahrzeug: zweite.fahrzeug, gespeichert: zweite.gespeichert }));
+  check(`Einstieg ${fahrzeug}: die Fahrt steht auch im zweiten Lauf still`,
+    zweite.speed === 0 && zweite.zeit === 0 && zweite.position === 0,
+    JSON.stringify({ speed: zweite.speed, zeit: zweite.zeit, position: zweite.position }));
+  check(`Einstieg ${fahrzeug}: kein Fahr-HUD im zweiten Lauf`,
+    zweite.hudStill === true, JSON.stringify({ hudStill: zweite.hudStill }));
+
+  // Keine Doppelausloesung: ein Start waehrend der laufenden Szene setzt keine
+  // zweite ein — dieselbe Szene laeuft weiter (der Pruefhaken meldet false).
+  const doppelt = JSON.parse(await evaluate(`JSON.stringify((() => {
+    const e = window.__roland.einstieg;
+    const laufend = e.szene;
+    const vorher = laufend ? laufend.fortschritt : null;
+    const gestartet = e.starten();
+    return { gestartet, vorher, dieselbe: e.szene === laufend,
+      nachher: e.szene ? e.szene.fortschritt : null };
+  })())`));
+  await sleep(420);
+  const weiter = await zustand();
+  check(`Einstieg ${fahrzeug}: waehrend der Szene setzt kein zweiter Start eine neue`,
+    doppelt.gestartet === false && doppelt.dieselbe === true
+      && doppelt.nachher >= doppelt.vorher && weiter.aktiv === true,
+    JSON.stringify({ doppelt, weiterAktiv: weiter.aktiv }));
+
+  await sleep(fahrzeug === 'cabrio' ? 1600 : 1300);
+  const zweiteMitte = await zustand();
+  check(`Einstieg ${fahrzeug}: der zweite Lauf laeuft sichtbar durch`,
+    zweiteMitte.aktiv === true && zweiteMitte.fortschritt > 0.45 && zweiteMitte.fortschritt < 0.97,
+    JSON.stringify({ fortschritt: zweiteMitte.fortschritt, beat: zweiteMitte.beat }));
+  const zweiPfad = join(zielOrdner, `cutscene-einstieg-${fahrzeug}-zweiter-lauf.png`);
+  const zweiBild = await bild(zweiPfad);
+  writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-zweiter-lauf.png`), zweiBild);
+  const zweiNah = await nahaufnahme(3);
+  if (zweiNah) {
+    writeFileSync(join(zielOrdner, `cutscene-einstieg-${fahrzeug}-zweiter-lauf-zoom.png`), zweiNah);
+    writeFileSync(join(wurzel, `screenshot-einstieg-${fahrzeug}-zweiter-lauf-zoom.png`), zweiNah);
+  }
+  results.push(`EINSTIEG BILD ZWEITER LAUF ${fahrzeug} ${zweiPfad} beat=${zweiteMitte.beat}`
+    + ` fortschritt=${zweiteMitte.fortschritt.toFixed(2)} gespeichert=${zweite.gespeichert}`
+    + ` zoom=${zweiNah ? 'ok' : 'fehlt'}`);
+
+  // ... und danach faehrt sie wieder von allein los.
+  let nachZweitem = await zustand();
+  for (let i = 0; i < 80 && nachZweitem.aktiv; i++) { await sleep(120); nachZweitem = await zustand(); }
+  await sleep(250);
+  nachZweitem = await zustand();
+  check(`Einstieg ${fahrzeug}: nach dem zweiten Lauf faehrt sie unveraendert los`,
+    nachZweitem.aktiv === false && nachZweitem.speed > 0 && nachZweitem.zeit > 0
+      && nachZweitem.position > 0,
+    JSON.stringify(nachZweitem));
   check(`Einstieg ${fahrzeug}: keine Fehler in der Szene`,
-    start.fehler === 0 && uebergang.fehler === 0 && zweite.fehler === 0,
-    JSON.stringify([start.fehler, uebergang.fehler, zweite.fehler]));
-  return zweite;
+    start.fehler === 0 && uebergang.fehler === 0 && zweite.fehler === 0 && nachZweitem.fehler === 0,
+    JSON.stringify([start.fehler, uebergang.fehler, zweite.fehler, nachZweitem.fehler]));
+  return nachZweitem;
+}
+
+/** Warten, bis die Einstiegs-Cutscene durch ist (sie laeuft bei jedem Fahrtstart). */
+async function warteEinstiegVorbei(maxS = 10) {
+  for (let i = 0; i < maxS * 10; i++) {
+    if ((await evaluate('window.__roland.einstieg.aktiv')) === false) return i / 10;
+    await sleep(100);
+  }
+  return -1;
 }
 
 /**
@@ -1930,15 +1997,27 @@ try {
   await evaluate("window.__roland.loadAct(0)");
 
   // --- Einstiegs-Cutscene vor dem Cabrio-Interludium (Auftrag CUT-2) --------
-  // Die Szene laeuft hier wirklich durch (Merker vorher entfernt); danach steht
-  // der Merker im Spielstand, deshalb faehrt der Abschnitt weiter unten direkt
-  // los — genau das prueft er mit.
+  // Die Szene laeuft hier wirklich durch — zweimal: der zweite Start zeigt sie
+  // seit Roland (13.09.) wieder. Der Abschnitt weiter unten startet die Fahrt
+  // erneut und muss deshalb erst die Szene abwarten.
   await pruefeEinstiegSzene('cabrio');
 
   // --- Cabrio-Interludium im Browser --------------------------------------
   await evaluate("window.__roland.loadAct(2)");
   await evaluate("document.getElementById('startBtn').click()");
-  await sleep(900);
+  // Seit Roland (13.09.) laeuft die Einstiegs-Cutscene bei JEDEM Start der
+  // Fahrt — auch hier mitten im Durchlauf; erst danach uebernimmt die Fahrt.
+  await sleep(400);
+  const cabSzene = JSON.parse(await evaluate(`JSON.stringify({
+    aktiv: window.__roland.einstieg.aktiv,
+    fahrzeug: window.__roland.einstieg.fahrzeug
+  })`));
+  check('Cabrio: die Einstiegs-Cutscene laeuft auch hier bei jedem Start',
+    cabSzene.aktiv === true && cabSzene.fahrzeug === 'cabrio', JSON.stringify(cabSzene));
+  const cabWarte = await warteEinstiegVorbei();
+  check('Cabrio: die Szene geht in die Fahrt ueber (Wartezeit gemessen)', cabWarte >= 0,
+    `gewartet ${cabWarte}s`);
+  await sleep(600);
   const cab = JSON.parse(await evaluate(`JSON.stringify({
     name: window.__roland.level.name,
     modus: window.__roland.aktiv.hud.modus,
@@ -3324,12 +3403,21 @@ try {
 
   // --- Motorrad-Interludium (Nachtfahrt) — Heimweg nach dem Finale ---------
   // Auftrag CUT-2: erst die Einstiegs-Cutscene (Helm aufsetzen, aufsteigen).
-  // Der Spielstand wurde seit dem Cabrio-Abschnitt neu geschrieben, deshalb
-  // steht der Merker hier nicht mehr — die Szene kommt genau einmal und
-  // danach faehrt die Nachtfahrt wie geprueft direkt los.
+  // Seit Roland (13.09.) laeuft sie bei jedem Start der Nachtfahrt — auch beim
+  // Start hier; danach faehrt die Nachtfahrt wie geprueft los.
   await pruefeEinstiegSzene('motorrad');
   await evaluate(`window.__roland.loadAct(${idxVon('MOTORRAD')})`);
   await evaluate("document.getElementById('startBtn').click()");
+  await sleep(400);
+  const motoSzene = JSON.parse(await evaluate(`JSON.stringify({
+    aktiv: window.__roland.einstieg.aktiv,
+    fahrzeug: window.__roland.einstieg.fahrzeug
+  })`));
+  check('Motorrad: die Einstiegs-Cutscene laeuft auch hier bei jedem Start',
+    motoSzene.aktiv === true && motoSzene.fahrzeug === 'motorrad', JSON.stringify(motoSzene));
+  const motoWarte = await warteEinstiegVorbei();
+  check('Motorrad: die Szene geht in die Nachtfahrt ueber (Wartezeit gemessen)', motoWarte >= 0,
+    `gewartet ${motoWarte}s`);
   await sleep(1500);
   const moto = JSON.parse(await evaluate(`JSON.stringify({
     name: window.__roland.level.name,
