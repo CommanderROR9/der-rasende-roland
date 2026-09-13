@@ -89,8 +89,9 @@ function vorDenSchrank(game) {
     JSON.stringify(SZENE_BEATS));
   check('Szene: die Abschnitte kommen in der richtigen Reihenfolge',
     beatBei(0) === 'gehen' && beatBei(2.0) === 'frack' && beatBei(3.0) === 'geige'
-      && beatBei(3.6) === 'schliessen' && beatBei(4.2) === 'zurueck' && beatBei(99) === 'zurueck',
-    [0, 2.0, 3.0, 3.6, 4.2, 99].map((t) => beatBei(t)).join(','));
+      && beatBei(3.6) === 'schliessen' && beatBei(4.2) === 'zurueck'
+      && beatBei(4.6) === 'umziehen' && beatBei(99) === 'umziehen',
+    [0, 2.0, 3.0, 3.6, 4.2, 4.6, 99].map((t) => beatBei(t)).join(','));
 
   const namen = Object.keys(CUTSCENE_SPRITES);
   check('Szene: jedes neue Bild benutzt nur Farben der Palette (nichts bleibt unsichtbar)',
@@ -206,6 +207,83 @@ function vorDenSchrank(game) {
   }
   check('Szene: die Abschnitte laufen genau einmal und in der Reihenfolge',
     folge.join(',') === SZENE_BEATS.map((b) => b.name).join(','), folge.join(','));
+}
+
+// ---------------------------------------- Der Umzieh-Teil (Auftrag CUT-1b) ----
+// Der Frack haengt, die Geige liegt im Kasten. Bis CUT-1 blieb die Figur dabei
+// durchgehend im Frack und der Wechsel auf Zivil lief still NACH der Szene.
+// Jetzt muss er in der Szene zu sehen sein: Hemd hoch, ueber den Kopf — und am
+// Ende steht die Figur in Zivil vor dem Schrank. Der Wechsel im Spiel bleibt
+// danach der Rueckfallweg (game.js), deshalb darf er nur einmal kommen.
+{
+  const namen = SZENE_BEATS.map((b) => b.name);
+  check('Umziehen: die Szene hat einen eigenen Umzieh-Abschnitt',
+    namen.includes('umziehen'), namen.join(','));
+  check('Umziehen: er steht am Ende und ist lang genug, um gesehen zu werden',
+    namen[namen.length - 1] === 'umziehen'
+      && SZENE_DAUER - SZENE_BEATS[namen.length - 2].bis >= 0.5,
+    `${namen[namen.length - 1]} mit ${(SZENE_DAUER - SZENE_BEATS[namen.length - 2].bis).toFixed(2)}s`);
+  check('Umziehen: die Szene bleibt in Rolands Rahmen (3 bis 5 Sekunden)',
+    SZENE_DAUER >= 3 && SZENE_DAUER <= 5, `${SZENE_DAUER}s`);
+
+  // Die neuen Bilder: die halb angezogene Figur und das Hawaii-Hemd auf dem Weg
+  // dorthin. Beide in Figurengroesse bzw. als kleines Requisit, nur Palettenfarben.
+  const pose = CUTSCENE_SPRITES.cut_figur_umzieh;
+  const hemd = CUTSCENE_SPRITES.cut_zivil_hemd;
+  check('Umziehen: die halb angezogene Figur ist ein eigenes Bild in Figurengroesse',
+    !!pose && pose.length === SPRITES.roland_idle.length
+      && pose.every((r) => r.length === SPRITES.roland_idle[0].length),
+    pose ? `${pose.length} Zeilen à ${Math.max(...pose.map((r) => r.length))}` : 'fehlt');
+  check('Umziehen: im halb angezogenen Bild steckt das Hemd oben und die Hose unten',
+    !!pose && /w/.test(pose.slice(0, 12).join('')) && /a/.test(pose.slice(13).join('')),
+    pose ? 'Hemd in den Zeilen 0-11, Hose ab Zeile 13' : 'fehlt');
+  check('Umziehen: das Hemd zum Wechseln ist ein eigenes Bild aus Palettenfarben',
+    !!hemd && hemd.length >= 6 && zeichenInPalette(hemd),
+    hemd ? `${hemd.length} Zeilen à ${hemd[0].length}` : 'fehlt');
+
+  // Die Szene einmal komplett durchlaufen und dabei mitschreiben, was sie zeigt.
+  const { game, input } = make(buildEpilog(), 'frack');
+  const g = vorDenSchrank(game);
+  druecke(game, input);
+  const dt = 1 / 60;
+  const griffe = [];      // die Umzieh-Griffe in der Reihenfolge ihres Auftretens
+  const bilder = [];      // welche Figurenbilder die Szene zeigt
+  const kluften = [];     // was das Spiel dabei traegt
+  let vorigeKluft = game.outfit.id;
+  let wechsel = 0;
+  let halb = null;        // der Moment „Hemd ueber dem Kopf"
+  let ende = null;        // das letzte Bild der Szene
+  for (let i = 0; i < Math.round((SZENE_DAUER + 0.5) / dt); i++) {
+    game.update(dt);
+    if (game.outfit.id !== vorigeKluft) { wechsel++; vorigeKluft = game.outfit.id; }
+    if (!game.szene) break;
+    kluften.push(game.outfit.id);
+    const griff = game.szene.umziehPhase;
+    if (griff && griffe[griffe.length - 1] !== griff) griffe.push(griff);
+    const bild = game.szene.figurBild;
+    if (bilder[bilder.length - 1] !== bild) bilder.push(bild);
+    if (griff === 'kopf') halb = { griff, bild, kluft: game.szene.kluftJetzt };
+    ende = { bild, kluft: game.szene.kluftJetzt, x: game.player.x, dir: game.player.dir };
+  }
+  check('Umziehen: die Griffe laufen in der Reihenfolge Hemd, ueber den Kopf, angezogen',
+    griffe.join(',') === 'heben,kopf,angezogen', griffe.join(',') || 'kein Umzieh-Abschnitt');
+  check('Umziehen: mitten im Umziehen ist die Figur halb angezogen (Hemd ueber dem Kopf)',
+    !!halb && halb.bild === 'cut_figur_umzieh' && halb.kluft === 'zivil',
+    JSON.stringify(halb));
+  check('Umziehen: die halb angezogene Pose ist genau ein Bild der Szene',
+    bilder.filter((b) => b === 'cut_figur_umzieh').length === 1,
+    bilder.join(','));
+  check('Umziehen: die Szene endet in Zivil — vor dem Schrank, nicht mehr im Frack',
+    !!ende && ende.kluft === 'zivil' && ende.bild === 'roland_idle' && ende.dir === 1
+      && Math.abs(ende.x - (g.x - 24)) < 1.5,
+    JSON.stringify(ende));
+  check('Umziehen: das Spiel wechselt die Kluft erst danach — und genau einmal',
+    wechsel === 1 && kluften.every((k) => k === 'frack') && game.outfit.id === 'zivil',
+    `Wechsel ${wechsel}, in der Szene ${[...new Set(kluften)].join(',') || '—'}, danach ${game.outfit.id}`);
+  check('Umziehen: kein doppelter Wechsel — die Szene endet im Bild, das weiterlaeuft',
+    game.szene === null && game.outfit.id === 'zivil' && game.storyFlags.has('zivil_an') === true
+      && !!game.hud.hint && /HAWAII/.test(game.hud.hint),
+    `${game.outfit.id} / ${String(game.hud.hint)}`);
 }
 
 // ------------------------------------------------------ Der Merker ----------
