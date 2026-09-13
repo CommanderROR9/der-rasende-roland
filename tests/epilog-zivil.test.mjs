@@ -242,6 +242,9 @@ const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
     game.update(1 / 60);
     input.setKey('action', false);
     game.update(1 / 60);
+    // Seit dem Auftrag „Epilog-Ramona" sitzt Ramona dazu; der Abschluss kommt
+    // erst nach der kurzen Sitzszene (Zielmechanik 'setzen' unveraendert).
+    step(game, 4);
     return { game, label };
   };
   check('Abschluss: das Ziel verlangt Hinsetzen, nicht eine Kluft',
@@ -318,6 +321,7 @@ const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
   gN.update(1 / 60);
   iN.setKey('action', false);
   gN.update(1 / 60);
+  step(gN, 4);        // Sitzszene mit Ramona (Auftrag „Epilog-Ramona")
   check('Abschluss: auch nach dem Aufhaengen endet der Epilog auf der Bank',
     gN.state === 'complete', gN.state);
 }

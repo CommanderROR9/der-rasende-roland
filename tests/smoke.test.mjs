@@ -1841,8 +1841,10 @@ function place(game, px, py) {
   check('Epilog: Ramona und der Grill stehen bereit',
     lv.spawns.some((s) => s.kind === 'ramona') && lv.spawns.some((s) => s.kind === 'grill'));
   check('Epilog: keine Gegner', !lv.spawns.some((s) => ['piccolo', 'sopran', 'tenor', 'dirigent', 'koffer'].includes(s.kind)));
-  check('Epilog: fuenf Bierdeckel und ein Bier',
-    lv.deckelTotal === 5 && lv.spawns.some((s) => s.item === 'bier'));
+  check('Epilog: fuenf Bierdeckel, das Bier ist bei Ramona',
+    lv.deckelTotal === 5 && !lv.spawns.some((s) => s.item === 'bier')
+      && lv.spawns.some((s) => s.kind === 'ramona' && s.bier === true),
+    `${lv.deckelTotal} Deckel, Bier auf der Bank: ${lv.spawns.filter((s) => s.item === 'bier').length}`);
 
   const iE = createInput(null);
   const gE = new Game({
@@ -1893,6 +1895,11 @@ function place(game, px, py) {
   iZ.setKey('right', false);
   iZ.setKey('action', true);
   gZ.update(1 / 60);
+  // Auftrag „Epilog-Ramona": nach dem Hinsetzen kommt Ramona dazu und sitzt
+  // neben ihm — erst danach kommt der Abschluss (kurze Sitzszene).
+  check('Epilog: Hinsetzen setzt ihn auf die Bank',
+    gZ.setzen === true && !!gZ.sitz, `${gZ.setzen}/${gZ.state}`);
+  stepAny(gZ, 4);
   check('Epilog: Hinsetzen auf der Bank beendet das Spiel', gZ.state === 'complete', String(gZ.state));
   check('Epilog: Abschluss nennt Deckel und Zeit',
     !!gZ.rows && gZ.rows.length > 0, JSON.stringify(gZ.rows));
@@ -2232,6 +2239,10 @@ function place(game, px, py) {
   place(epi, epi.level.goal.x + 8, 25 * TILE - PHYS.playerH);
   iE.setKey('action', true);
   epi.update(1 / 60);
+  // Seit dem Auftrag „Epilog-Ramona" sitzt Ramona dazu (kurze Sitzszene), erst
+  // danach kommt der Abschluss — deshalb hier bis zum Ende durchlaufen lassen.
+  iE.setKey('action', false);
+  for (let i = 0; i < 60 * 5 && epi.state !== 'complete'; i++) epi.update(1 / 60);
   check('Epilog ist zu Fuß erreichbar (Hecke springbar)',
     fehlwege.length === 0 && epi.state === 'complete',
     fehlwege.length ? fehlwege.join(' | ') : `Zustand ${epi.state}`);

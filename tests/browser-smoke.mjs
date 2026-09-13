@@ -164,7 +164,12 @@ async function pruefeGrilltexteMobil({ domAus = false } = {}) {
   await evaluate(`window.__roland.loadAct(${epilogIndex})`);
   await echterKlick('#startBtn');
   await sleep(320);
-  await echterKlick('#gardeCards button');
+  // Seit dem Auftrag „Epilog-Ramona" startet der Kleingarten im Frack, ohne
+  // Kleiderauswahl — die Garderobe bleibt zu.
+  check('Grill-DOM: der Kleingarten startet ohne Kleiderauswahl',
+    (await evaluate("document.getElementById('garde').classList.contains('hidden')")) === true
+      && (await evaluate('window.__roland.game.outfit.id')) === 'frack',
+    await evaluate("JSON.stringify({ garde: document.getElementById('garde').className, outfit: window.__roland.game.outfit.id })"));
   await sleep(700);
   await evaluate(`(() => {
     const g = window.__roland.game;
@@ -814,9 +819,9 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     await evaluate(`window.__roland.loadAct(${epiIndex})`);
     await sleep(200);
     await echterKlick('#startBtn');
-    await sleep(300);
-    await evaluate("(() => { const b = [...document.querySelectorAll('#gardeCards button')].find((x) => x.textContent.includes('FRACK')); b.click(); })()");
-    await sleep(800);
+    // Seit dem Auftrag „Epilog-Ramona" beginnt der Kleingarten direkt im Frack:
+    // es gibt keine Kleiderauswahl mehr (die Frack-Karte entfaellt).
+    await sleep(1100);
     await evaluate(`(() => { const g = window.__roland.game;
       const en = g.entities.find((e) => e.kind === 'garderobe');
       g.player.x = en.x - 18; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
@@ -3438,9 +3443,15 @@ try {
   // --- Epilog: Kleingarten mit Ramona und Grill ----------------------------
   await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
   await evaluate("document.getElementById('startBtn').click()");
-  await sleep(300);
-  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
-  await sleep(900);
+  await sleep(400);
+  // Auftrag „Epilog-Ramona": der Kleingarten startet im Frack, ohne Auswahl.
+  const epiStart = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    auswahl: !document.getElementById('garde').classList.contains('hidden'),
+  })`));
+  check('Epilog-Browser: Start im Frack ohne Kleiderauswahl',
+    epiStart.outfit === 'frack' && epiStart.auswahl === false, JSON.stringify(epiStart));
+  await sleep(700);
   const epi = JSON.parse(await evaluate(`JSON.stringify({
     name: window.__roland.level.name,
     ramona: window.__roland.game.entities.filter((e) => e.kind === 'ramona').length,
@@ -3666,10 +3677,8 @@ try {
 
   await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
   await evaluate("document.getElementById('startBtn').click()");
-  await sleep(300);
-  // Bewusst im Frack beginnen: das ist die Kluft, in der der Spieler ankommt.
-  await evaluate("(() => { const b = [...document.querySelectorAll('#gardeCards button')].find((x) => x.textContent.includes('FRACK')); b.click(); })()");
-  await sleep(900);
+  // Er kommt im Frack an — seit dem Auftrag „Epilog-Ramona" ohne Kleiderauswahl.
+  await sleep(1000);
   const gard = JSON.parse(await evaluate(hinZu('garderobe')));
   await sleep(400);
   const gardVor = JSON.parse(await evaluate(`JSON.stringify({
@@ -3751,6 +3760,140 @@ try {
   check('Epilog-Browser: das Aufhaengen laesst das schwarze Hemd zurueck',
     nachLaube.outfit === 'schwarz', JSON.stringify(nachLaube));
   check('keine Fehler im Epilog-Kleiderschrank',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
+
+  // --- Auftrag „Epilog-Ramona“: Bier bei ihr, Uebergabe, Sitzen --------------
+  // Drei Belegbilder aus einem echten Lauf: Start im Frack ohne Auswahl, der
+  // Moment der Uebergabe (Flasche bei ihr -> bei ihm) und beide auf der Bank.
+  await evaluate(`window.__roland.loadAct(${idxVon('KLEINGARTEN')})`);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(1000);
+  const romStart = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    auswahl: !document.getElementById('garde').classList.contains('hidden'),
+    staender: window.__roland.game.entities.filter((e) => e.kind === 'stand').length,
+    bierAufBank: window.__roland.game.entities.filter((e) => e.item === 'bier').length,
+    beiIhr: window.__roland.game.entities.find((e) => e.kind === 'ramona').bier,
+  })`));
+  check('Epilog-Ramona-Browser: Start im Frack, keine Kleiderauswahl, kein Bank-Bier',
+    romStart.outfit === 'frack' && romStart.auswahl === false
+      && romStart.staender === 0 && romStart.bierAufBank === 0 && romStart.beiIhr === true,
+    JSON.stringify(romStart));
+
+  const shotDirRom = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDirRom, { recursive: true });
+  const schussRom = async (name) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    writeFileSync(join(shotDirRom, name), daten);
+    writeFileSync(fileURLToPath(new URL('../' + name, import.meta.url)), daten);
+    results.push(`SCREENSHOT ${join(shotDirRom, name)}`);
+  };
+  // Die Flasche wird an ihren Etikettfarben gezaehlt (#e8c46a / #d9a83c): das ist
+  // die Datenquelle, das Bild kommt daneben.
+  const bierPunkte = (wer) => `(() => {
+    const c = document.getElementById('game'); const g = window.__roland.game;
+    const a = ${JSON.stringify(wer)} === 'ramona'
+      ? g.entities.find((e) => e.kind === 'ramona') : g.player;
+    const x0 = Math.max(0, Math.round(a.x - g.cam.x) + 1), y0 = Math.max(0, Math.round(a.y - g.cam.y) + 1);
+    const w = Math.min(c.width - x0, 26), h = Math.min(c.height - y0, 24);
+    if (w <= 0 || h <= 0) return '0';
+    const d = c.getContext('2d').getImageData(x0, y0, w, h).data;
+    let punkte = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const r = d[i], gg = d[i + 1], b = d[i + 2];
+      if ((Math.abs(r - 232) < 4 && Math.abs(gg - 196) < 4 && Math.abs(b - 106) < 4)
+        || (Math.abs(r - 217) < 4 && Math.abs(gg - 168) < 4 && Math.abs(b - 60) < 4)) punkte++;
+    }
+    return String(punkte);
+  })()`;
+
+  await evaluate(`(() => { const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'ramona');
+    g.player.x = en.x - 22; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0; })()`);
+  await sleep(700);
+  const vorUebergabe = JSON.parse(await evaluate(`JSON.stringify({
+    beiIhr: window.__roland.game.entities.find((e) => e.kind === 'ramona').bier,
+    beiIhm: window.__roland.game.bierBeiIhm,
+    label: window.__roland.aktiv.hud.label,
+    punkteBeiIhr: ${bierPunkte('ramona')},
+    punkteBeiIhm: ${bierPunkte('player')},
+  })`));
+  check('Epilog-Ramona-Browser: sie hat das Bier sichtbar in der Hand',
+    vorUebergabe.beiIhr === true && vorUebergabe.beiIhm === false
+      && Number(vorUebergabe.punkteBeiIhr) > 0,
+    JSON.stringify(vorUebergabe));
+  check('Epilog-Ramona-Browser: das Angebot ist eine AKTION mit E',
+    !!vorUebergabe.label && /RAMONA/.test(vorUebergabe.label.text) && /BIER/.test(vorUebergabe.label.text)
+      && vorUebergabe.label.action === true && vorUebergabe.label.key === 'E',
+    JSON.stringify(vorUebergabe.label));
+  await schussRom('screenshot-epilog-bier-ramona.png');
+
+  await tippe(250);
+  const uebergabeLaeuft = JSON.parse(await evaluate(`JSON.stringify({
+    laeuft: window.__roland.game.bierUebergabe > 0 || window.__roland.game.bierBeiIhm,
+  })`));
+  check('Epilog-Ramona-Browser: der Druck loest die Uebergabe aus',
+    uebergabeLaeuft.laeuft === true, JSON.stringify(uebergabeLaeuft));
+  await sleep(420);          // mitten im Moment: die Flasche ist unterwegs
+  await schussRom('screenshot-epilog-bier-unterwegs.png');
+  await sleep(1000);
+  const nachUebergabe = JSON.parse(await evaluate(`JSON.stringify({
+    beiIhr: window.__roland.game.entities.find((e) => e.kind === 'ramona').bier,
+    beiIhm: window.__roland.game.bierBeiIhm,
+    punkteBeiIhr: ${bierPunkte('ramona')},
+    punkteBeiIhm: ${bierPunkte('player')},
+    hint: window.__roland.aktiv.hud.hint,
+  })`));
+  check('Epilog-Ramona-Browser: danach hat er es (Bier bei ihm)',
+    nachUebergabe.beiIhm === true && nachUebergabe.beiIhr === false
+      && Number(nachUebergabe.punkteBeiIhm) > 0,
+    JSON.stringify(nachUebergabe));
+  check('Epilog-Ramona-Browser: bei ihr ist die Flasche weg',
+    Number(nachUebergabe.punkteBeiIhr) === 0, JSON.stringify(nachUebergabe));
+  await schussRom('screenshot-epilog-bier-ihm.png');
+
+  // Sitzen: er nimmt Platz, sie kommt dazu — der Abschluss folgt danach.
+  await evaluate(`(() => { const g = window.__roland.game; const z = g.level.goal;
+    g.player.x = z.x + 8; g.player.y = z.y + z.h - g.player.h; g.player.vx = 0; g.player.vy = 0; })()`);
+  await sleep(600);
+  await tippe(150);
+  let sitzBild = null;
+  for (let i = 0; i < 80; i++) {
+    sitzBild = JSON.parse(await evaluate(`JSON.stringify({
+      setzen: window.__roland.game.setzen,
+      sitzAktiv: window.__roland.game.sitz !== null,
+      sitzend: window.__roland.game.entities.find((e) => e.kind === 'ramona').sitzend,
+      rx: window.__roland.game.entities.find((e) => e.kind === 'ramona').x,
+      px: window.__roland.game.player.x,
+      staat: window.__roland.game.state,
+      bank: window.__roland.game.bankSitz,
+    })`));
+    if (sitzBild.sitzend === true && sitzBild.sitzAktiv === true) break;
+    await sleep(60);
+  }
+  check('Epilog-Ramona-Browser: sie sitzt neben ihm auf der Bank',
+    !!sitzBild && sitzBild.sitzend === true && sitzBild.sitzAktiv === true
+      && sitzBild.rx > sitzBild.px
+      && Math.abs(sitzBild.rx - (sitzBild.bank ? sitzBild.bank.rSeatX : -1)) <= 1,
+    JSON.stringify(sitzBild));
+  await schussRom('screenshot-epilog-sitzen.png');
+  // Danach laeuft der Abschluss wie gehabt: Ergebnis und Abspann-Knopf.
+  let ende = null;
+  for (let i = 0; i < 60; i++) {
+    ende = JSON.parse(await evaluate(`JSON.stringify({
+      staat: window.__roland.game.state,
+      setzen: window.__roland.game.setzen,
+      sitzend: window.__roland.game.entities.find((e) => e.kind === 'ramona').sitzend,
+      reward: !document.getElementById('reward').classList.contains('hidden'),
+    })`));
+    if (ende.staat === 'complete') break;
+    await sleep(120);
+  }
+  check('Epilog-Ramona-Browser: danach kommt der Abschluss wie gehabt',
+    !!ende && ende.staat === 'complete' && ende.reward === true && ende.sitzend === true,
+    JSON.stringify(ende));
+  check('keine Fehler in Bier und Sitzszene',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]', await evaluate('JSON.stringify(window.__errors)'));
 
   await evaluate("window.__roland.loadAct(0)");

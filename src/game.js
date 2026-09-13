@@ -32,6 +32,22 @@ const ENEMY_INFO = {
 // Gegnerreichweiten richten sich nach Schwierigkeit und Sichtbreite
 const SOPRAN_CONE_H = 22;
 
+// ---------------------------------------------------- Epilog: Ramona -------
+// Rolands Live-Befund vom 13.09. abends: Ramona hat das Bier in der Hand und
+// reicht es auf Knopfdruck herüber; und wenn er sich auf die Bank setzt, kommt
+// sie dazu. Beide Momente sind kurz und sichtbar — der Epilog bleibt ruhig.
+const BIER_UEBERGABE_DAUER = 0.9;    // s — so lange wandert die Flasche
+const SITZ_SETZEN = 0.45;            // s — er rutscht auf seinen Platz
+const SITZ_KOMMEN = 1.8;             // s — Ramona geht zur Bank
+const SITZ_BLEIBEN = 0.8;            // s — beide sitzen, dann kommt der Abschluss
+const SITZ_DAUER = SITZ_SETZEN + SITZ_KOMMEN + SITZ_BLEIBEN;
+// Die Bank im Kleingarten: Breite aus dem Bank-Sprite und die zwei Sitzplätze
+// darauf — er links, sie kommt rechts dazu. Beide passen auf die Bankfläche.
+const BANK_BREITE = Math.max(...SPRITES.bank.map((zeile) => zeile.length));
+const BANK_SITZ_TIEFE = 6;           // Sitzfläche über dem Boden (Bank-Sprite)
+const BANK_PLATZ_LINKS = 2;
+const BANK_PLATZ_RECHTS = 18;
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const overlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -101,6 +117,12 @@ export class Game {
     this.frieden = false;
     this.standCooldown = 0;
     this.garderobeCooldown = 0;   // Kleiderschrank im Kleingarten (Epilog)
+    // Der Abschluss im Kleingarten (Auftrag „Epilog-Ramona"): das Bier wandert
+    // von Ramonas Hand zu ihm, und wenn er sich setzt, kommt sie dazu.
+    this.bierBeiIhm = false;      // er hat das Feierabendbier
+    this.bierUebergabe = 0;       // Restzeit des sichtbaren Moments (0 = keiner)
+    this.sitz = null;             // laufende Sitzszene auf der Bank
+    this.bankSitz = null;         // seine und ihre Sitzplätze (bleibt stehen)
     // Die Schlussszene im Kleingarten (Auftrag CUT-1): läuft in der Simulation
     // als eigener Zustand, `cutsceneGesehen` kommt aus dem Spielstand (main.js).
     this.szene = null;
@@ -187,7 +209,12 @@ export class Game {
       case 'dirigent':
         return { kind: 'dirigent', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22, dir: s.dir ?? 1, alive: true, stun: 0, flash: 0, bob: 0, aim: 0 };
       case 'ramona':
-        return { kind: 'ramona', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22, alive: true, bob: 0, near: false };
+        // Sie hat das Bier in der Hand (Auftrag „Epilog-Ramona") und reicht es
+        // auf Knopfdruck herüber; `uebergabe` ist die Restzeit des Moments.
+        return {
+          kind: 'ramona', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 22, w: 14, h: 22,
+          alive: true, bob: 0, near: false, dir: 1, bier: !!s.bier, uebergabe: 0, sitzend: false,
+        };
       case 'grill':
         return { kind: 'grill', x: s.tx * TILE, y: (s.walkRow + 1) * TILE - 12, w: 20, h: 12, alive: true, near: false };
       case 'schrank':
@@ -307,6 +334,9 @@ export class Game {
   update(dt) {
     if (this.state === 'complete') {
       this.time += dt; this.updateParticles(dt); this.updateCamera(dt); this.updateTakt(dt); this.hud = this.buildHud();
+      // Auch nach dem Abschluss läuft der kurze Übergabe-Moment zu Ende, damit
+      // die Flasche nicht mitten in der Luft stehen bleibt.
+      this.updateRamona(dt);
       return;
     }
     if (this.state !== 'play') return;
@@ -345,6 +375,9 @@ export class Game {
     this.updateMorsch(dt);
     this.updateWetter(dt);
     this.updateTriggers(dt);
+    // Der kurze Abschluss im Kleingarten (Bier, Sitzszene) läuft neben den
+    // Triggern: er führt Figur und Ramona selbst.
+    this.updateRamona(dt);
     this.updateParticles(dt);
     this.updateCamera(dt);
     this.updateHints();
@@ -453,8 +486,10 @@ export class Game {
   updatePlayer(dt) {
     const p = this.player;
     const inp = this.input;
-    const frozen = this.stunTimer > 0;
-    if (frozen) { this.stunTimer -= dt; }
+    // Während der Sitzszene führt die Simulation die Figur selbst: sie sitzt
+    // schon, da läuft niemand mehr weg (Auftrag „Epilog-Ramona").
+    const frozen = this.stunTimer > 0 || !!this.sitz;
+    if (this.stunTimer > 0) { this.stunTimer -= dt; }
     const axis = frozen ? 0 : inp.axis();
     const slow = 1 - this.diff.tenorSlow * this.slowField;
     const boost = this.frackBoost > 0 ? 1.35 : 1;
@@ -516,7 +551,7 @@ export class Game {
         // Aufnehmen hat Vorrang: die Kiste steht sonst als Requisite im Weg.
         this.kisteAufnehmen(kiste);
       } else if (!this.nearStand() && !this.nearPult() && !this.nearNpc()
-                 && !this.nearZielAktion() && !this.nearGarderobe()) {
+                 && !this.nearZielAktion() && !this.nearGarderobe() && !this.nearRamona()) {
         if (this.traegt && inp.down()) this.kisteAbsetzen();
         else if (this.outfit.id === 'frack' && this.heat > TUNE.frackOffHeat && !this.frackOffUsed) this.frackOff();
         else this.tryTritt();
@@ -930,6 +965,110 @@ export class Game {
     this.message('ZIVIL: SHORTS UND HAWAII-HEMD. KEINE HITZE, KEIN GLANZ, KEIN TAKT.', 5, 2);
   }
 
+  // ------------------------------------------------------- Ramona & Bank --
+  /** Der Platz, an dem Ramona (und der Grill) angesprochen werden. */
+  ramonaSlot(en) {
+    return { x: en.x - 24, y: en.y - 20, w: en.w + 48, h: en.h + 30 };
+  }
+
+  /**
+   * Ramona in Reichweite — und sie hat das Bier noch in der Hand. Solange ist
+   * E an ihr eine Aktion (Bier annehmen) und kein Beton-Tritt.
+   */
+  nearRamona() {
+    if (this.bierBeiIhm || this.bierUebergabe > 0) return null;
+    const p = this.player;
+    for (const en of this.entities) {
+      if (en.kind !== 'ramona' || !en.bier) continue;
+      if (overlap(p, this.ramonaSlot(en))) return en;
+    }
+    return null;
+  }
+
+  /**
+   * Ramona reicht das Bier herüber: ein kurzer, sichtbarer Moment — die
+   * Flasche wandert von ihrer Hand in seine (gezeichnet in drawEntities und
+   * drawPlayer). Danach hat er es; ein zweites Mal gibt es die Übergabe nicht.
+   */
+  bierUebergeben(en) {
+    if (!en || !en.bier || this.bierBeiIhm || this.bierUebergabe > 0) return false;
+    this.bierUebergabe = BIER_UEBERGABE_DAUER;
+    this.audio.play('pickup');
+    this.message('RAMONA REICHT DAS BIER RÜBER.', 4.5, 2);
+    return true;
+  }
+
+  /** Die Bank im Kleingarten: Fläche, Sitzhöhe und die zwei Sitzplätze. */
+  bankPlatz() {
+    const g = this.level.goal || {};
+    const x = g.x || 0;
+    const boden = (g.y || 0) + (g.h || 0);
+    return {
+      x, breite: BANK_BREITE, boden, sitzY: boden - BANK_SITZ_TIEFE,
+      pSeatX: x + BANK_PLATZ_LINKS, rSeatX: x + BANK_PLATZ_RECHTS,
+    };
+  }
+
+  /**
+   * Platz genommen: er setzt sich auf die Bank, Ramona kommt dazu und sitzt
+   * neben ihm — erst danach kommt der Abschluss. Die Zielmechanik bleibt
+   * 'setzen' (E am Ziel); der Abschluss wartet nur auf diesen kurzen Moment.
+   */
+  sitzStarten() {
+    if (this.sitz) return false;
+    const platz = this.bankPlatz();
+    const rom = this.entities.find((en) => en.kind === 'ramona');
+    this.bankSitz = platz;
+    this.sitz = {
+      t: 0,
+      pVon: Math.round(this.player.x), pSeatX: platz.pSeatX,
+      rStartX: rom ? Math.round(rom.x) : platz.rSeatX, rSeatX: platz.rSeatX,
+      ramonaDa: false,
+    };
+    this.player.dir = 1;
+    return true;
+  }
+
+  /**
+   * Der kurze Abschluss im Kleingarten: erst das Bier (sie reicht, danach hat
+   * er es), dann die Sitzszene. Läuft auch ohne Ramona zu Ende — der Epilog
+   * darf an ihr nicht hängen bleiben (kein Softlock).
+   */
+  updateRamona(dt) {
+    const rom = this.entities.find((en) => en.kind === 'ramona');
+    if (this.bierUebergabe > 0) {
+      this.bierUebergabe = Math.max(0, this.bierUebergabe - dt);
+      if (this.bierUebergabe === 0) {
+        if (rom) rom.bier = false;
+        this.bierBeiIhm = true;
+        this.message('DAS BIER IST DA. JETZT ZUSAMMEN AUF DIE BANK (E).', 5.5, 2);
+      }
+    }
+    const sz = this.sitz;
+    if (!sz || this.state !== 'play') return;
+    sz.t += dt;
+    const p = this.player;
+    // Er setzt sich: ein kurzer Rutsch auf seinen Platz, danach sitzt er ruhig.
+    const kSetzen = Math.min(1, sz.t / SITZ_SETZEN);
+    p.x = Math.round(sz.pVon + (sz.pSeatX - sz.pVon) * kSetzen);
+    p.vx = 0;
+    p.dir = 1;
+    // Sie kommt dazu: von ihrem Platz zur Bank — danach sitzt sie neben ihm.
+    if (rom && !sz.ramonaDa) {
+      const k = clamp((sz.t - SITZ_SETZEN) / SITZ_KOMMEN, 0, 1);
+      rom.x = Math.round(sz.rStartX + (sz.rSeatX - sz.rStartX) * k);
+      rom.dir = 1;
+      rom.near = false;
+      if (k >= 1) { sz.ramonaDa = true; rom.sitzend = true; }
+    }
+    if (sz.t >= SITZ_DAUER) {
+      this.sitz = null;
+      if (rom) { rom.x = sz.rSeatX; rom.sitzend = true; }
+      this.hud = this.buildHud();
+      this.complete();          // der Abschluss läuft wie gehabt
+    }
+  }
+
   // -------------------------------------------------------------- Gegner --
   updateEnemies(dt) {
     // Nach der Übergabe ist der Graben kein Kampfplatz mehr (Akt 4): niemand
@@ -1184,12 +1323,16 @@ export class Game {
     // Ramona und der Grill: nichts Gefaehrliches, nur Nachbarschaft
     for (const en of this.entities) {
       if (en.kind !== 'ramona' && en.kind !== 'grill') continue;
-      const slot = { x: en.x - 24, y: en.y - 20, w: en.w + 48, h: en.h + 30 };
+      const slot = this.ramonaSlot(en);
       const nah = overlap(p, slot);
       if (nah && !en.near) {
         en.near = true;
-        if (en.kind === 'ramona') this.message('RAMONA: \u201eSETZ DICH. DAS BIER STEHT SCHON.\u201c', 6, 2);
-        else this.message('DER GRILL IST AN. BRATWUERSTE WENDEN SICH NICHT VON ALLEIN.', 6, 2);
+        if (en.kind === 'ramona') {
+          // Sie hat das Bier (Auftrag „Epilog-Ramona“) — und sagt es auch.
+          this.message(en.bier
+            ? 'RAMONA: „SETZ DICH. DAS BIER HAB ICH.“'
+            : 'RAMONA: „SETZ DICH DAZU. ICH KOMM GLEICH.“', 6, 2);
+        } else this.message('DER GRILL IST AN. BRATWUERSTE WENDEN SICH NICHT VON ALLEIN.', 6, 2);
       }
       if (!nah) en.near = false;
       if (en.kind === 'grill' && nah && this.wantInteract && this.grillFrei <= 0) {
@@ -1197,6 +1340,11 @@ export class Game {
         this.wantInteract = false;
         this.pause('grill');
         this.events({ type: 'grill' });
+      }
+      // Die Aktionstaste reicht das Bier herueber — genau einmal.
+      if (en.kind === 'ramona' && en.bier && nah && this.wantInteract) {
+        this.wantInteract = false;
+        this.bierUebergeben(en);
       }
     }
 
@@ -1302,11 +1450,18 @@ export class Game {
           if (!this.frackAblegen()) {
             this.message(goal.needLocked || 'OHNE FRACK GIBT ES NICHTS ABZULEGEN. AM KLEIDERSTÄNDER ANZIEHEN (E).', 5, 2);
           }
-        } else if (goal.need === 'setzen') this.setzen = true;
+        } else if (goal.need === 'setzen') {
+          // Platz nehmen ist die Zielmechanik (unveraendert) — im Kleingarten
+          // haengt daran die kurze Sitzszene mit Ramona (Auftrag „Epilog-Ramona").
+          this.setzen = true;
+          this.sitzStarten();
+        }
       }
       const erfuellt = this.goalErfuellt();
-      if (erfuellt) this.complete();
-      else if (this.time > (this.goalNote || 0) + 3) {
+      // Der Abschluss wartet im Kleingarten, bis die Sitzszene durch ist
+      // (Ramona kommt dazu). Die Zielmechanik selbst bleibt 'setzen'.
+      if (erfuellt && !this.sitz) this.complete();
+      else if (!erfuellt && !this.sitz && this.time > (this.goalNote || 0) + 3) {
         this.goalNote = this.time;
         this.message(goal.locked || 'HIER GEHT ES NICHT WEITER.', 4.5, 2);
       }
@@ -1635,6 +1790,15 @@ export class Game {
     }
     const griller = this.entities.find((en) => en.kind === 'grill' && en.near);
     if (griller) best = { text: 'GRILLEN', action: true, key: 'E', x: griller.x + 10, y: griller.y - 18 };
+    // Ramona (Auftrag „Epilog-Ramona"): sie hat das Bier in der Hand — E nimmt
+    // es an. Danach steht dort nur noch der Weg zur Bank.
+    const rom = this.entities.find((en) => en.kind === 'ramona' && en.near && !en.sitzend);
+    if (rom) {
+      const text = this.bierBeiIhm ? 'RAMONA: JETZT ZUSAMMEN AUF DIE BANK'
+        : this.bierUebergabe > 0 ? 'RAMONA REICHT DAS BIER RÜBER'
+          : 'RAMONA: BIER ANNEHMEN';
+      best = { text, action: !this.bierBeiIhm && this.bierUebergabe <= 0, key: 'E', x: rom.x + 7, y: rom.y - 10 };
+    }
     const schrank = this.entities.find((en) => en.kind === 'schrank' && en.near);
     if (schrank) {
       const traegtFrack = this.outfit.id === 'frack';
@@ -1863,7 +2027,13 @@ export class Game {
       }
     }
     if (this.level.ruhig) {
-      return this.setzen ? 'SITZEN UND ANKOMMEN' : 'DIE BANK UNTER DER LAUBE: HINSETZEN (E)';
+      // Der Kleingarten führt zum Schluss: erst das Bier, dann die Bank — und
+      // wenn er sitzt, kommt Ramona dazu (Auftrag „Epilog-Ramona").
+      if (this.sitz) return 'RAMONA KOMMT DAZU — SITZEN BLEIBEN';
+      if (this.setzen) return 'SITZEN UND ANKOMMEN';
+      return this.bierBeiIhm
+        ? 'DIE BANK UNTER DER LAUBE: HINSETZEN (E)'
+        : 'RAMONA BEGRÜSSEN (E) — SIE HAT DAS BIER';
     }
     if (this.stimmblaetterNoetig) {
       return `${basis} · STIMMBLÄTTER ${this.stimmblaetter}/${this.stimmblaetterNoetig}`;
@@ -1952,6 +2122,10 @@ export class Game {
     // dem, was gerade getragen wird.
     if (this.szene) this.szene.draw(ctx, this, camX, camY);
     else this.drawPlayer(ctx, camX, camY);
+    // Die Bank liegt vor den Sitzenden (Auftrag „Epilog-Ramona"): die Bank ist
+    // nur eine Kachel hoch — erst in der Vordergrund-Ebene ist das Sitzen zu
+    // sehen. Dazu das Bier, das auf der Sitzfläche steht.
+    if (this.setzen && this.bankSitz) this.drawBankVorn(ctx, camX, camY);
     this.drawParticles(ctx, camX, camY);
     this.drawWetterFx(ctx);
     this.drawScreenFx(ctx);
@@ -2247,9 +2421,12 @@ export class Game {
     const g = this.level.goal;
     const x = Math.round(g.x - camX), y = Math.round(g.y - camY);
     // Die Bank im Kleingarten ist kein Portal: sie wird als Bank gezeichnet.
+    // Sitzt jemand darauf, uebernimmt drawBankVorn die Bank in der
+    // Vordergrund-Ebene — sonst verdeckt der Sitzende sie (Auftrag
+    // „Epilog-Ramona": das Sitzen muss zu sehen sein).
     if (g.bench) {
       const spr = this.spr('bank');
-      blit(ctx, spr, x, Math.round((g.y + g.h) - camY) - spr.h);
+      if (!this.setzen) blit(ctx, spr, x, Math.round((g.y + g.h) - camY) - spr.h);
       const pulse = 0.5 + Math.sin(this.time * 1.6) * 0.5;
       ctx.fillStyle = `rgba(232,196,106,${0.25 + pulse * 0.25})`;
       ctx.fillRect(x + 14, y - 6, TILE - 8, 3);
@@ -2368,8 +2545,19 @@ export class Game {
           break;
         }
         case 'ramona': {
-          const spr = this.spr('ramona');
-          blit(ctx, spr, x - 1, y + en.h - spr.h, false, 0);
+          // Sitzend neben ihm (Auftrag „Epilog-Ramona"): dieselbe Zeichnung,
+          // nur die kürzere, angewinkelte Haltung.
+          const spr = this.spr(en.sitzend ? 'ramona_sitz' : 'ramona');
+          blit(ctx, spr, x - 1, y + en.h - spr.h, en.dir < 0, 0);
+          // Die Flasche in ihrer Hand — oder der kurze Moment, in dem sie zu
+          // ihm hinüberwandert. Danach zeichnet drawPlayer sie in seiner Hand.
+          if (en.bier) {
+            const bier = this.spr('bier');
+            const ort = this.bierUebergabe > 0
+              ? this.bierUnterwegs(en, camX, camY)
+              : { x: x + 8, y: y + 7 };
+            blit(ctx, bier, ort.x, ort.y);
+          }
           break;
         }
         case 'grill': {
@@ -2555,6 +2743,9 @@ export class Game {
 
   drawPlayer(ctx, camX, camY) {
     const p = this.player;
+    // Auf der Bank (Auftrag „Epilog-Ramona"): die sitzende Haltung — dieselben
+    // Zeichner, nur eine andere Pose (Kopf und Kleidung wie im Standbild).
+    if (this.setzen && this.bankSitz) { this.drawSitzend(ctx, camX, camY); return; }
     let frame = 'roland_idle';
     if (p.h === PHYS.duckH) frame = 'roland_duck';
     else if (!p.onGround) frame = 'roland_jump';
@@ -2573,6 +2764,12 @@ export class Game {
     if (this.traegt) {
       const kiste = this.spr('lampenkiste');
       blit(ctx, kiste, x - 2, y - 13, false, 0, hurt ? 0.6 : 1);
+    }
+    // Das Feierabendbier in der Hand (Auftrag „Epilog-Ramona"): dasselbe Sprite
+    // wie auf der Bank — nur hat er es jetzt von Ramona bekommen.
+    if (this.bierBeiIhm) {
+      const bier = this.spr('bier');
+      blit(ctx, bier, x + (p.dir < 0 ? -6 : 12), y + 9, p.dir < 0, 0, hurt ? 0.6 : 1);
     }
     if (hurt) {
       // Ruhender Schutzrahmen statt Blinken: man sieht den Schutz, ohne dass
@@ -2599,6 +2796,55 @@ export class Game {
       ctx.fillStyle = 'rgba(240,238,228,0.16)';
       ctx.fillRect(x - 3, y - 4, 18, 26);
     }
+  }
+
+  /**
+   * Die sitzende Figur auf der Bank — samt dem Bier, das Ramona ihm gereicht
+   * hat. Kopf und Kleidung sind dieselben Zeilen wie im Standbild; die Beine
+   * sind angewinkelt, deshalb sitzt er hier wirklich (Auftrag „Epilog-Ramona").
+   * Die Bank selbst zeichnet drawBankVorn danach in der Vordergrund-Ebene.
+   */
+  drawSitzend(ctx, camX, camY) {
+    const platz = this.bankSitz;
+    const spr = this.spr('roland_sitz', OUTFIT_PALETTES[this.outfit.id]);
+    const x = Math.round(platz.pSeatX - camX - 2);
+    const y = Math.round(platz.boden - camY + 2 - spr.h);   // sitzt etwas tiefer
+    blit(ctx, spr, x, y, false, 0);
+  }
+
+  /**
+   * Die Bank in der Vordergrund-Ebene: sitzt jemand darauf, liegt sie vor den
+   * Figuren (Auftrag „Epilog-Ramona"). Die Bank ist nur eine Kachel hoch — so
+   * ist trotzdem zu sehen, dass hier jemand Platz genommen hat; die Flasche
+   * steht dabei auf der Sitzfläche.
+   */
+  drawBankVorn(ctx, camX, camY) {
+    const g = this.level.goal;
+    const spr = this.spr('bank');
+    const x = Math.round(g.x - camX);
+    const boden = Math.round((g.y + g.h) - camY);
+    blit(ctx, spr, x, boden - spr.h);
+    if (this.bierBeiIhm) {
+      // Die Flasche steht auf der Sitzfläche (Unterkante Sitzplanke).
+      const bier = this.spr('bier');
+      blit(ctx, bier, x + 5, boden - 5 - bier.h);
+    }
+  }
+
+  /**
+   * Die Flasche zwischen den beiden Händen (Auftrag „Epilog-Ramona"): sie hat
+   * sie, reicht sie herüber (kurzer Bogen) — und danach zeichnet sie
+   * drawPlayer in seiner Hand. Liefert Bildschirmkoordinaten.
+   */
+  bierUnterwegs(en, camX, camY) {
+    const p = this.player;
+    const vonX = Math.round(en.x - camX) + 8, vonY = Math.round(en.y - camY) + 7;
+    const nachX = Math.round(p.x - camX) + 11, nachY = Math.round(p.y - camY) + 9;
+    const k = clamp(1 - this.bierUebergabe / BIER_UEBERGABE_DAUER, 0, 1);
+    return {
+      x: Math.round(vonX + (nachX - vonX) * k),
+      y: Math.round(vonY + (nachY - vonY) * k - Math.sin(Math.PI * k) * 6),
+    };
   }
 
   drawParticles(ctx, camX, camY) {

@@ -194,6 +194,28 @@ const RAMONA = [
   '   ddd  ddd   ',
 ];
 
+// ------------------------------------------------- Epilog: auf der Bank -----
+// Auftrag „Epilog-Ramona": die beiden sitzenden Haltungen. Kopf und Kleidung
+// sind dieselben Zeilen wie im Standbild; darunter steht nur noch ein
+// angewinkeltes Bein — Gesäß auf der Sitzfläche (sechs Pixel über dem Boden),
+// Oberschenkel nach vorn, Stiefel auf dem Boden. Die Bank ist nur eine Kachel
+// hoch: das Sitzen ist deshalb an den Beinen zu erkennen, nicht an der Höhe.
+const SITZ_ROLAND = [
+  ...ROLAND_FRAMES.idle.slice(0, 19),   // Kopf, Jacke, Hüfte wie im Standbild
+  '    aaaaaaaaaa  ',                   // Oberschenkel nach vorn
+  '        aaaa    ',                   // Knie
+  '        aaaa    ',                   // Unterschenkel
+  '       bbbbb    ',                   // Stiefel auf dem Boden
+];
+const SITZ_RAMONA = [
+  ...RAMONA.slice(0, 14),               // Kopf, Bluse bis zum Rockansatz
+  '  pppppppppp  ',                     // Rock auf der Bank
+  '    pppppppp  ',                     // Oberschenkel nach vorn
+  '        pp    ',                     // Knie
+  '        pp    ',                     // Unterschenkel
+  '       ddd    ',                     // Schuh auf dem Boden
+];
+
 // Epilog: der Grill (Glut, Wuerste)
 const GRILL = [
   '                    ',
@@ -361,6 +383,7 @@ export const GARSTUFEN_FARBE = {
 
 export const SPRITES = {
   ramona: RAMONA,
+  ramona_sitz: SITZ_RAMONA,
   grill: GRILL,
   wurst_roh: WURST_ROH,
   wurst_angebraten: WURST_ANGEBRATEN,
@@ -382,6 +405,7 @@ export const SPRITES = {
   roland_walk2: ROLAND_FRAMES.walk2,
   roland_jump: ROLAND_FRAMES.jump,
   roland_duck: ROLAND_FRAMES.duck,
+  roland_sitz: SITZ_ROLAND,
 
   // Piccolo: der erste Gegner — als Flötist mit silberner Flöte erkennbar
   piccolo: [

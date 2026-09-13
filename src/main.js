@@ -761,8 +761,9 @@ ui.rewardBtn.onclick = () => {
     return;
   }
   // Nach einem Fahr-Interludium ist `game` null — deshalb hier nicht darauf zugreifen.
-  const outfit = game ? game.outfit.id : OUTFITS.schwarz.id;
-  if (istLetzterAkt()) { newGame(outfit); return; }
+  // Letztes Level (Epilog): der Neustart beginnt wie der Start im Frack, ohne
+  // Kleiderauswahl — derselbe Weg wie jede andere Station.
+  if (istLetzterAkt()) { startLevel(); return; }
   loadAct(aktIndex + 1);
   for (const h of LEVEL.hints || []) h.shown = false;   // Fahr-Level haben keine
   startLevel();
@@ -843,12 +844,22 @@ aktualisiereAbspannZugang();   // wer den Epilog geschafft hat, sieht den Abspan
 // Kurzweg: wer Akt 1 geschafft hat, kann Akt 2 direkt anwählen (zum Ausprobieren
 // und Weitergeben, ohne jedes Mal die Katakomben zu spielen).
 // Die Stationsknöpfe tragen ihre eigene Auswahl (siehe baueStationswahl).
+/**
+ * Die Kluft, in der eine Station beginnt. Das letzte Level (Epilog) startet im
+ * FRACK und ohne Kleiderauswahl — die Heimkehr ist der Heimweg im Frack, und
+ * Zivil gibt es dort nur am Kleiderschrank (Auftrag CUT-1b). Andere Akte
+ * bleiben unveraendert bei der Garderobe.
+ */
+function startKluft() { return LEVEL.id === 'epilog' ? 'frack' : null; }
+
 /** Startet die aktuell geladene Station — Racer sofort, Seitenscroller über die Garderobe. */
 function startLevel() {
   audio.resume();
   // Erste Nutzeraktion: ab hier darf Musik entstehen (siehe musikBereit).
   starteMusik();
   if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }
+  const kluft = startKluft();
+  if (kluft) { newGame(kluft); return; }
   renderGarde('start');
 }
 

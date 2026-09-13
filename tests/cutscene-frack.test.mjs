@@ -331,6 +331,9 @@ function vorDenSchrank(game) {
   game.update(1 / 60);
   input.setKey('action', false);
   game.update(1 / 60);
+  // Seit dem Auftrag „Epilog-Ramona" sitzt Ramona dazu; der Abschluss kommt
+  // erst nach der kurzen Sitzszene (Zielmechanik 'setzen' unveraendert).
+  step(game, 4);
   check('Abschluss: nach der Szene endet der Epilog auf der Bank',
     game.state === 'complete' && !!game.rows, `${game.state} / ${JSON.stringify(game.rows)}`);
 }
