@@ -387,6 +387,13 @@ function fmtTime(t) {
 
 // -------------------------------------------------------------------- Loop --
 let last = 0, hudAcc = 0, hudPrev = '';
+function synchronisiereSpieltexte() {
+  if (grill) {
+    renderSpieltexte(grill.beschriftungen(), { w: grill.vw, h: grill.vh });
+    return;
+  }
+  if (spieltextDaten.length) leereSpieltexte();
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));
@@ -397,7 +404,11 @@ function frame(now) {
     a.draw(ctx);
     updateWorldLabel();
     hudAcc += dt;
-    if (hudAcc > 0.08) { hudAcc = 0; refreshHud(); }
+    if (hudAcc > 0.08) {
+      hudAcc = 0;
+      refreshHud();
+      synchronisiereSpieltexte();
+    }
   }
   syncMusik();
 }

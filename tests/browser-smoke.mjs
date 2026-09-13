@@ -145,6 +145,164 @@ async function evaluateMitGeste(expr) {
   return r.result.value;
 }
 
+/**
+ * Startet den Grill ueber den echten Spielpfad und vermisst dieselbe DOM-
+ * Beschriftung im mobilen Hoch- und Querformat.
+ */
+async function pruefeGrilltexteMobil({ domAus = false } = {}) {
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
+    screenOrientation: { type: 'portraitPrimary', angle: 0 },
+  });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(2200);
+
+  const epilogIndex = await evaluate("window.__roland.levelIds.indexOf('epilog')");
+  check('Grill-DOM: der mobile Bedienpfad findet den Epilog', epilogIndex >= 0, String(epilogIndex));
+  await evaluate(`window.__roland.loadAct(${epilogIndex})`);
+  await echterKlick('#startBtn');
+  await sleep(320);
+  await echterKlick('#gardeCards button');
+  await sleep(700);
+  await evaluate(`(() => {
+    const g = window.__roland.game;
+    const grill = g.entities.find((e) => e.kind === 'grill');
+    g.player.x = grill.x - 16;
+    g.player.y = grill.y + grill.h - g.player.h;
+    g.player.vx = 0;
+    g.player.vy = 0;
+  })()`);
+  await sleep(350);
+  await key('KeyE', 'keyDown');
+  await sleep(180);
+  await key('KeyE', 'keyUp');
+  await sleep(650);
+  check('Grill-DOM: echter Tastendruck startet den Grill im mobilen Browser',
+    (await evaluate("window.__roland.grill?.hud?.modus || ''")) === 'grill');
+
+  // Dynamische Werte muessen ohne zweiten Renderer bis ins DOM gelangen.
+  await evaluate(`(() => {
+    const g = window.__roland.grill;
+    g.wuerserste[0].gar = 70;
+    g.wuerserste[3].zustand = 'fertig';
+    g.punktestand = 340;
+    g.sauber = 3;
+    g.verbrannt = 1;
+    g.fertig = 2;
+  })()`);
+  await sleep(260);
+
+  // Negative Kontrolle: Derselbe Test muss rot werden, wenn die einzige Ebene
+  // testweise aus dem Dokument entfernt wird.
+  if (domAus) await evaluate("document.getElementById('gameTextLayer')?.remove()");
+
+  const messe = async (ausrichtung) => JSON.parse(await evaluate(`(() => {
+    const rechteck = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+      width: r.width, height: r.height });
+    const g = window.__roland.grill;
+    const c = document.getElementById('game');
+    const layer = document.getElementById('gameTextLayer');
+    const cr = c.getBoundingClientRect();
+    const canvas = rechteck(cr);
+    if (!g || !layer) return JSON.stringify({ ausrichtung: ${JSON.stringify(ausrichtung)},
+      fehlt: !g ? 'grill' : 'gameTextLayer', canvas });
+    const lr = layer.getBoundingClientRect();
+    const daten = g.beschriftungen();
+    const rep = daten.find((d) => d.id === 'grill-garstufe-0');
+    const el = layer.querySelector('[data-text-id="grill-garstufe-0"]');
+    const elemente = [...layer.querySelectorAll('[data-text-id]')];
+    if (!rep || !el) return JSON.stringify({ ausrichtung: ${JSON.stringify(ausrichtung)},
+      fehlt: !rep ? 'beschriftungsdaten' : 'grill-garstufe-0', canvas, overlay: rechteck(lr),
+      anzahl: elemente.length });
+    const er = el.getBoundingClientRect();
+    const sx = cr.width / g.vw, sy = cr.height / g.vh;
+    const erwartet = {
+      left: cr.left + rep.x * sx, top: cr.top + rep.y * sy,
+      width: rep.w * sx, height: rep.h * sy,
+    };
+    const ids = ['grill-garstufe-0', 'grill-garstufe-1', 'grill-garstufe-2',
+      'grill-teller', 'grill-vorrat', 'grill-status-offen', 'grill-status-punkte',
+      'grill-status-takt', 'grill-status-rost-titel', 'grill-status-stufen',
+      'grill-status-fokus', 'grill-status-verbrannt'];
+    const texte = Object.fromEntries(elemente.map((e) => [e.dataset.textId, e.textContent]));
+    const alleInnen = elemente.every((e) => {
+      const r = e.getBoundingClientRect();
+      return r.left >= cr.left - 0.5 && r.top >= cr.top - 0.5
+        && r.right <= cr.right + 0.5 && r.bottom <= cr.bottom + 0.5;
+    });
+    return JSON.stringify({
+      ausrichtung: ${JSON.stringify(ausrichtung)}, state: g.state,
+      view: { w: g.vw, h: g.vh }, canvas, overlay: rechteck(lr), label: rechteck(er),
+      scaleX: sx, scaleY: sy, erwartet,
+      abweichung: Math.max(Math.abs(er.left - erwartet.left), Math.abs(er.top - erwartet.top),
+        Math.abs(er.width - erwartet.width), Math.abs(er.height - erwartet.height)),
+      overlayAbweichung: Math.max(Math.abs(lr.left - cr.left), Math.abs(lr.top - cr.top),
+        Math.abs(lr.width - cr.width), Math.abs(lr.height - cr.height)),
+      alleInnen, vollstaendig: ids.every((id) => Object.hasOwn(texte, id)),
+      semantik: el.id === 'spieltext-grill-garstufe-0'
+        && Number(el.dataset.x) === rep.x && Number(el.dataset.y) === rep.y,
+      versalien: Object.values(texte).every((text) => text === text.toUpperCase()),
+      texte,
+    });
+  })()`));
+
+  const hoch = await messe('hoch');
+  check('Grill-DOM: Hochformat bildet ein echtes Label mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !hoch.fehlt && hoch.abweichung <= 1 && hoch.overlayAbweichung <= 1,
+    JSON.stringify(hoch));
+  check('Grill-DOM: Hochformat behaelt alle Texte und Boxen im sichtbaren Canvas',
+    !hoch.fehlt && hoch.vollstaendig && hoch.alleInnen && hoch.semantik && hoch.versalien,
+    JSON.stringify(hoch));
+  check('Grill-DOM: dynamische Grillwerte stehen in der DOM-Textebene',
+    !hoch.fehlt && hoch.texte['grill-garstufe-0'] === 'GOLDBRAUN'
+      && hoch.texte['grill-teller'] === 'TELLER 1'
+      && hoch.texte['grill-vorrat'] === 'VORRAT 4'
+      && hoch.texte['grill-status-punkte'] === '340 PUNKTE'
+      && hoch.texte['grill-status-takt'] === 'IM TAKT 3',
+    JSON.stringify(hoch.texte || hoch));
+
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 892, height: 412, deviceScaleFactor: 2.6, mobile: true,
+    screenOrientation: { type: 'landscapePrimary', angle: 90 },
+  });
+  await evaluate("window.dispatchEvent(new Event('orientationchange'))");
+  await sleep(750);
+  const quer = await messe('quer');
+  check('Grill-DOM: Querformat bildet dasselbe Label mit hoechstens 1 CSS-Pixel Abweichung ab',
+    !quer.fehlt && quer.abweichung <= 1 && quer.overlayAbweichung <= 1,
+    JSON.stringify(quer));
+  check('Grill-DOM: Querformat behaelt alle Textboxen im sichtbaren Canvas',
+    !quer.fehlt && quer.vollstaendig && quer.alleInnen && quer.semantik && quer.versalien,
+    JSON.stringify(quer));
+
+  const artefaktDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(artefaktDir, { recursive: true });
+  const bildPfad = join(artefaktDir, 'grill-dom-texte.png');
+  const logPfad = join(artefaktDir, 'grill-dom-messung.json');
+  writeFileSync(logPfad, JSON.stringify({ hoch, quer }, null, 2) + '\n');
+  if (quer.canvas?.width > 0 && quer.canvas?.height > 0) {
+    const bild = await send('Page.captureScreenshot', {
+      format: 'png', fromSurface: true,
+      clip: { x: quer.canvas.left, y: quer.canvas.top,
+        width: quer.canvas.width, height: quer.canvas.height, scale: 1 },
+    });
+    writeFileSync(bildPfad, Buffer.from(bild.data, 'base64'));
+  }
+  check('Grill-DOM: Chromium-Bild und numerisches Messprotokoll sind geschrieben',
+    existsSync(bildPfad) && existsSync(logPfad));
+  check('Grill-DOM: keine Browserfehler im mobilen Grillpfad',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+    await evaluate('JSON.stringify(window.__errors)'));
+  results.push(`GRILL-DOM HOCH ${hoch.canvas?.width || 0}x${hoch.canvas?.height || 0}`
+    + ` sx=${hoch.scaleX ?? '-'} sy=${hoch.scaleY ?? '-'} Fehler=${hoch.abweichung ?? '-'}`);
+  results.push(`GRILL-DOM QUER ${quer.canvas?.width || 0}x${quer.canvas?.height || 0}`
+    + ` sx=${quer.scaleX ?? '-'} sy=${quer.scaleY ?? '-'} Fehler=${quer.abweichung ?? '-'}`);
+  results.push(`GRILL-DOM SCREENSHOT ${bildPfad}`);
+  results.push(`GRILL-DOM MESSUNG ${logPfad}`);
+  return { hoch, quer };
+}
+
 try {
   await send('Runtime.enable');
   await send('Log.enable');
@@ -251,6 +409,10 @@ try {
       && textSkalierung.orientation.lageFehler <= 1 && textSkalierung.orientation.layerFehler <= 1,
     JSON.stringify(textSkalierung));
   if (TESTMODUS === 'textvertrag') throw GEZIELTER_ABSCHLUSS;
+  if (TESTMODUS === 'grilltexte' || TESTMODUS === 'grilltexte-ohne-dom') {
+    await pruefeGrilltexteMobil({ domAus: TESTMODUS === 'grilltexte-ohne-dom' });
+    throw GEZIELTER_ABSCHLUSS;
+  }
 
   check('Stationswahl ist zu Beginn verborgen',
     (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === true);
@@ -2994,6 +3156,9 @@ try {
   check('keine Fehler in der Musikprüfung',
     (await evaluate('JSON.stringify(window.__errors)')) === '[]',
     await evaluate('JSON.stringify(window.__errors)'));
+
+  // --- Smartphone: Grilltexte im echten Hoch-/Querformat --------------------
+  await pruefeGrilltexteMobil();
 
   // --- Smartphone: Geräteemulation, Layout und Touch-Steuerung ---------------
   // Ausdrücklich auf Akt 1 setzen: der Abschnitt prüft die Lauf-Steuerung und
