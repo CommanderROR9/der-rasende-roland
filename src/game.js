@@ -5,6 +5,8 @@ import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
 import { spriteCanvas, blit, hash2 } from './render.js';
 // Das Probenmotiv aus Akt 2 wird im Finale gespielt (Zugabe, Auftrag A5).
 import { PROBEN_MOTIV } from './act2.js';
+// Die Schlussszene im Kleingarten (Auftrag CUT-1): Frack und Geige in den Schrank.
+import { FrackGeigeSzene } from './cutscene-frack.js';
 
 const ITEM_DEFS = {
   bierdeckel: { spr: 'bierdeckel', w: 8, h: 8, label: 'STIMMZIMMER KEKSE' },
@@ -99,6 +101,10 @@ export class Game {
     this.frieden = false;
     this.standCooldown = 0;
     this.garderobeCooldown = 0;   // Kleiderschrank im Kleingarten (Epilog)
+    // Die Schlussszene im Kleingarten (Auftrag CUT-1): läuft in der Simulation
+    // als eigener Zustand, `cutsceneGesehen` kommt aus dem Spielstand (main.js).
+    this.szene = null;
+    this.cutsceneGesehen = false;
     this.hint = null;
     this.pauseReason = null;
     this.goalNote = -99;
@@ -304,6 +310,20 @@ export class Game {
       return;
     }
     if (this.state !== 'play') return;
+    // Die Schlussszene (Auftrag CUT-1) führt die Figur selbst: die Welt steht
+    // für ihre Dauer still, die Spielzeit zählt erst nach der Szene weiter.
+    if (this.szene) {
+      const fertig = this.szene.update(dt, this);
+      this.updateParticles(dt);
+      this.updateCamera(dt);
+      if (fertig) {
+        this.szene = null;
+        this.garderobeCooldown = 0.5;
+        this.zivilAnziehen();     // der vorhandene Wechsel, jetzt wirklich
+      }
+      this.hud = this.buildHud();
+      return;
+    }
     this.time += dt;
     // Verfolgerscheinwerfer wandern ueber die Buehne
     for (const l of this.movingLights) {
@@ -876,10 +896,38 @@ export class Game {
       this.message('FRACK AN. DAS HAWAII-HEMD BLEIBT IM SCHRANK.', 4.5, 2);
       return this.outfit.id;
     }
+    // Auftrag CUT-1: beim ersten Umziehen auf Zivil läuft die Schlussszene.
+    // Reihenfolge: erst die Szene, dann der vorhandene Wechsel (unten).
+    if (this.cutsceneStarten()) return this.outfit.id;
+    this.zivilAnziehen();
+    return this.outfit.id;
+  }
+
+  /**
+   * Die Schlussszene „Frack und Geige in den Schrank" (Auftrag CUT-1) starten.
+   * Läuft genau einmal: der Merker steht im Spielstand, main.js schreibt ihn
+   * beim Ereignis `cutscene`. Ohne Schrank in der Welt passiert nichts.
+   * @returns true, wenn die Szene jetzt läuft (der Wechsel kommt danach)
+   */
+  cutsceneStarten() {
+    if (this.cutsceneGesehen || this.szene) return false;
+    const schrank = this.entities.find((en) => en.kind === 'garderobe');
+    if (!schrank) return false;
+    this.cutsceneGesehen = true;
+    this.hint = null;                 // die Szene ist wortlos
+    this.wantInteract = false;
+    this.szene = new FrackGeigeSzene({
+      schrank, kluft: this.outfit.id, startX: this.player.x, dir: this.player.dir,
+    });
+    this.events({ type: 'cutscene', dauer: this.szene.dauer });
+    return true;
+  }
+
+  /** Der eigentliche Wechsel auf Zivil — von der Szene und vom Schrank genutzt. */
+  zivilAnziehen() {
     this.setOutfit('zivil');
     this.storyFlags.add('zivil_an');
     this.message('ZIVIL: SHORTS UND HAWAII-HEMD. KEINE HITZE, KEIN GLANZ, KEIN TAKT.', 5, 2);
-    return this.outfit.id;
   }
 
   // -------------------------------------------------------------- Gegner --
@@ -1869,7 +1917,7 @@ export class Game {
       zugabeSchritt: this.level.zugabe ? this.zugabeSchritt : null,
       zugabeNoetig: this.level.zugabe ? this.level.zugabe.noetig : null,
       zugabeFertig: !!this.zugabeFertig,
-      label: this.nearestLabel(),
+      label: this.szene ? null : this.nearestLabel(),
       standNear: !!this.nearStand(),
       wetter: this.wetterKind,
       nass: Math.round(this.nass),
@@ -1900,7 +1948,10 @@ export class Game {
     this.drawProjectiles(ctx, camX, camY);
     this.drawDarkness(ctx, camX, camY);
     this.drawWetter(ctx, camX, camY);
-    this.drawPlayer(ctx, camX, camY);
+    // Während der Schlussszene (CUT-1) zeichnet sie die Figur selbst — mitsamt
+    // dem, was gerade getragen wird.
+    if (this.szene) this.szene.draw(ctx, this, camX, camY);
+    else this.drawPlayer(ctx, camX, camY);
     this.drawParticles(ctx, camX, camY);
     this.drawWetterFx(ctx);
     this.drawScreenFx(ctx);
@@ -2346,6 +2397,9 @@ export class Game {
           break;
         }
         case 'garderobe': {
+          // Während der Schlussszene (CUT-1) zeichnet sie den Schrank selbst —
+          // offen, mit Bügel und Kasten.
+          if (this.szene) break;
           const spr = this.spr('kleiderschrank');
           blit(ctx, spr, x, y, false, 0);
           if (en.near) {
