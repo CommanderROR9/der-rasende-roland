@@ -349,8 +349,10 @@ function newGame(outfitId) {
     einstieg = null;
     game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game.reset(outfitId);
-    // Die Schlussszene (CUT-1) ist gelaufen? Der Spielstand weiß es: der
-    // Merker verhindert den zweiten Lauf, egal wie oft umgezogen wird.
+    // Die Schlussszene (CUT-1) ist gelaufen? Der Spielstand weiß es. Seit
+    // Rolands Rückmeldung vom 13.09. ist der Merker nur noch eine Aufzeichnung:
+    // er wird weiter gelesen und geschrieben (Spielstand-Kompatibilität), die
+    // Szene läuft aber bei jedem Wechsel Frack -> Zivil am Kleiderschrank.
     if (loadSave()[CUT_MERKER] === true) game.cutsceneGesehen = true;
     // Die Notenmappe reist mit: in Akt 1 zusammengesetzt, in Akt 2 aufs Pult
     // gelegt (DRR-04). Ohne diesen Griff in den Spielstand wäre der Schritt

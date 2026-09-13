@@ -3,8 +3,9 @@
 //
 // Die Hauptfigur hängt Frack und Geige in den Kleiderschrank des Kleingartens
 // und zieht danach Zivil an. Die Szene ist ein eigenes Modul und hängt an genau
-// einem Auslöser (der Aktion „ZIVIL ANZIEHEN" am Kleiderschrank) und einem
-// Merker im Spielstand: spielbar genau einmal, kein zweiter Lauf.
+// einem Auslöser (der Aktion „ZIVIL ANZIEHEN" am Kleiderschrank). Seit Rolands
+// Rückmeldung vom 13.09. läuft sie bei JEDEM Wechsel Frack -> Zivil; der Merker
+// im Spielstand hält nur noch fest, dass sie gelaufen ist.
 //
 // CUT-1b (Rolands Abnahme-Notiz): Der Wechsel Frack -> Zivil ist Teil der Szene
 // geworden. Am Ende steht die Figur in Zivil vor dem Schrank; der Wechsel im
@@ -25,7 +26,8 @@ import { PAL, TILE } from './config.js';
 import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
 import { spriteCanvas, blit } from './render.js';
 
-/** Merker im Spielstand: die Szene läuft genau einmal (main.js schreibt ihn). */
+/** Merker im Spielstand: hält fest, dass die Szene lief (main.js schreibt ihn).
+ *  Er unterdrückt keinen zweiten Lauf mehr (Roland, 13.09.). */
 export const CUT_MERKER = 'cutFrackGeige';
 
 /** Dauer der Szene in Sekunden (Rolands Rahmen: 3–5 s). */
