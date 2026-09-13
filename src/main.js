@@ -13,7 +13,7 @@ import { Racer } from './racer.js';
 import { CUT_MERKER, SZENE_DAUER } from './cutscene-frack.js';
 // Die Einstiegs-Cutscenes vor den Fahr-Interludien (Auftrag CUT-2): ein Aufruf
 // am Start der Fahrt, je ein Merker im Spielstand.
-import { EINSTIEG_MERKER, EINSTIEG_DAUER, einstiegStarten } from './cutscene-einstieg.js';
+import { EINSTIEG_MERKER, EINSTIEG_DAUER, einstiegGelaufen, einstiegStarten } from './cutscene-einstieg.js';
 import {
   ABSPANN_SEITEN, ABSPANN_WEITER, ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL,
   abspannLayout, zeichneAbspann,
@@ -340,9 +340,10 @@ function newGame(outfitId) {
     // Fahr-Interludium: gleiche Steuerung, andere Simulation
     racer = new Racer({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game = null;
-    // Auftrag CUT-2: der eine Aufruf am Start der Fahrt. Ist der Merker im
-    // Spielstand noch nicht gesetzt, läuft erst die Einstiegs-Cutscene und
-    // danach unverändert die Fahrt; sonst fährt sie sofort los.
+    // Auftrag CUT-2: der eine Aufruf am Start der Fahrt. Seit Rolands
+    // Rückmeldung vom 13.09. läuft die Einstiegs-Cutscene bei JEDEM Start des
+    // Fahr-Interludiums (der Merker im Spielstand unterdrückt sie nicht mehr);
+    // danach fährt sie unverändert los.
     einstieg = einstiegStarten(LEVEL, { save: loadSave(), view: VIEW, events: onGameEvent });
   } else {
     racer = null;
@@ -373,8 +374,8 @@ function onGameEvent(e) {
   // Die Schlussszene im Kleingarten (CUT-1) läuft genau einmal: der Merker
   // steht im Spielstand, sobald sie begonnen hat.
   else if (e.type === 'cutscene') writeSave({ [CUT_MERKER]: true });
-  // Die Einstiegs-Cutscene (CUT-2) läuft genau einmal je Fahrzeug: der Merker
-  // steht im Spielstand, sobald sie begonnen hat.
+  // Die Einstiegs-Cutscene (CUT-2) schreibt ihren Merker bei jedem Lauf in den
+  // Spielstand (Aufzeichnung; er unterdrückt seit dem 13.09. keinen Lauf mehr).
   else if (e.type === 'einstieg') writeSave({ [e.merker]: true });
   else if (e.type === 'collapse') show('collapse');
   else if (e.type === 'complete') {
@@ -936,13 +937,19 @@ window.__roland = {
     get dauerJeFahrzeug() { return EINSTIEG_DAUER; },
     get gesehen() {
       const save = loadSave();
+      // Die Aufzeichnung im Spielstand — seit Roland (13.09.) nicht mehr die
+      // Bedingung fuer einen Lauf, nur noch eine Auskunft.
       return {
-        cabrio: save[EINSTIEG_MERKER.cabrio] === true,
-        motorrad: save[EINSTIEG_MERKER.motorrad] === true,
+        cabrio: einstiegGelaufen('cabrio', save),
+        motorrad: einstiegGelaufen('motorrad', save),
       };
     },
-    /** Die Szene von Hand starten (nur wenn der Merker es zulässt). */
+    /**
+     * Die Szene von Hand starten (Pruefhaken): sie laeuft bei jedem Start des
+     * Interludiums — aber nie doppelt, solange eine laeuft.
+     */
     starten: (level = LEVEL) => {
+      if (einstieg) return false;
       einstieg = einstiegStarten(level, { save: loadSave(), view: VIEW, events: onGameEvent });
       return !!einstieg;
     },

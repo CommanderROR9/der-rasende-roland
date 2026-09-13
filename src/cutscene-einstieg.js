@@ -2,9 +2,11 @@
 //
 // Zwei kurze, wortlose Szenen: vor dem Cabrio-Interludium nimmt die Figur den
 // Autoschlüssel, öffnet die Tür und steigt ein; vor der Motorrad-Nachtfahrt
-// setzt sie den Helm auf und steigt auf. Beide Szenen hängen an genau einem
-// Auslöser (dem Start des Interludiums, siehe `einstiegStarten`) und je einem
-// Merker im Spielstand: spielbar genau einmal je Fahrzeug, kein zweiter Lauf.
+// setzt sie den Helm auf und steigt auf. Beide Szenen hängen an dem einen
+// Auslöser Start des Interludiums (siehe `einstiegStarten`): seit Rolands
+// Rückmeldung vom 13.09. läuft die Szene bei JEDEM Start des jeweiligen
+// Interludiums. Der Merker je Fahrzeug im Spielstand wird weiter geschrieben
+// (und bleibt lesbar) — er unterdrückt aber keinen zweiten Lauf mehr.
 //
 // Sie bauen die Interludien nicht um: die Fahrt bleibt unverändert (der Racer
 // wird während der Szene nur nicht aktualisiert und läuft danach weiter), die
@@ -23,7 +25,12 @@ import { spriteCanvas, blit } from './render.js';
 import { drawJourneySky } from './cabrio-art.js';
 import { drawNightSky } from './motorrad-art.js';
 
-/** Merker im Spielstand: jede Szene läuft genau einmal (main.js schreibt sie). */
+/**
+ * Merker im Spielstand (main.js schreibt sie beim Ereignis `einstieg`): sie
+ * halten fest, dass die Szene gelaufen ist. Seit Rolands Rückmeldung vom 13.09.
+ * unterdrücken sie keinen zweiten Lauf mehr — die Szene kommt bei jedem Start
+ * des Interludiums.
+ */
 export const EINSTIEG_MERKER = {
   cabrio: 'cutEinstiegCabrio',
   motorrad: 'cutEinstiegMotorrad',
@@ -261,11 +268,16 @@ export function beatBei(fahrzeug, t) {
   return beats.length ? beats[beats.length - 1].name : null;
 }
 
-/** Läuft die Szene für dieses Fahrzeug noch nicht gelaufen? (Merker im Spielstand) */
-export function einstiegMoeglich(fahrzeug, save = {}) {
+/**
+ * Ist die Szene dieses Fahrzeugs schon einmal gelaufen? (Aufzeichnung im
+ * Spielstand; main.js schreibt sie, wenn die Szene startet.) Seit Rolands
+ * Rueckmeldung vom 13.09. ist das nur noch eine Auskunft ueber die
+ * Vergangenheit: die Szene laeuft bei jedem Start des Interludiums, unabhaengig
+ * davon.
+ */
+export function einstiegGelaufen(fahrzeug, save = {}) {
   const merker = EINSTIEG_MERKER[fahrzeug];
-  if (!merker) return false;
-  return save[merker] !== true;
+  return !!merker && save[merker] === true;
 }
 
 /** Passt die Szene zu diesem Level? (nur die beiden Fahr-Interludien) */
@@ -276,15 +288,22 @@ export function einstiegMoeglichFuerLevel(level) {
 
 /**
  * Startet die Einstiegs-Cutscene eines Interludiums — der eine Aufruf am Start
- * der Fahrt. Ohne Interludium (oder mit gesetztem Merker) passiert nichts.
+ * der Fahrt. Sie läuft bei JEDEM Start des Interludiums (Roland, 13.09.): der
+ * Spielstand wird nicht mehr befragt, ein Merker unterdrückt keinen Lauf. Der
+ * Merker wird weiter geschrieben und bleibt lesbar (`einstiegGelaufen`), er ist
+ * nur noch eine Aufzeichnung. Ohne Interludium passiert nichts; dass während
+ * einer laufenden Szene keine zweite entsteht, sichert der Aufrufer (main.js:
+ * die Schleife führt nur diese eine Szene, der Prüfhaken startet keine neue).
+ * @param save Spielstand — wird nicht mehr gelesen (Kompatibilität: main.js
+ *   übergibt ihn weiterhin), der Merker darin unterdrückt nichts
  * @returns die Szene oder null
  */
 export function einstiegStarten(level, { save = {}, view, events = () => {}, outfit } = {}) {
   const fahrzeug = level && level.mode === 'racer' && level.journey ? level.journey.art : null;
   if (!fahrzeug || !EINSTIEG_MERKER[fahrzeug]) return null;
-  if (!einstiegMoeglich(fahrzeug, save)) return null;
   const szene = new EinstiegSzene({ level, view, fahrzeug, outfit });
-  // Der Merker fällt beim Start der Szene: sie läuft genau einmal.
+  // Der Merker wird weiter beim Start der Szene geschrieben (Aufzeichnung im
+  // Spielstand) — er unterdrückt nichts.
   events({ type: 'einstieg', fahrzeug, merker: EINSTIEG_MERKER[fahrzeug], dauer: szene.dauer });
   return szene;
 }
