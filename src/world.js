@@ -233,12 +233,15 @@ export function buildEpilog() {
   e('item', 26, 25, { item: 'bierdeckel' });
   e('item', 62, 25, { item: 'bierdeckel' });
   e('grill', 54, 23);
-  e('ramona', 66, 25);
-  e('item', 80, 23, { item: 'bier' });      // steht schon auf der Bank
+  // Ramona hat das Bier schon in der Hand (Auftrag „Epilog-Ramona"): sie reicht
+  // es auf Knopfdruck herüber. Auf der Bank steht deshalb keine Flasche mehr.
+  e('ramona', 66, 25, { bier: true });
   e('schrank', 82, 25);                     // hier hängt der Frack, für immer
   e('item', 88, 25, { item: 'bierdeckel' });
   e('item', 102, 22, { item: 'bierdeckel' });
-  e('stand', 20, 25);
+  // Kein Kleiderständer im letzten Akt: im Kleingarten gibt es keine freie
+  // Kleiderauswahl mehr, nur den Kleiderschrank (Frack <-> Zivil, mit der
+  // Umzieh-Szene CUT-1b). In allen anderen Akten bleibt der Ständer, wo er war.
   // Der Kleiderschrank: der Garten-Interaktionspunkt für Zivil. Steht frei auf
   // der Wiese, damit er nicht mit dem Schrank der Laube (dort hängt der Frack)
   // verwechselt wird.
@@ -254,8 +257,8 @@ export function buildEpilog() {
   tip(2, 'EPILOG — DER KLEINGARTEN. KEIN TAKT, KEINE HITZE, KEIN WEG MEHR NÖTIG');
   tip(33, 'DER KLEIDERSCHRANK: HIER ZIEHST DU ZIVIL AN — SHORTS UND HAWAII-HEMD (E)');
   tip(46, 'DER GRILL: BRATWÜRSTE WENDEN. ES GEHT AUCH OHNE TAKT');
-  tip(56, 'RAMONA WARTET SCHON. SIE HAT DAS BESSERE MESSER');
-  tip(78, 'DIE BANK UNTER DER LAUBE. UND EIN BIER STEHT SCHON DA');
+  tip(56, 'RAMONA WARTET SCHON. SIE HAT DAS BIER IN DER HAND (E)');
+  tip(70, 'DIE BANK UNTER DER LAUBE: HINSETZEN (E) — RAMONA KOMMT DAZU');
   tip(81, 'DER SCHRANK DER LAUBE: HIER HÄNGT DER FRACK. FÜR IMMER (E)');
 
   return {

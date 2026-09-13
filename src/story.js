@@ -51,7 +51,7 @@ export const STATIONEN = [
   },
   {
     id: 'epilog', name: 'EPILOG — DER KLEINGARTEN', mode: 'sidescroller',
-    ziel: 'HEIMKOMMEN: FRACK IN DEN SCHRANK, RAMONA BEGRÜSSEN, AUF DIE BANK',
+    ziel: 'HEIMKOMMEN: RAMONA BEGRÜSSEN, DAS BIER ANNEHMEN, AUF DIE BANK',
   },
 ];
 
@@ -91,7 +91,7 @@ export const BELOHNUNGEN = {
   },
   epilog: {
     title: 'FEIERABEND',
-    text: 'Ramona hat das Bier schon aufgemacht, der Grill ist an, und der Frack hängt im '
+    text: 'Ramona hat das Bier gereicht, der Grill ist an, und der Frack hängt im '
       + 'Schrank der Laube. 41 Jahre. Und jetzt: Feierabend.',
   },
 };
