@@ -570,6 +570,8 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     aktiv: window.__roland.cutscene.aktiv,
     beat: window.__roland.cutscene.beat,
     fortschritt: window.__roland.cutscene.fortschritt,
+    phase: window.__roland.cutscene.umziehPhase,
+    bild: window.__roland.cutscene.bild,
     outfit: window.__roland.game.outfit.id,
     state: window.__roland.aktiv.state,
     zeit: window.__roland.game.time,
@@ -579,6 +581,48 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     merker: window.__roland.cutscene.gesehen,
     x: window.__roland.game.player.x,
   })`).then((t) => JSON.parse(t));
+
+  // Auftrag CUT-1b: der Wechsel Frack -> Zivil ist jetzt in der Szene zu sehen.
+  // Die einzelnen Griffe dauern nur Sekundenbruchteile — deshalb wird in genau
+  // dem Moment gemessen, in dem die Phase erreicht ist, und das Spiel dabei
+  // angehalten: Messung und Bild gehören so zu einem einzigen Frame. Danach
+  // laeuft die Szene normal weiter (resume), der Endnachweis bleibt der Lauf
+  // bis zum Ende.
+  const griffProbe = (griff) => `(() => {
+    const cut = window.__roland.cutscene;
+    if (cut.umziehPhase !== '${griff}') {
+      return JSON.stringify({ phase: cut.umziehPhase, aktiv: cut.aktiv });
+    }
+    const g = window.__roland.game;
+    g.state = 'paused';                       // anhalten: das Bild bleibt stehen
+    const c = document.getElementById('game');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
+    let hemd = 0, hemdY = 0, hose = 0, hoseY = 0;
+    for (let y = Math.max(0, py - 8); y < Math.min(c.height, py + g.player.h + 8); y++)
+      for (let x = Math.max(0, px - 8); x < Math.min(c.width, px + g.player.w + 8); x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i + 3] === 0) continue;
+        if (d[i] === 47 && d[i + 1] === 191 && d[i + 2] === 174) { hemd++; hemdY += y; }        // #2fbfae
+        else if (d[i] === 74 && d[i + 1] === 90 && d[i + 2] === 58) { hose++; hoseY += y; }      // #4a5a3a
+      }
+    return JSON.stringify({
+      phase: cut.umziehPhase, bild: cut.bild, aktiv: cut.aktiv, outfit: g.outfit.id,
+      fortschritt: +cut.fortschritt.toFixed(3), x: g.player.x,
+      hemd, hose,
+      hemdY: hemd ? +(hemdY / hemd).toFixed(1) : null,
+      hoseY: hose ? +(hoseY / hose).toFixed(1) : null,
+    });
+  })()`;
+  const warteAufGriff = async (griff, runden = 160) => {
+    for (let i = 0; i < runden; i++) {
+      const p = JSON.parse(await evaluate(griffProbe(griff)));
+      if (p.phase === griff) return p;
+      if (p.aktiv === false) return null;
+      await sleep(35);
+    }
+    return null;
+  };
 
   // Nahaufnahme (4x) vom Schrank samt Figur — die Szene ist im Vollbild nur
   // wenige Pixel gross; fuer die Beurteilung des Looks braucht es den Zoom.
@@ -664,6 +708,40 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
   }
   results.push(`CUTSCENE BILD MITTE ${mittePfad} beat=${mitte.beat} fortschritt=${mitte.fortschritt.toFixed(2)}`
     + ` zoom=${mitteNah ? 'ok' : 'fehlt'}`);
+
+  // --- Auftrag CUT-1b: das Umziehen ist in der Szene zu sehen ----------------
+  // Erst der Griff „Hemd ueber dem Kopf": halb angezogen — Hemdpunkte der
+  // Zivilpalette oberhalb der Hosenpunkte, waehrend das Spiel selbst noch den
+  // Frack traegt (der Wechsel kommt erst nach der Szene).
+  const halb = await warteAufGriff('kopf');
+  check('Cutscene: der Umzieh-Moment ist sichtbar (Hemd ueber dem Kopf, halb in Zivil)',
+    !!halb && halb.bild === 'cut_figur_umzieh' && halb.hemd > 0 && halb.hose > 0
+      && halb.hemdY < halb.hoseY && halb.outfit === 'frack' && halb.aktiv === true,
+    JSON.stringify(halb));
+  const umziehPfad = join(shotDirSzene, 'cutscene-umziehen-mitte.png');
+  const umziehBild = await bild(umziehPfad);
+  writeFileSync(join(wurzel, 'screenshot-cutscene-umziehen.png'), umziehBild);
+  const umziehNah = await nahaufnahme(4);
+  if (umziehNah) writeFileSync(join(shotDirSzene, 'cutscene-umziehen-mitte-zoom.png'), umziehNah);
+  results.push(`CUTSCENE BILD UMZIEHEN ${umziehPfad} phase=${halb && halb.phase}`
+    + ` hemd=${halb && halb.hemd} hose=${halb && halb.hose} zoom=${umziehNah ? 'ok' : 'fehlt'}`);
+  await evaluate('window.__roland.game.resume()');
+
+  // Dann der letzte Griff: das Hemd sitzt, die Figur steht in Zivil vor dem
+  // Schrank — gemessen, solange die Szene noch laeuft (outfit also 'frack').
+  const endeZivil = await warteAufGriff('angezogen');
+  check('Cutscene: die Szene endet in Zivil (vor dem Schrank, vor dem Wechsel im Spiel)',
+    !!endeZivil && endeZivil.bild === 'roland_idle' && endeZivil.hemd > 0 && endeZivil.hose > 0
+      && endeZivil.outfit === 'frack' && endeZivil.aktiv === true,
+    JSON.stringify(endeZivil));
+  const endeZivilPfad = join(shotDirSzene, 'cutscene-umziehen-ende.png');
+  const endeZivilBild = await bild(endeZivilPfad);
+  writeFileSync(join(wurzel, 'screenshot-cutscene-umziehen-ende.png'), endeZivilBild);
+  const endeZivilNah = await nahaufnahme(4);
+  if (endeZivilNah) writeFileSync(join(shotDirSzene, 'cutscene-umziehen-ende-zoom.png'), endeZivilNah);
+  results.push(`CUTSCENE BILD UMZIEHEN ENDE ${endeZivilPfad} phase=${endeZivil && endeZivil.phase}`
+    + ` hemd=${endeZivil && endeZivil.hemd} zoom=${endeZivilNah ? 'ok' : 'fehlt'}`);
+  await evaluate('window.__roland.game.resume()');
 
   // Bis zum Ende der Szene warten und dann den Normalzustand messen.
   let ende = mitte;
