@@ -192,6 +192,11 @@ const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
   if (licht) {
     const probe = (outfit) => {
       const { game: g2 } = make(lv2, outfit);
+      // DRR-F4: Zivil gibt es im Spiel nur im Kleingarten am Kleiderschrank.
+      // Hier wird allein die Mechanik der Kluft gemessen (Hitze, Glanz, Tempo),
+      // deshalb steht sie direkt am Modell; dass sie vor dem Garten nirgends
+      // waehlbar ist, prueft tests/zivil-garten.test.mjs.
+      g2.outfit = OUTFITS[outfit];
       place(g2, licht.x + licht.w / 2 - 6, (licht.y + licht.h) - PHYS.playerH);
       step(g2, 2.0);
       return g2;
@@ -207,6 +212,7 @@ const schrankOf = (g) => g.entities.find((en) => en.kind === 'schrank');
     // Tempo: dieselbe Strecke in derselben Zeit — Zivil ist nicht langsamer.
     const lauf = (outfit) => {
       const { game: g3, input: i3 } = make(lv2, outfit);
+      g3.outfit = OUTFITS[outfit];          // Mechanik-Probe (siehe oben)
       const sp = g3.level.spawns.find((s) => s.isSpawn);
       place(g3, sp.tx * TILE, sp.walkRow * TILE - PHYS.playerH);
       step(g3, 0.3);

@@ -132,6 +132,155 @@ export const ROLAND_FRAMES = {
   ],
 };
 
+// --------------------------------------------------------------- Zivil (F4) --
+// „Shorts + Hawaii-Hemd" hat einen eigenen Körper (DRR-F4): die Palette allein
+// machte aus dem Anzug nur ein grünes Sakko mit langer Hose. Hier ist die
+// Silhouette Zivilkleidung — Kopf und Gesicht bleiben dieselben Zeilen wie im
+// Anzug, darunter:
+//   w  Hemdgrund (türkis), H  Knopfleiste, b  Knopf,
+//   o/y/Y  Blüte, E  Blätter,
+//   kurze Ärmel: rows 11-13 Hemd, ab row 14 nackte Unterarme (s),
+//   a  Shorts (Sandbraun), darunter nackte Beine (s), Schuhe (b).
+export const ZIVIL_FRAMES = {
+  idle: [
+    '  hhhHHHhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhsssssssshh  ',
+    '  hhsssssssshh  ',
+    '  hhs.ssss.shh  ',
+    '  hhsssssssshh  ',
+    '  hhSssssssShh  ',
+    '  hhssSSSSsshh  ',
+    '      SSSS      ',
+    '  wwwwwwwwwwww  ',
+    ' wwwwwEHoyowwww ',
+    ' wwwwwEbyYywwww ',
+    ' wwwwwwHoyowwww ',
+    ' ssssEwHwwwssss ',
+    ' ssssEEHwwwssss ',
+    ' sssswwbwEEssss ',
+    ' sssswwHwwwssss ',
+    '  aaaaaaaaaaaa  ',
+    '  aaaa    aaaa  ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    ' bbbbb    bbbbb ',
+  ],
+  walk1: [
+    '  hhhHHHhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhsssssssshh  ',
+    '  hhsssssssshh  ',
+    '  hhs.ssss.shh  ',
+    '  hhsssssssshh  ',
+    '  hhSssssssShh  ',
+    '  hhssSSSSsshh  ',
+    '      SSSS      ',
+    '  wwwwwwwwwwww  ',
+    ' wwwwwEHoyowww  ',
+    ' wwwwwEbyYywww  ',
+    ' wwwwwwHoyowww  ',
+    ' ssssEwHwwwsss  ',
+    ' ssssEEHwwwsss  ',
+    ' sssswwbwEEsss  ',
+    ' sssswwHwwwsss  ',
+    '  aaaaaaaaaaaa  ',
+    '   aaaa  aaaa   ',
+    '   ssss  ssss   ',
+    '   ssss  ssss   ',
+    '   ssss  ssss   ',
+    ' bbbbbb  bbbbbb ',
+  ],
+  walk2: [
+    '  hhhHHHhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhsssssssshh  ',
+    '  hhsssssssshh  ',
+    '  hhs.ssss.shh  ',
+    '  hhsssssssshh  ',
+    '  hhSssssssShh  ',
+    '  hhssSSSSsshh  ',
+    '      SSSS      ',
+    '  wwwwwwwwwwww  ',
+    '  wwwwwEHoyowwww',
+    '  wwwwwEbyYywwww',
+    '  wwwwwwHoyowwww',
+    '  sssEwHwwwssss ',
+    '  sssEEHwwwssss ',
+    '  ssswwbwEEssss ',
+    '  ssswwHwwwssss ',
+    '  aaaaaaaaaaaa  ',
+    '  aaaa    aaaa  ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    'bbbbbb    bbbbbb',
+  ],
+  jump: [
+    '  hhhHHHhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhsssssssshh  ',
+    '  hhsssssssshh  ',
+    '  hhs.ssss.shh  ',
+    '  hhsssssssshh  ',
+    '  hhSssssssShh  ',
+    '  hhssSSSSsshh  ',
+    '      SSSS      ',
+    ' wwwwwwwwwwwwww ',
+    ' wwwwwEHoyowwww ',
+    ' sssswEbyYyssss ',
+    ' sssswwHoyossss ',
+    ' ssssEwHwwwssss ',
+    ' ssssEEHwwwssss ',
+    '  ssswwbwEEsss  ',
+    '  aaaaaaaaaaaa  ',
+    '  aaaaaaaaaaaa  ',
+    '   aaaa  aaaa   ',
+    '   ssss  ssss   ',
+    '   ssss  ssss   ',
+    '   ssss  ssss   ',
+    ' bbbbbb  bbbbbb ',
+  ],
+  duck: [
+    '  hhhHHHhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhhhhhhhhhhh  ',
+    '  hhsssssssshh  ',
+    '  hhsssssssshh  ',
+    '  hhs.ssss.shh  ',
+    '  hhsssssssshh  ',
+    '  hhSssssssShh  ',
+    '  hhssSSSSsshh  ',
+    '  wwwwwwwwwwww  ',
+    ' wwwwwEHoyowwww ',
+    ' sssswEbyYyssss ',
+    ' sssswwHoyossss ',
+    ' aaaaaaaaaaaaaa ',
+    ' aaaaaaaaaaaaaa ',
+    ' aaaaa    aaaaa ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    '  ssss    ssss  ',
+    ' bbbbb    bbbbb ',
+  ],
+};
+
+// Auf der Bank (Epilog): dieselbe Figur mit angewinkelten Beinen — Shorts am
+// Oberschenkel, nacktes Knie, Schuh auf dem Boden.
+const SITZ_ZIVIL = [
+  ...ZIVIL_FRAMES.idle.slice(0, 19),
+  '    aaaaaaaaaa  ',
+  '        ssss    ',
+  '        ssss    ',
+  '       bbbbb    ',
+];
+
+
 // Interludium: Motorrad von hinten (Fahrer mit Helm)
 const MOTORRAD = [
   '     hhhhhh     ',
@@ -406,6 +555,13 @@ export const SPRITES = {
   roland_jump: ROLAND_FRAMES.jump,
   roland_duck: ROLAND_FRAMES.duck,
   roland_sitz: SITZ_ROLAND,
+  // DRR-F4: der eigene Zivilkörper (kluftBild() bildet roland_* darauf ab).
+  zivil_idle: ZIVIL_FRAMES.idle,
+  zivil_walk1: ZIVIL_FRAMES.walk1,
+  zivil_walk2: ZIVIL_FRAMES.walk2,
+  zivil_jump: ZIVIL_FRAMES.jump,
+  zivil_duck: ZIVIL_FRAMES.duck,
+  zivil_sitz: SITZ_ZIVIL,
 
   // Piccolo: der erste Gegner — als Flötist mit silberner Flöte erkennbar
   piccolo: [
@@ -1377,8 +1533,25 @@ export const OUTFIT_PALETTES = {
   },
   zivil: {
     '.': '#0b0810', h: '#c9c9d2', H: '#ffffff', s: '#e8b98a', S: '#c19063',
-    a: '#4a5a3a', w: '#2fbfae', r: '#ef8f3a', b: '#14141c',
+    // DRR-F4: eigener Zivilkörper (siehe ZIVIL_FRAMES). Der Hemdgrund bleibt
+    // die dokumentierte Zusatzfarbe aus E1 (#2fbfae), Blüte und Blätter
+    // kommen aus der Basispalette (o/y/Y/E), die Shorts sind Sandbraun
+    // (PAL M) statt Anzughose — kein grünes Sakko mehr.
+    a: '#a97540', w: '#2fbfae', r: '#ef8f3a', b: '#14141c',
+    o: '#ef8f3a', y: '#e8c46a', Y: '#d9a83c', E: '#3f6b3a',
   },
 };
+
+/**
+ * Der Körper für eine Haltung. „Zivil" hat seit DRR-F4 einen eigenen Körper
+ * (kurze Ärmel, kurze Hose, Hawaii-Muster); alle anderen Klüfte teilen sich den
+ * einen Anzugkörper und unterscheiden sich nur in der Palette. Der Name bleibt
+ * der logische (z. B. `roland_idle`), damit Prüfungen und Szenen unverändert
+ * lesen können, welches Bild gemeint ist.
+ */
+export function kluftBild(name, kluft) {
+  if (kluft !== 'zivil' || !name.startsWith('roland_')) return name;
+  return `zivil_${name.slice('roland_'.length)}`;
+}
 
 // Die Fahrzeug- und Szenensprites für die Interludien kommen in Phase P3.

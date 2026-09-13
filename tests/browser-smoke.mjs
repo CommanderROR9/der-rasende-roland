@@ -782,6 +782,206 @@ async function warteEinstiegVorbei(maxS = 10) {
 }
 
 /**
+ * DRR-F4: „Zivil" gehoert in den Kleingarten — und sieht dort nach
+ * Zivilkleidung aus. Der Block faehrt beide Seiten:
+ *   vor dem Garten: Zivil steht in keiner Kleiderwahl (Levelanfang und
+ *                   Kleiderstaender) und laesst sich auch ueber die Konsole
+ *                   oder einen Spielstand nicht erzwingen;
+ *   im Garten:      am Kleiderschrank zieht die Aktion weiterhin Zivil an,
+ *                   die Kluft ist dort waehlbar (kluftWahl) und am Avatar
+ *                   zu sehen (Hemd, Muster, Shorts, nackte Beine).
+ * Dazu Bildbelege: Handybild und 4x-Nahaufnahme des Kostuems.
+ */
+async function pruefeZivilGarten() {
+  const shotDir = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  mkdirSync(shotDir, { recursive: true });
+  const wurzel = fileURLToPath(new URL('..', import.meta.url));
+  const schuss = async (name, extraWurzel = null) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    writeFileSync(join(shotDir, name), daten);
+    if (extraWurzel) writeFileSync(join(wurzel, extraWurzel), daten);
+    return daten.length;
+  };
+  /** 4x-Nahaufnahme des Kostuems: das Fenster um die Figur, naechster Nachbar. */
+  const kostuemZoom = async (faktor = 4) => {
+    const daten = await evaluate(`(() => { try {
+      const c = document.getElementById('game');
+      const g = window.__roland.game;
+      const p = g.player;
+      const w = 40, h = 48;
+      const x = Math.max(0, Math.min(c.width - w, Math.round(p.x - g.cam.x) - 12));
+      const y = Math.max(0, Math.min(c.height - h, Math.round(p.y - g.cam.y) + p.h - h + 4));
+      const t = document.createElement('canvas');
+      t.width = w * ${faktor}; t.height = h * ${faktor};
+      const tg = t.getContext('2d'); tg.imageSmoothingEnabled = false;
+      tg.drawImage(c, x, y, w, h, 0, 0, t.width, t.height);
+      return t.toDataURL('image/png').slice(22);
+    } catch { return ''; } })()`);
+    return daten && daten.length > 100 ? Buffer.from(daten, 'base64') : null;
+  };
+  const figurZivil = () => evaluate(`(() => {
+    const c = document.getElementById('game'); const g = window.__roland.game;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    // Genau das Rechteck, das drawPlayer fuer die Figur zeichnet (16x24, wie
+    // roland_idle) — der Kleingarten hat tuerkise und gruene Hintergruende,
+    // ein weiteres Fenster wuerde Blueten und Blaetter mitzaehlen.
+    const sx = Math.round(g.player.x - g.cam.x - 2);
+    const sy = Math.round(g.player.y - g.cam.y + g.player.h - 24);
+    const z = { hemd: 0, shorts: 0, blueteO: 0, blueteY: 0, blattE: 0, bein: 0 };
+    let hemdY = 0, saumY = null;
+    for (let y = Math.max(0, sy); y < Math.min(c.height, sy + 24); y++)
+      for (let x = Math.max(0, sx); x < Math.min(c.width, sx + 16); x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i + 3] === 0) continue;
+        const r = d[i], gg = d[i + 1], b = d[i + 2];
+        if (r === 47 && gg === 191 && b === 174) { z.hemd++; hemdY += y; }
+        else if (r === 169 && gg === 117 && b === 64) { z.shorts++; saumY = saumY === null ? y : Math.max(saumY, y); }
+        else if (r === 239 && gg === 143 && b === 58) z.blueteO++;
+        else if (r === 232 && gg === 196 && b === 106) z.blueteY++;
+        else if (r === 63 && gg === 107 && b === 58) z.blattE++;
+        else if (r === 232 && gg === 185 && b === 138 && saumY !== null && y > saumY) z.bein++;
+      }
+    return JSON.stringify({ ...z, saumY, hemdY: z.hemd ? +(hemdY / z.hemd).toFixed(1) : null,
+      outfit: g.outfit.id, breite: g.vw, hoehe: g.vh });
+  })()`);
+
+  // --- Vor dem Garten: Akt 1, Kleiderwahl am Levelanfang ---------------------
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
+  });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(2200);
+  await evaluate("window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));");
+  const akt1 = await evaluate("window.__roland.levelIds.indexOf('akt1')");
+  check('Zivil: Akt 1 ist erreichbar', akt1 >= 0, String(akt1));
+  await evaluate(`window.__roland.loadAct(${akt1})`);
+  await sleep(250);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(450);
+  const wahlStart = JSON.parse(await evaluate(`JSON.stringify({
+    offen: !document.getElementById('garde').classList.contains('hidden'),
+    karten: [...document.querySelectorAll('#gardeCards button .title')].map((e) => e.textContent),
+    wahl: window.__roland.kluftWahl,
+    level: window.__roland.level.id,
+  })`));
+  check('Zivil: in Akt 1 steht die Kleiderwahl mit drei Klueften (ohne Zivil)',
+    wahlStart.offen === true && wahlStart.level === 'akt1' && wahlStart.karten.length === 3
+      && !wahlStart.karten.includes('SHORTS + HAWAII-HEMD')
+      && !wahlStart.wahl.includes('zivil'),
+    JSON.stringify(wahlStart));
+  await schuss('f4-akt1-kleiderwahl.png', 'screenshot-f4-akt1-kleiderwahl.png');
+  results.push(`F4-BILD Akt-1-Kleiderwahl ohne Zivil (${wahlStart.karten.join(' | ')})`);
+
+  // --- Vor dem Garten: Umkleide am Kleiderstaender ---------------------------
+  await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  await sleep(500);
+  await evaluate(`(() => { const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'stand');
+    g.player.x = en.x - 6; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
+    return 1; })()`);
+  await sleep(350);
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(200);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  await sleep(350);
+  const wahlStand = JSON.parse(await evaluate(`JSON.stringify({
+    offen: !document.getElementById('garde').classList.contains('hidden'),
+    grund: window.__roland.game.pauseReason,
+    karten: [...document.querySelectorAll('#gardeCards button .title')].map((e) => e.textContent),
+  })`));
+  check('Zivil: die Umkleide am Kleiderstaender zeigt drei Kluefte (ohne Zivil)',
+    wahlStand.offen === true && wahlStand.grund === 'stand' && wahlStand.karten.length === 3
+      && !wahlStand.karten.includes('SHORTS + HAWAII-HEMD'),
+    JSON.stringify(wahlStand));
+  const erzwungen = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const vorher = g.outfit.id;
+    const setOk = g.setOutfit('zivil');       // Konsole/Debug
+    // Die Meldung steht sofort im Modell (die Pause stoppt nur die HUD-Frames).
+    const hinweis = g.hint ? g.hint.text : null;
+    const nachSet = g.outfit.id;
+    g.reset('zivil');                          // Spielstand/Testhilfe
+    const nachReset = g.outfit.id;
+    return JSON.stringify({ vorher, setOk, nachSet, nachReset, hinweis });
+  })()`));
+  check('Zivil: vor dem Garten greift kein Nebenweg (Konsole und Spielstand bleiben wirkungslos)',
+    erzwungen.setOk === false && erzwungen.nachSet === erzwungen.vorher
+      && erzwungen.nachReset === 'schwarz'
+      && /KLEINGARTEN/.test(String(erzwungen.hinweis)),
+    JSON.stringify(erzwungen));
+  await evaluate("document.getElementById('gardeBack').click()");
+  await sleep(300);
+
+  // --- Im Garten: der Kleiderschrank zieht weiterhin Zivil an ----------------
+  const epi = await evaluate("window.__roland.levelIds.indexOf('epilog')");
+  check('Zivil: der Kleingarten ist erreichbar', epi >= 0, String(epi));
+  await evaluate(`window.__roland.loadAct(${epi})`);
+  await sleep(250);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(1100);
+  const gartenStart = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    wahl: window.__roland.kluftWahl,
+    garde: !document.getElementById('garde').classList.contains('hidden'),
+    schrank: window.__roland.game.entities.filter((e) => e.kind === 'garderobe').length,
+  })`));
+  check('Zivil: der Kleingarten startet im Frack und hat Zivil in der Auswahl',
+    gartenStart.outfit === 'frack' && gartenStart.garde === false
+      && gartenStart.schrank === 1 && gartenStart.wahl.includes('zivil'),
+    JSON.stringify(gartenStart));
+
+  await evaluate(`(() => { const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'garderobe');
+    g.player.x = en.x - 18; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
+    return 1; })()`);
+  await sleep(450);
+  const vorSchrank = JSON.parse(await evaluate(`JSON.stringify({
+    label: (window.__roland.aktiv.hud.label || {}).text || null,
+    outfit: window.__roland.game.outfit.id })`));
+  check('Zivil: im Frack bietet der Kleiderschrank Zivil als Aktion an',
+    vorSchrank.outfit === 'frack' && /ZIVIL/.test(String(vorSchrank.label)),
+    JSON.stringify(vorSchrank));
+  await evaluate("window.__roland.input.setKey('action', true)");
+  await sleep(200);
+  await evaluate("window.__roland.input.setKey('action', false)");
+  let szeneVorbei = false;
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    if ((await evaluate('window.__roland.cutscene.aktiv')) === false) { szeneVorbei = true; break; }
+  }
+  await sleep(400);
+  const gartenZivil = JSON.parse(await evaluate(`JSON.stringify({
+    outfit: window.__roland.game.outfit.id,
+    flag: window.__roland.aktiv.hud.zivilAn,
+    wahl: window.__roland.kluftWahl,
+  })`));
+  check('Zivil: im Garten zieht die Aktionstaste weiterhin Zivil an',
+    szeneVorbei === true && gartenZivil.outfit === 'zivil' && gartenZivil.flag === true
+      && gartenZivil.wahl.includes('zivil'),
+    JSON.stringify(gartenZivil));
+
+  const farben = JSON.parse(await figurZivil());
+  check('Zivil: der Avatar traegt Hemd, Muster, Shorts und nackte Beine',
+    farben.outfit === 'zivil' && farben.hemd >= 30 && farben.shorts >= 8
+      && farben.blueteO >= 2 && farben.blueteY >= 2 && farben.blattE >= 2
+      && farben.bein >= 6 && farben.saumY > farben.hemdY,
+    JSON.stringify(farben));
+  results.push(`F4-FIGUR Handy ${farben.breite}x${farben.hoehe} Hemd=${farben.hemd}`
+    + ` Shorts=${farben.shorts} Bluete=${farben.blueteO}/${farben.blueteY}`
+    + ` Blatt=${farben.blattE} Bein=${farben.bein}`);
+  await schuss('f4-zivil-handy.png', 'screenshot-f4-zivil-handy.png');
+  const nah = await kostuemZoom(4);
+  if (nah) writeFileSync(join(shotDir, 'f4-zivil-handy-4x.png'), nah);
+  check('Zivil: die 4x-Nahaufnahme des Kostuems liegt vor',
+    !!nah && nah.length > 0, nah ? `${nah.length} Bytes` : 'fehlt');
+
+  check('Zivil: keine Fehler im Zivil-Block',
+    (await evaluate('JSON.stringify(window.__errors)')) === '[]',
+    await evaluate('JSON.stringify(window.__errors)'));
+}
+
+/**
  * Die Schlussszene im Kleingarten (Auftrag CUT-1) im echten Browser: erst die
  * Szene, danach der vorhandene Wechsel auf Zivil. Legt zwei Bilder ab — eines
  * mitten in der Szene, eines danach. `vorbereiten` faehrt fuer den gezielten
@@ -828,18 +1028,27 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
     const c = document.getElementById('game');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     const px = Math.round(g.player.x - g.cam.x), py = Math.round(g.player.y - g.cam.y);
-    let hemd = 0, hemdY = 0, hose = 0, hoseY = 0;
+    // Die Farben der Zivilkluft stehen hier als Zahlen: Hemdgrund #2fbfae,
+    // Shorts #a97540 (DRR-F4: Sandbraun statt Anzughose), Haut #e8b98a.
+    // Gemessen wird im Fenster um die Figur, wie drawPlayer sie setzt.
+    let hemd = 0, hemdY = 0, hose = 0, hoseY = 0, haut = 0;
+    const hoseReihen = [], hautReihen = [];
     for (let y = Math.max(0, py - 8); y < Math.min(c.height, py + g.player.h + 8); y++)
       for (let x = Math.max(0, px - 8); x < Math.min(c.width, px + g.player.w + 8); x++) {
         const i = (y * c.width + x) * 4;
         if (d[i + 3] === 0) continue;
-        if (d[i] === 47 && d[i + 1] === 191 && d[i + 2] === 174) { hemd++; hemdY += y; }        // #2fbfae
-        else if (d[i] === 74 && d[i + 1] === 90 && d[i + 2] === 58) { hose++; hoseY += y; }      // #4a5a3a
+        if (d[i] === 47 && d[i + 1] === 191 && d[i + 2] === 174) { hemd++; hemdY += y; }
+        else if (d[i] === 169 && d[i + 1] === 117 && d[i + 2] === 64) { hose++; hoseY += y; hoseReihen.push(y); }
+        else if (d[i] === 232 && d[i + 1] === 185 && d[i + 2] === 138) { haut++; hautReihen.push(y); }
       }
+    // Nackte Beine: Hautpunkte unterhalb des Hosensaums (die Hautfarbe sitzt
+    // auch im Gesicht — nur die Punkte unter der Shorts zaehlen als Bein).
+    const saum = hoseReihen.length ? Math.max(...hoseReihen) : null;
+    const bein = saum === null ? 0 : hautReihen.filter((y) => y > saum).length;
     return JSON.stringify({
       phase: cut.umziehPhase, bild: cut.bild, aktiv: cut.aktiv, outfit: g.outfit.id,
       fortschritt: +cut.fortschritt.toFixed(3), x: g.player.x,
-      hemd, hose,
+      hemd, hose, haut, bein,
       hemdY: hemd ? +(hemdY / hemd).toFixed(1) : null,
       hoseY: hose ? +(hoseY / hose).toFixed(1) : null,
     });
@@ -957,7 +1166,7 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
   // Frack traegt (der Wechsel kommt erst nach der Szene).
   const halb = await warteAufGriff('kopf');
   check('Cutscene: der Umzieh-Moment ist sichtbar (Hemd ueber dem Kopf, halb in Zivil)',
-    !!halb && halb.bild === 'cut_figur_umzieh' && halb.hemd > 0 && halb.hose > 0
+    !!halb && halb.bild === 'cut_figur_umzieh' && halb.hemd > 0 && halb.hose > 0 && halb.bein > 0
       && halb.hemdY < halb.hoseY && halb.outfit === 'frack' && halb.aktiv === true,
     JSON.stringify(halb));
   const umziehPfad = join(shotDirSzene, 'cutscene-umziehen-mitte.png');
@@ -972,8 +1181,11 @@ async function pruefeKleiderschrankSzene({ vorbereiten = false } = {}) {
   // Dann der letzte Griff: das Hemd sitzt, die Figur steht in Zivil vor dem
   // Schrank — gemessen, solange die Szene noch laeuft (outfit also 'frack').
   const endeZivil = await warteAufGriff('angezogen');
+  // DRR-F4: die Figur traegt jetzt ein erkennbares Hemd (Bluete/Blatt), eine
+  // kurze Hose und darunter nackte Beine — kein Anzug mit langer Hose mehr.
   check('Cutscene: die Szene endet in Zivil (vor dem Schrank, vor dem Wechsel im Spiel)',
     !!endeZivil && endeZivil.bild === 'roland_idle' && endeZivil.hemd > 0 && endeZivil.hose > 0
+      && endeZivil.bein > 0 && endeZivil.hemdY < endeZivil.hoseY
       && endeZivil.outfit === 'frack' && endeZivil.aktiv === true,
     JSON.stringify(endeZivil));
   const endeZivilPfad = join(shotDirSzene, 'cutscene-umziehen-ende.png');
@@ -1231,6 +1443,13 @@ try {
     throw GEZIELTER_ABSCHLUSS;
   }
 
+  if (TESTMODUS === 'zivil') {
+    // Gezielter Lauf fuer DRR-F4: Zivil vor dem Garten gesperrt, im Garten
+    // waehlbar und am Avatar zu sehen — ohne den ganzen Weg durch die Akte.
+    await pruefeZivilGarten();
+    throw GEZIELTER_ABSCHLUSS;
+  }
+
   check('Stationswahl ist zu Beginn verborgen',
     (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === true);
   const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
@@ -1241,13 +1460,19 @@ try {
   await evaluate("document.getElementById('startBtn').click()");
   await sleep(400);
   const options = await evaluate("JSON.stringify([...document.querySelectorAll('#gardeCards button .title')].map(e=>e.textContent))");
-  // Seit dem Epilog-Auftrag E1 gibt es vier Klüfte (ZIVIL kam dazu).
+  // DRR-F4: vor dem Kleingarten stehen drei Klüfte zur Wahl. Zivil haengt am
+  // Kleiderschrank im Garten und erscheint vorher nicht mehr (Rolands Befund
+  // vom 13.09.: die vierte Karte war dort ohne Sinn).
   const optionListe = JSON.parse(options);
-  check('Kleiderwahl zeigt alle vier Klüfte', optionListe.length === 4
-    && ['SCHWARZES HEMD', 'ANZUG + KRAWATTE', 'FRACK', 'SHORTS + HAWAII-HEMD'].every((k) => optionListe.includes(k)),
+  check('Kleiderwahl zeigt vor dem Garten genau drei Klüfte (ohne Zivil)', optionListe.length === 3
+    && ['SCHWARZES HEMD', 'ANZUG + KRAWATTE', 'FRACK'].every((k) => optionListe.includes(k))
+    && !optionListe.includes('SHORTS + HAWAII-HEMD'),
     options);
   check('Meldet SCHWARZ, ANZUG und FRACK',
     ['SCHWARZ', 'ANZUG', 'FRACK'].every((k) => options.includes(k)), options);
+  const wahlAkt1 = await evaluate('JSON.stringify(window.__roland.kluftWahl)');
+  check('Akt 1 kennt Zivil gar nicht als waehlbare Kluft',
+    !JSON.parse(wahlAkt1).includes('zivil'), wahlAkt1);
 
   await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
   await sleep(600);
@@ -1418,9 +1643,24 @@ try {
   })`));
   check('Aktionstaste öffnet die Umkleide', wardrobeState.state === 'paused' && wardrobeState.reason === 'stand',
     JSON.stringify(wardrobeState));
-  check('Umkleide zeigt alle vier Klüfte zur Wahl', wardrobeState.options.length === 4
-    && wardrobeState.options.includes('SHORTS + HAWAII-HEMD'),
+  // DRR-F4: auch die Umkleide am Kleiderständer kennt Zivil nicht mehr — der
+  // Ständer steht in den Akten, der Kleiderschrank nur im Kleingarten.
+  check('Umkleide zeigt vor dem Garten genau drei Klüfte (ohne Zivil)',
+    wardrobeState.options.length === 3
+      && ['SCHWARZES HEMD', 'ANZUG + KRAWATTE', 'FRACK'].every((k) => wardrobeState.options.includes(k))
+      && !wardrobeState.options.includes('SHORTS + HAWAII-HEMD'),
     JSON.stringify(wardrobeState.options));
+  const zivilVersuch = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const vorher = g.outfit.id;
+    const setOk = g.setOutfit('zivil');            // Konsole/Debug-Weg
+    const nachSet = g.outfit.id;
+    return JSON.stringify({ vorher, setOk, nachSet, kluftWahl: window.__roland.kluftWahl });
+  })()`));
+  check('Zivil laesst sich im Akt nicht erzwingen (Debug-Weg bleibt wirkungslos)',
+    zivilVersuch.setOk === false && zivilVersuch.nachSet === zivilVersuch.vorher
+      && !zivilVersuch.kluftWahl.includes('zivil'),
+    JSON.stringify(zivilVersuch));
 
   await evaluate("document.querySelectorAll('#gardeCards button')[1].click()");
   await sleep(300);
@@ -3813,7 +4053,41 @@ try {
       }
     return JSON.stringify(farben);
   })()`;
-  // Hinstellen: dieselbe Stelle, an der auch der Vertragstest steht.
+  // DRR-F4: dasselbe Fenster, aber nach den Farben der Zivilkluft sortiert —
+  // Hemdgrund, Shorts, Muster (Bluete/Blatt) und die nackten Beine darunter.
+  // Eine lange Hose haette unter dem Hosensaum keine Hautpunkte.
+  const figurZivilProbe = `(() => {
+    const c = document.getElementById('game'); const g = window.__roland.game;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    // Genau das Rechteck, das drawPlayer fuer die Figur zeichnet (16x24) —
+    // ein weiteres Fenster wuerde die Blueten und Blaetter des Gartens
+    // mitzaehlen (denselben Fehler macht der Block ?test=zivil nicht mehr).
+    const sx = Math.round(g.player.x - g.cam.x - 2);
+    const sy = Math.round(g.player.y - g.cam.y + g.player.h - 24);
+    const zaehler = { hemd: 0, shorts: 0, blueteO: 0, blueteY: 0, blattE: 0, bein: 0 };
+    let hemdY = 0, saumY = null;
+    for (let y = Math.max(0, sy); y < Math.min(c.height, sy + 24); y++)
+      for (let x = Math.max(0, sx); x < Math.min(c.width, sx + 16); x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i + 3] === 0) continue;
+        const rot = d[i], gruen = d[i + 1], blau = d[i + 2];
+        if (rot === 47 && gruen === 191 && blau === 174) { zaehler.hemd++; hemdY += y; }
+        else if (rot === 169 && gruen === 117 && blau === 64) {
+          zaehler.shorts++; saumY = saumY === null ? y : Math.max(saumY, y);
+        }
+        else if (rot === 239 && gruen === 143 && blau === 58) zaehler.blueteO++;
+        else if (rot === 232 && gruen === 196 && blau === 106) zaehler.blueteY++;
+        else if (rot === 63 && gruen === 107 && blau === 58) zaehler.blattE++;
+        else if (rot === 232 && gruen === 185 && blau === 138 && saumY !== null && y > saumY) zaehler.bein++;
+      }
+    return JSON.stringify({
+      ...zaehler, saumY,
+      hemdY: zaehler.hemd ? +(hemdY / zaehler.hemd).toFixed(1) : null,
+      outfit: g.outfit.id,
+    });
+  })()`;
+
+
   const hinZu = (kind) => `(() => { const g = window.__roland.game;
     const en = g.entities.find((e) => e.kind === '${kind}');
     g.player.x = en.x - 18; g.player.y = en.y + en.h - g.player.h; g.player.vx = 0; g.player.vy = 0;
@@ -3888,6 +4162,16 @@ try {
   check('Epilog-Browser: der Avatar sieht in Zivil anders aus (Bildpunkte der Figur)',
     neueFarben.length > 0 && hemdPunkte > 0,
     `neue Farben ${neueFarben.join(' | ')}, Hemdpunkte ${hemdPunkte}`);
+
+  // DRR-F4: der Avatar traegt im Garten erkennbar Zivilkleidung. Gemessen wird
+  // an den Bildpunkten der Figur: Hemdgrund, Muster (Bluete/Blatt), die kurze
+  // Hose — und darunter nackte Beine, was eine lange Hose ausschliesst.
+  const zivilBild = JSON.parse(await evaluate(figurZivilProbe));
+  check('Epilog-Browser: Zivil am Avatar — Hemd, Muster, Shorts und nackte Beine',
+    zivilBild.outfit === 'zivil' && zivilBild.hemd >= 30 && zivilBild.shorts >= 8
+      && zivilBild.blueteO >= 2 && zivilBild.blueteY >= 2 && zivilBild.blattE >= 2
+      && zivilBild.bein >= 6 && zivilBild.saumY > zivilBild.hemdY,
+    JSON.stringify(zivilBild));
 
   const epiZivilPfad = join(shotDirEpi, 'epilog-zivil.png');
   const epiZivilBild = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
