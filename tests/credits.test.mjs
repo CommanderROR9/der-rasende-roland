@@ -2,6 +2,7 @@
 // Prüft Inhalt (nur Vornamen, Widmung), die Pixeldaten aus Rolands Uploads und vor
 // allem, dass die Portraits wirklich gezeichnet werden — und nicht nur in den Daten
 // stehen. V3 zeigt die Portraits als Filmfolge: eine Seite je Portrait.
+// Chenyan: Portrait am 13.09. durch Rolands neue Vorlage ersetzt (chenyan-neu.jpg).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -25,6 +26,8 @@ const VIEWS = [
  * Prüfsummen der ausgelieferten Matrizen (Erzeugungsprotokoll
  * portrait-vorlagen/ausgeschnitten -> daten/matrizen.json). Sie nageln fest,
  * dass im Spiel genau die abgenommenen Upload-Portraits stehen.
+ * CHENYAN stammt aus der neuen Vorlage (portrait-vorlagen/ausgeschnitten-neu/chenyan.png,
+ * ausgeschnitten aus quelle-chenyan-neu/chenyan-neu.jpg) — siehe Kommentar im Modul.
  */
 const MATRIX_SHA256 = {
   anna: 'ea87c0c493fe24756bc6da60b7b7629740a889eaad50c17464a8d5e00a649f3b',
@@ -33,7 +36,7 @@ const MATRIX_SHA256 = {
   nicola: '9fafe76bb35b39ec59838fc16e648445d7e21c5d8f02cfd9440edbcdbca48d08',
   annekatrin: 'd635e5c0631456a9274b0b23f3b7b9c1d8dde6a573883bbf3afee7aab4a8a231',
   'roland-r': 'ac202486a9ff7b0169d0841771a345be981d5ea5c24d38a2b0af32568f8a8f38',
-  chenyan: '7d7e4f9770f95417883f229f5e3ab7a7dfdab53d33ff9ab285e071dc7f9f89df',
+  chenyan: '36eae17f8feaad4d8fc0ff9f7cfeb20d8883e7474d07d11d3d90f74f2f226721',
   annett: '07490c9a5938ca4066c27b3333529443ec098084687277bc7d6e11351dafd4ac',
   bruno: 'c9c64807647820a7b8c780d56feeb404548c508460c771e018a3a2bf42563bd5',
   'roland-s': '55c6b6703842592c8260168375a61653c22c489ac25c5782bd1ba6b1b3291b29',
@@ -42,7 +45,7 @@ const MATRIX_SHA256 = {
 /** Farbpunkte je Portrait laut Erzeugungsprotokoll (Nachweis unveränderter Daten). */
 const FARBPUNKTE = {
   anna: 5005, aoi: 5002, barbara: 5626, nicola: 3183, annekatrin: 4548,
-  'roland-r': 5931, chenyan: 4711, annett: 3404, bruno: 3724, 'roland-s': 5839,
+  'roland-r': 5931, chenyan: 4786, annett: 3404, bruno: 3724, 'roland-s': 5839,
 };
 
 let passed = 0;
