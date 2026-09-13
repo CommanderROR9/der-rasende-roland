@@ -80,7 +80,7 @@ auslöst. Für mehr Übersicht quer halten.
 
 **Umziehen** passiert nicht mehr beim bloßen Berühren: davorstellen und `E` drücken
 (am Handy den `TRITT`-Knopf). Ein Schild über dem Ständer sagt es an, und Fundstücke
-tragen in Reichweite ihren Namen („BIERDECKEL", „OHROPAX"), damit man nicht raten muss.
+tragen in Reichweite ihren Namen („STIMMZIMMER KEKSE", „OHROPAX"), damit man nicht raten muss.
 Ton lässt sich im Titelbild abschalten; das Metronom tickt ohnehin nur, wenn eine
 Gefahr in Hörweite ist.
 

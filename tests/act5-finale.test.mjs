@@ -277,10 +277,10 @@ function imTakt(game) { game.beatPhase = 0.02; }
     ohne.game.state === 'complete' && voll.game.state === 'complete',
     `${ohne.game.state}/${voll.game.state}`);
   check('Akt 5: Sammeln bringt kein besseres Ende (gleiche Abschlusszeilen)',
-    zeilen(ohne.game) === zeilen(voll.game) && zeilen(voll.game) === 'ZEIT,BIERDECKEL,IM TAKT GETROFFEN,NERVEN',
+    zeilen(ohne.game) === zeilen(voll.game) && zeilen(voll.game) === 'ZEIT,STIMMZIMMER KEKSE,IM TAKT GETROFFEN,NERVEN',
     `${zeilen(ohne.game)} | ${zeilen(voll.game)}`);
-  check('Akt 5: der Abschluss nennt den Stand der Bierdeckel ehrlich',
-    (ohne.game.rows || []).some(([k, v]) => k === 'BIERDECKEL' && v === `0 / ${level.deckelTotal}`),
+  check('Akt 5: der Abschluss nennt den Stand der Stimmzimmerkekse ehrlich',
+    (ohne.game.rows || []).some(([k, v]) => k === 'STIMMZIMMER KEKSE' && v === `0 / ${level.deckelTotal}`),
     JSON.stringify(ohne.game.rows));
 }
 
@@ -374,8 +374,8 @@ function imTakt(game) { game.beatPhase = 0.02; }
   check('Akt 5: kein Gegner wurde entfernt oder betrogen',
     feindeNachher.length === feindeVorher.length && feindeNachher.every((en) => en.alive),
     `${feindeNachher.length}/${feindeVorher.length}`);
-  check('Akt 5: der Abschluss nennt Bierdeckel und Zeit',
-    (g.rows || []).some(([k]) => k === 'BIERDECKEL') && (g.rows || []).some(([k]) => k === 'ZEIT'),
+  check('Akt 5: der Abschluss nennt Stimmzimmerkekse und Zeit',
+    (g.rows || []).some(([k]) => k === 'STIMMZIMMER KEKSE') && (g.rows || []).some(([k]) => k === 'ZEIT'),
     JSON.stringify(g.rows));
   check('Akt 5: die Zugabe steht als Ereignis im Protokoll',
     events.some((e) => e.type === 'zugabe'), JSON.stringify(events.map((e) => e.type)));
