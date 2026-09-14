@@ -2472,14 +2472,13 @@ export class Game {
           break;
         }
         case 'stand': {
-          ctx.fillStyle = '#3b2f4a';
-          ctx.fillRect(x + 2, y - 12, 12, 12);
-          ctx.fillStyle = '#8e8e9c';
-          ctx.fillRect(x + 2, y - 14, 12, 2);
-          ctx.fillRect(x + 3, y - 26, 10, 12);
-          ctx.fillStyle = '#20202a'; ctx.fillRect(x + 4, y - 25, 8, 5);
-          ctx.fillStyle = '#f0eee4'; ctx.fillRect(x + 4, y - 19, 8, 3);
-          ctx.fillStyle = '#b0392f'; ctx.fillRect(x + 4, y - 16, 8, 3);
+          // Der Kleiderwechsel-Stand ist seit dem Auftrag DRR-F5 ein grauer
+          // Metall-Spind statt der abstrakten Kiste (Roland, 14.09.). Der Sprite
+          // ist 30 px hoch und wird mit der Unterkante auf den Boden der Kachel
+          // gesetzt — der sichtbare Körper liegt damit auf derselben Flaeche
+          // (y-26 .. y-1) wie die alte Zeichnung, kein Standort verschiebt sich.
+          const spr = this.spr('spind');
+          blit(ctx, spr, x, y - spr.h);
           const near = Math.abs((this.player.x + this.player.w / 2) - (en.x + 8)) < 26;
           if (near) {
             ctx.fillStyle = 'rgba(93,224,207,0.75)';

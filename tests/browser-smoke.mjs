@@ -40,6 +40,12 @@ const chrome = spawn(chromiumPath, [
   // Ton im Prüflauf: der Browser darf den AudioContext nicht aus Höflichkeit
   // sperren — geprüft wird, dass die Seite ihn erst nach dem Start anlegt.
   '--autoplay-policy=no-user-gesture-required',
+  // PC-Ansicht (Mauszeiger, 384x216): nur mit Blink-Startflags zu bekommen, per
+  // Emulation nicht erzwingbar (in DRR-F1 gemessen). Standard bleibt die
+  // Handy-Ansicht; fuer einen PC-Lauf: DRR_PC=1 (siehe Block „Spinde").
+  ...(process.env.DRR_PC === '1'
+    ? ['--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2']
+    : []),
   `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
   '--window-size=1280,720', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -1088,6 +1094,166 @@ async function tippeSzene(halten = 180, danach = 120) {
   await sleep(danach);
 }
 
+/**
+ * Der Kleiderwechsel-Stand ist ein grauer Metall-Spind (Auftrag DRR-F5, Roland:
+ * „die Kleiderwechsel Stationen … nicht so abstrakt wie bisher …, sondern als
+ * graue Metall-Spinde"). Gemessen wird am echten Bild, in jedem der fünf Akte
+ * mit Ständen: heller, neutraler Metallkörper im Stand-Rechteck, kein Rest der
+ * alten violetten Kiste (#3b2f4a), Mittelfuge dunkler als die Türflächen. In
+ * den Akten ohne Schleier (Abendsonne in Akt 3, Dunkelheit in Akt 4) kommen
+ * exakt die Sprite-Farben zurück (302 Bildpunkte der 16x30-Matrix); wo ein
+ * Schleier liegt, wird er für eine zweite Messung ausgeschaltet (instrumentiert
+ * wie das Hinstellen der Figur) und danach wieder eingeschaltet. Je Akt ein
+ * Bild und ein 4x-Zoom am Repo-Rand (gitignore: screenshot-*.png).
+ *
+ * Die PC-Ansicht (384x216, Mauszeiger) läuft nur mit den Blink-Startflags —
+ * per Emulation ist sie nicht zu erzwingen (in DRR-F1 gemessen). Aufruf dafür:
+ * `DRR_PC=1 node tests/browser-smoke.mjs "http://…/?test=spind"`.
+ */
+const SPIND_PALETTE = ['142,142,156', '184,184,196', '154,154,168', '58,58,74', '32,32,42', '20,20,28'];
+
+/** Das Stand-Rechteck (Sprite-Spalten 2–13, Zeilen 4–29) im Canvas ausmessen. */
+async function messeSpind() {
+  return JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game');
+    const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'stand');
+    if (!en) return JSON.stringify({ fehlt: 'stand' });
+    const px = Math.round(en.x - g.cam.x), py = Math.round(en.y - g.cam.y);
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let treffer = 0, grau = 0, violett = 0, deckend = 0, fuge = 0, fugeN = 0, tuer = 0, tuerN = 0;
+    const violettStellen = [];
+    for (let y = py - 26; y < py; y++) for (let x = px + 2; x < px + 14; x++) {
+      if (x < 0 || y < 0 || x >= c.width || y >= c.height) continue;
+      const i = (y * c.width + x) * 4;
+      const r = d[i], gg = d[i + 1], b = d[i + 2];
+      if (d[i + 3] === 0) continue;
+      deckend++; const spalte0 = x - px - 2;
+      const k = r + ',' + gg + ',' + b;
+      if (${JSON.stringify(SPIND_PALETTE)}.indexOf(k) >= 0) treffer++;
+      const max = Math.max(r, gg, b), min = Math.min(r, gg, b);
+      if (max - min <= 22 && min >= 70) grau++;          // hell und neutral: Metall
+      // Die alte Stand-Zeichnung war ein violetter Kasten (#3b2f4a = 59,47,74):
+      // Rot UND Blau deutlich ueber Gruen. Kein Metallton des Spinds hat das —
+      // auch nicht von der Abendsonne getoent (Akt 3) oder abgedunkelt (Akt 4).
+      // Die unterste Zeile bleibt ausgenommen: dort steht der Boden durch die
+      // Fussluecken (gemessen in Akt 2: 2 Bodenbildpunkte in Violetttoenen).
+      if (y < py - 1 && r - gg >= 8 && b - gg >= 8) { violett++; if (violettStellen.length < 6) violettStellen.push([spalte0, y - py, k]); }
+      const spalte = x - px - 2;
+      if (spalte === 5 || spalte === 6) { fuge += r + gg + b; fugeN++; }
+      if (spalte === 1 || spalte === 2) { tuer += r + gg + b; tuerN++; }
+    }
+    return JSON.stringify({ level: g.level.id, canvas: [c.width, c.height], state: g.state,
+      staende: g.entities.filter((e) => e.kind === 'stand').length,
+      treffer, grau, violett, deckend, violettStellen,
+      fuge: Math.round(fuge / Math.max(1, fugeN)), tuer: Math.round(tuer / Math.max(1, tuerN)),
+      schleier: g.level.dark === true || g.wetterKind === 'sonne' });
+  })()`));
+}
+
+/** Zweite Messung ohne Schleier (Abendsonne/Dunkelheit), danach wieder an. */
+async function messeSpindOhneSchleier() {
+  await evaluate(`(() => { const g = window.__roland.game;
+    g.__altDark = g.level.dark; g.__altWetter = g.wetterKind;
+    g.level.dark = false; g.wetterKind = null; })()`);
+  await sleep(220);
+  const mass = await messeSpind();
+  await evaluate(`(() => { const g = window.__roland.game;
+    g.level.dark = g.__altDark; g.wetterKind = g.__altWetter; })()`);
+  await sleep(150);
+  return mass;
+}
+
+/** 4x-Zoom des Stand-Ausschnitts (echter Canvas-Ausschnitt, keine Glättung). */
+async function spindZoom(faktor = 4) {
+  const daten = await evaluate(`(() => {
+    try {
+      const c = document.getElementById('game');
+      const g = window.__roland.game;
+      const en = g.entities.find((e) => e.kind === 'stand');
+      const px = Math.round(en.x - g.cam.x), py = Math.round(en.y - g.cam.y);
+      const w = 56, h = 48;
+      const x = Math.max(0, Math.min(c.width - w, px - 22));
+      const y = Math.max(0, Math.min(c.height - h, py - 30));
+      const t = document.createElement('canvas');
+      t.width = w * ${faktor}; t.height = h * ${faktor};
+      const tg = t.getContext('2d');
+      tg.imageSmoothingEnabled = false;
+      tg.drawImage(c, x, y, w, h, 0, 0, t.width, t.height);
+      return t.toDataURL('image/png').slice(22);
+    } catch { return ''; }
+  })()`);
+  return daten && daten.length > 100 ? Buffer.from(daten, 'base64') : null;
+}
+
+/**
+ * Ein Akt mit Ständen: laden, starten, die Figur neben den Stand stellen (die
+ * Kamera zieht nach), messen, prüfen, Bilder ablegen. `zusatz` hält Handy- und
+ * PC-Lauf auseinander ('' bzw. '-pc').
+ */
+async function pruefeSpindAkt(akt, zusatz) {
+  await evaluate(`window.__roland.loadAct(${akt.i})`);
+  await sleep(250);
+  await evaluate("document.getElementById('startBtn').click()");
+  await sleep(400);
+  if ((await evaluate("!document.getElementById('garde').classList.contains('hidden')"))) {
+    await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
+  }
+  await sleep(900);
+  const gestellt = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const en = g.entities.find((e) => e.kind === 'stand');
+    if (!en) return JSON.stringify({ fehlt: 'stand' });
+    g.player.x = en.x - 26; g.player.y = en.y + en.h - g.player.h;
+    g.player.vx = 0; g.player.vy = 0;
+    return JSON.stringify({ state: g.state, outfit: g.outfit.id, x: Math.round(en.x) });
+  })()`));
+  await sleep(750);
+  const mass = await messeSpind();
+  const artefakte = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+  const wurzel = fileURLToPath(new URL('..', import.meta.url));
+  mkdirSync(artefakte, { recursive: true });
+  const bild = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+  writeFileSync(join(artefakte, `spind-${akt.id}${zusatz}.png`), bild);
+  writeFileSync(join(wurzel, `screenshot-spind-${akt.id}${zusatz}.png`), bild);
+  const zoom = await spindZoom(4);
+  if (zoom) writeFileSync(join(artefakte, `spind-${akt.id}${zusatz}-4x.png`), zoom);
+
+  const roh = mass.schleier ? await messeSpindOhneSchleier() : mass;
+  results.push(`SPIND ${akt.id}${zusatz} canvas=${mass.canvas.join('x')} bildpunkte=${mass.treffer}`
+    + ` hell-neutral=${mass.grau}/${mass.deckend} alte-kiste=${mass.violett}`
+    + ` fuge=${mass.fuge} tuer=${mass.tuer} schleier=${mass.schleier} zoom=${zoom ? 'ok' : 'fehlt'}`
+    + (mass.violett ? ` stellen=${JSON.stringify(mass.violettStellen)}` : ''));
+
+  check(`Spind ${akt.id}${zusatz}: heller Metallkörper im Stand-Rechteck (Aktionen unverändert)`,
+    gestellt.state === 'play' && mass.staende === akt.staende && mass.deckend >= 300 && mass.grau >= 200,
+    JSON.stringify({ gestellt, staende: mass.staende, deckend: mass.deckend, hell: mass.grau }));
+  check(`Spind ${akt.id}${zusatz}: kein Rest der alten violetten Kiste (#3b2f4a)`,
+    mass.violett === 0, `violett=${mass.violett}`);
+  check(`Spind ${akt.id}${zusatz}: Mittelfuge dunkler als die Türflächen`,
+    mass.fuge * 1.15 < mass.tuer, `fuge=${mass.fuge} tuer=${mass.tuer}`);
+  check(`Spind ${akt.id}${zusatz}: exakt die Sprite-Palette (302 Bildpunkte der Matrix)`
+    + (mass.schleier ? ' — mit abgeschaltetem Schleier' : ''),
+    roh.treffer >= 290, `bildpunkte=${roh.treffer} schleier=${mass.schleier}`);
+}
+
+/**
+ * Alle Akte mit Kleiderwechsel-Ständen durchmessen. Erwartet werden zehn Stände
+ * in fünf Akten (Akt 1: 3, Akt 2: 2, Akt 3: 2, Akt 4: 2, Akt 5: 1).
+ */
+async function pruefeSpinde({ zusatz = '' } = {}) {
+  const ids = JSON.parse(await evaluate('JSON.stringify(window.__roland.levelIds)'));
+  const akte = [];
+  for (let i = 0; i < ids.length; i++) {
+    const staende = await evaluate(`(() => { window.__roland.loadAct(${i});
+      return (window.__roland.level.spawns || []).filter((s) => s.kind === 'stand').length; })()`);
+    if (staende > 0) akte.push({ i, id: ids[i], staende });
+  }
+  check(`Spind${zusatz}: fünf Akte mit Kleiderwechsel-Ständen, zehn Stände (3/2/2/2/1)`,
+    akte.length === 5 && akte.reduce((n, a) => n + a.staende, 0) === 10, JSON.stringify(akte));
+  for (const akt of akte) await pruefeSpindAkt(akt, zusatz);
+}
+
 try {
   await send('Runtime.enable');
   await send('Log.enable');
@@ -1231,6 +1397,30 @@ try {
     throw GEZIELTER_ABSCHLUSS;
   }
 
+  if (TESTMODUS === 'spind') {
+    // Gezielter Lauf fuer die Metall-Spinde (Auftrag DRR-F5): alle fuenf Akte
+    // mit Kleiderwechsel-Staenden, ohne den Weg durch die Akte davor.
+    await pruefeSpinde();
+    if (process.env.DRR_PC === '1') {
+      // Zweiter Durchgang derselben Messung in der PC-Ansicht (384x216, Mauszeiger).
+      await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      await send('Emulation.setEmulatedMedia', { features: [
+        { name: 'hover', value: 'hover' }, { name: 'any-hover', value: 'hover' },
+        { name: 'pointer', value: 'fine' }, { name: 'any-pointer', value: 'fine' }] });
+      await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+      await sleep(2200);
+      const ansicht = JSON.parse(await evaluate(`JSON.stringify({
+        coarse: matchMedia('(hover: none), (pointer: coarse)').matches,
+        w: document.getElementById('game').width, h: document.getElementById('game').height })`));
+      check('Spind-PC: Mauszeiger statt Touch, Leinwand 384x216',
+        ansicht.coarse === false && ansicht.w === 384 && ansicht.h === 216, JSON.stringify(ansicht));
+      await pruefeSpinde({ zusatz: '-pc' });
+    } else {
+      results.push('SPIND PC-ANSICHT UEBERSPRUNGEN — fuer die 384x216-Belege mit DRR_PC=1 starten');
+    }
+    throw GEZIELTER_ABSCHLUSS;
+  }
+
   check('Stationswahl ist zu Beginn verborgen',
     (await evaluate("document.getElementById('actRow').classList.contains('hidden')")) === true);
   const diffStart = await evaluate("document.getElementById('diffBtn').textContent");
@@ -1262,6 +1452,25 @@ try {
   check('Startposition stimmt', Math.abs(st.x - 48) < 3, String(st.x));
   check('Kluft ist schwarz', st.kluft === 'schwarz', st.kluft);
   check('Drei Nerven, fünf Bierdeckel', st.nerven === 3 && st.deckelTotal === 5);
+
+  // --- Kleiderwechsel-Stand: grauer Metall-Spind (Auftrag DRR-F5) ------------
+  // Im laufenden Akt 1: die Figur wird nur hingestellt (instrumentiert), gemessen
+  // wird das echte Bild. Die Messung selbst steckt in pruefeSpindAkt/messeSpind
+  // und laeuft gezielt fuer alle fuenf Akte unter ?test=spind.
+  const spindAkt1 = await (async () => {
+    await evaluate(`(() => { const g = window.__roland.game;
+      const en = g.entities.find((e) => e.kind === 'stand');
+      g.player.x = en.x - 26; g.player.y = en.y + en.h - g.player.h;
+      g.player.vx = 0; g.player.vy = 0; })()`);
+    await sleep(750);
+    return messeSpind();
+  })();
+  check('Akt-1-Browser: der Kleiderwechsel-Stand ist ein grauer Metall-Spind',
+    spindAkt1.grau >= 200 && spindAkt1.deckend >= 300 && spindAkt1.violett === 0
+      && spindAkt1.treffer >= 290,
+    JSON.stringify(spindAkt1));
+  check('Akt-1-Browser: die Mittelfuge des Spinds liegt dunkler als die Türflächen',
+    spindAkt1.fuge * 1.15 < spindAkt1.tuer, `fuge=${spindAkt1.fuge} tuer=${spindAkt1.tuer}`);
 
   // Akt-1-Musterstrecke im echten Browser: Daten, sichtbarer NPC und echte
   // E-Tastendrücke. Die direkte Positionierung ist ein instrumentierter Probe-
