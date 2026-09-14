@@ -129,8 +129,30 @@ export function createAudio() {
         case 'fanfare': [523, 659, 784, 1046].forEach((f, i) => tone({ freq: f, dur: 0.18, gain: 0.3, delay: i * 0.13 })); break;
         case 'morsch': noise({ dur: 0.25, gain: 0.25, freq: 1600 }); break;
         case 'gate': tone({ freq: 240, dur: 0.12, gain: 0.3 }); tone({ freq: 320, dur: 0.14, gain: 0.3, delay: 0.1 }); break;
+        // Die letzte Probe (DRR-P1): eigener Satz Geräusche, rein synthetisch.
+        case 'becken': noise({ dur: 0.7, gain: 0.38, freq: 3000 }); tone({ freq: 420, dur: 0.5, type: 'square', gain: 0.16, slide: -260 }); break;
+        case 'quietsch': tone({ freq: 2200, dur: 0.22, type: 'square', gain: 0.22, slide: 900 }); noise({ dur: 0.14, gain: 0.12, freq: 2600 }); break;
+        case 'spitze': tone({ freq: 3200, dur: 0.3, type: 'sine', gain: 0.18, slide: 500 }); break;
+        case 'plopp': tone({ freq: 260, dur: 0.07, type: 'sine', gain: 0.35, slide: 180 }); noise({ dur: 0.05, gain: 0.12, freq: 900 }); break;
+        case 'seite': noise({ dur: 0.18, gain: 0.14, freq: 1800 }); break;
         default: break;
       }
+    },
+    /**
+     * Kurz gedämpft (Ohropax in den Ohren): der vorhandene Master-Knoten fährt
+     * für die Dauer leise und wieder auf den alten Pegel — kein zweiter Bus,
+     * kein Umbau der Musik.
+     */
+    daempfe(sekunden = 0.4) {
+      const c = ctx();
+      if (!c || !master || !enabled) return;
+      const t = c.currentTime;
+      try {
+        master.gain.cancelScheduledValues(t);
+        master.gain.setValueAtTime(master.gain.value, t);
+        master.gain.linearRampToValueAtTime(0.02, t + 0.04);
+        master.gain.linearRampToValueAtTime(0.22, t + Math.max(0.12, sekunden));
+      } catch { /* ohne Audio-Kontext bleibt es still */ }
     },
   };
 }
