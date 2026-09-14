@@ -14,7 +14,7 @@ import { BPM_BASE } from './config.js';
 
 /** Alle Stationen mit eigener Musik, in Spielreihenfolge. */
 export const STATIONEN_MUSIK = [
-  'akt1', 'akt2', 'cabrio', 'akt3', 'akt4', 'akt5', 'motorrad', 'epilog',
+  'akt1', 'akt2', 'cabrio', 'akt3', 'akt4', 'akt5', 'probe', 'motorrad', 'epilog',
 ];
 
 /**
@@ -77,6 +77,15 @@ export const MOTIVE = {
     lead: [0, 4, 7, 12, null, 12, 7, 4, 0, 4, 7, 4, 0, null, -2, null],
     bass: [0, null, null, null, 5, null, null, null, -5, null, null, null, 0, null, null, null],
     drums: 'tick-fanfare', leadWave: 'triangle', ducker: 1.0,
+  },
+  probe: {
+    id: 'probe', titel: 'LETZTE PROBE — UNRUHIGE AKZENTE',
+    charakter: 'unruhig, wechselnde Akzente', vorlage: 'eigenes Probenspiel',
+    art: 'klassik', taktart: '4/4', grund: 53, haerte: 7, puls: 'Takt-Ticken mit wechselnden Akzenten',
+    skizze: 'Eigene Skizze: kurze Sechzehntel-Akzente auf den Nebenzeiten, die Betonung wandert bei jedem Takt.',
+    lead: [0, 3, 0, 5, 0, 3, 7, 3, 0, -2, 0, 5, 7, 5, 3, 0],
+    bass: [0, 0, null, null, -2, -2, null, null, -4, -4, null, null, 5, 5, null, null],
+    drums: 'tick-akzent', leadWave: 'square', ducker: 1.0,
   },
   motorrad: {
     id: 'motorrad', titel: 'MOTORRAD — NACHTFAHRT, HÄRTER',
@@ -153,6 +162,7 @@ export const AKKORDE = {
   akt3: [0, 5, -2, 3, 7, 5, -4, -2, 3, 5, 7, -4, 0, 5, -4, -2],
   akt4: [0, -5, 0, -2, -4, -5, -4, 0, 3, 0, -2, -5, 0, -4, -2, -5],
   akt5: [0, 7, 0, 12, 7, 5, 3, -5, 0, 7, 5, 3, -2, -5, -2, 7],
+  probe: [0, -2, 5, 3, -2, 5, 0, -4, 3, 5, -2, 0, 7, 3, -4, 5],
   motorrad: [0, -2, 0, -4, -2, 0, -5, -4, 0, -2, 5, 3, -2, -4, 0, -5],
   epilog: [0, -2, 0, -4, -5, 0, -2, -4, 0, -2, -5, -4, -2, 0, -4, -5],
 };
@@ -176,6 +186,7 @@ export const FORMVARIANTEN = {
   akt3: { oktavB: 12, versatzB: 8 },
   akt4: { oktavB: 12, versatzB: 2 },
   akt5: { oktavB: 12, versatzB: 4 },
+  probe: { oktavB: 12, versatzB: 5 },
   motorrad: { oktavB: -12, versatzB: 0 },
   epilog: { oktavB: 12, versatzB: 6 },
 };
@@ -495,12 +506,13 @@ export function createMusik({ audio = null } = {}) {
       merken(osc, g);
       return;
     }
-    if (art === 'tick' || art === 'tick-marsch' || art === 'tick-fanfare') {
+    if (art === 'tick' || art === 'tick-marsch' || art === 'tick-fanfare' || art === 'tick-akzent') {
       const stark = art === 'tick-fanfare';
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
-      osc.type = 'square'; osc.frequency.value = art === 'tick-marsch' ? 620 : 880;
-      const p = stark ? 0.10 : 0.06;
+      osc.type = 'square';
+      osc.frequency.value = art === 'tick-marsch' ? 620 : art === 'tick-akzent' ? 760 : 880;
+      const p = stark ? 0.10 : art === 'tick-akzent' ? 0.075 : 0.06;
       g.gain.setValueAtTime(0.0001, zeit);
       g.gain.exponentialRampToValueAtTime(p, zeit + 0.005);
       g.gain.exponentialRampToValueAtTime(0.0001, zeit + 0.05);

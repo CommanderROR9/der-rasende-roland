@@ -5,11 +5,13 @@ const KEYS = {
   ArrowUp: 'jump', KeyW: 'jump', Space: 'jump',
   ArrowDown: 'down', KeyS: 'down',
   KeyE: 'action', KeyJ: 'action', ShiftLeft: 'action',
+  // Letzte Probe (DRR-P1): die zweite Taste des Minispiels.
+  KeyO: 'ohropax',
 };
 
 export function createInput(target) {
   const state = {
-    left: false, right: false, jump: false, down: false, action: false,
+    left: false, right: false, jump: false, down: false, action: false, ohropax: false,
     stick: { x: 0, y: 0 },
   };
 
@@ -24,11 +26,13 @@ export function createInput(target) {
     down() { return state.down || state.stick.y > 0.55; },
     jump() { return state.jump; },
     action() { return state.action; },
+    /** Zweite Taste der letzten Probe (DRR-P1). */
+    ohropax() { return state.ohropax; },
     setStick(x, y) { state.stick.x = Math.max(-1, Math.min(1, x)); state.stick.y = Math.max(-1, Math.min(1, y)); },
     resetStick() { state.stick.x = 0; state.stick.y = 0; },
     /** Nur für Tests / programmatische Steuerung */
     setKey(name, on) { if (name in state && typeof state[name] === 'boolean') state[name] = on; },
-    clear() { for (const k of ['left', 'right', 'jump', 'down', 'action']) state[k] = false; input.resetStick(); },
+    clear() { for (const k of ['left', 'right', 'jump', 'down', 'action', 'ohropax']) state[k] = false; input.resetStick(); },
   };
 
   if (target && target.addEventListener) {
@@ -39,7 +43,7 @@ export function createInput(target) {
     // Ein Druck, der kürzer ist als ein Frame (schnelles Tippen), darf nicht
     // verloren gehen: Sprung und Aktion werden erst einen Frame später gelöst.
     const release = (name) => {
-      if ((name === 'jump' || name === 'action') && typeof requestAnimationFrame === 'function') {
+      if ((name === 'jump' || name === 'action' || name === 'ohropax') && typeof requestAnimationFrame === 'function') {
         requestAnimationFrame(() => { state[name] = false; });
       } else {
         state[name] = false;

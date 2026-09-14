@@ -29,7 +29,7 @@ export { buildAkt4 } from './act4.js';
 // Heimfahrt ist der echte Heimweg (Entscheidung 5.1).
 const BAUER = {
   akt1: buildAkt1, akt2: buildAkt2, cabrio: buildCabrio, akt3: buildAkt3,
-  akt4: buildAkt4, akt5: buildAkt5, motorrad: buildMotorrad, epilog: buildEpilog,
+  akt4: buildAkt4, akt5: buildAkt5, probe: buildProbe, motorrad: buildMotorrad, epilog: buildEpilog,
 };
 
 export const LEVELS = STATIONEN.map((st) => ({ ...st, build: BAUER[st.id] }));
@@ -50,6 +50,15 @@ export { buildCabrio };
 // ============================================================================
 import { buildMotorradJourney as buildMotorrad } from './motorrad.js';
 export { buildMotorrad };
+
+// ============================================================================
+// DIE LETZTE PROBE (DRR-P1)
+// Nach dem Finale lässt der Dirigent nicht ohne eine letzte Probe gehen: ein
+// Whack-a-Mole am Bühnenrand, zwei Tasten (EINSATZ/OHROPAX), kein Fail-Zustand.
+// Die Szene selbst steht in src/probe.js und ist ohne DOM prüfbar.
+// ============================================================================
+import { buildProbe } from './probe.js';
+export { buildProbe };
 
 // ============================================================================
 // AKT 5 — DIE BÜHNE (DAS FINALE)

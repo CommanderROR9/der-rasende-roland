@@ -10,6 +10,7 @@ import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.j
 import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
+import { Probe } from './probe.js';
 import { CUT_MERKER, SZENE_DAUER } from './cutscene-frack.js';
 // Die Einstiegs-Cutscenes vor den Fahr-Interludien (Auftrag CUT-2): ein Aufruf
 // am Start der Fahrt, je ein Merker im Spielstand.
@@ -45,6 +46,9 @@ const ui = {
   uOhro: $('#uOhro'), uKluft: $('#uKluft'), uHitze: $('#uHitze'),
   uWetter: $('#uWetter'), uNass: $('#uNass'), uTakt: $('#uTakt'), uNerven: $('#uNerven'),
   rSpeed: $('#rSpeed'), rTime: $('#rTime'), rHits: $('#rHits'), rDist: $('#rDist'), rTakt: $('#rTakt'),
+  probeReadout: $('#probeReadout'), pTreffer: $('#pTreffer'), pPatzer: $('#pPatzer'),
+  pSatz: $('#pSatz'), pRest: $('#pRest'),
+  probePad: $('#probePad'), btnEinsatz: $('#btnEinsatz'), btnOhropax: $('#btnOhropax'),
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
 const ctx = ui.canvas.getContext('2d');
@@ -218,11 +222,14 @@ function updateActLabels() {
 let game = null;      // Seitenscroller-Simulation
 let racer = null;     // Fahr-Interludium
 let grill = null;     // Bratwurst-Minispiel im Epilog
+// Die letzte Probe (DRR-P1): eigenes Minispiel am Bühnenrand, wie die Fahrten
+// ohne Garderobe direkt gestartet.
+let probe = null;
 // Die Einstiegs-Cutscene vor der Fahrt (Auftrag CUT-2): läuft als eigener
 // Zustand neben dem Racer, der so lange unangetastet stehenbleibt.
 let einstieg = null;
-const aktiv = () => grill || racer || game;
-const aktivModus = () => grill || racer || game;
+const aktiv = () => probe || grill || racer || game;
+const aktivModus = () => probe || grill || racer || game;
 let gardeMode = 'start';
 let pendingOutfit = null;
 
@@ -448,9 +455,17 @@ function onGrillEvent(e) {
 }
 function newGame(outfitId) {
   for (const h of LEVEL.hints || []) h.shown = false;
-  if (LEVEL.mode === 'racer') {
+  if (LEVEL.mode === 'probe') {
+    // Die letzte Probe (DRR-P1): kein Lauf, keine Garderobe — der Dirigent
+    // steht schon am Pult und will die Einsätze sehen.
+    probe = new Probe({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
+    game = null;
+    racer = null;
+    einstieg = null;
+  } else if (LEVEL.mode === 'racer') {
     // Fahr-Interludium: gleiche Steuerung, andere Simulation
     racer = new Racer({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
+    probe = null;
     game = null;
     // Auftrag CUT-2: der eine Aufruf am Start der Fahrt. Seit Rolands
     // Rückmeldung vom 13.09. läuft die Einstiegs-Cutscene bei JEDEM Start des
@@ -459,6 +474,7 @@ function newGame(outfitId) {
     einstieg = einstiegStarten(LEVEL, { save: loadSave(), view: VIEW, events: onGameEvent });
   } else {
     racer = null;
+    probe = null;
     einstieg = null;
     game = new Game({ level: LEVEL, input, audio, events: onGameEvent, view: VIEW, difficulty: diffKey });
     game.reset(outfitId);
@@ -510,14 +526,22 @@ function onGameEvent(e) {
       ['STIMMZIMMER KEKSE', `${s.deckel} / ${LEVEL.deckelTotal}`],
       ['IM TAKT GETROFFEN', String(s.taktHits)],
     ]);
+    // Die letzte Probe (DRR-P1): das Verdikt steht über der Belohnung. Es gibt
+    // keinen Fail-Zustand — alle drei Verdikte führen normal weiter, aber die
+    // Rückmeldung des Dirigenten gehört ins Ergebnis.
+    if (LEVEL.mode === 'probe') {
+      const v = (e.stats && e.stats.verdikt) || null;
+      const bel = REWARDS[LEVEL.id] || { text: '' };
+      ui.rewardText.textContent = v && v.text ? `${v.text} ${bel.text}` : bel.text;
+    }
     const icon = document.createElement('canvas');
     icon.className = 'rewardIcon';
     icon.width = 40; icon.height = 52;
     const g = icon.getContext('2d');
     g.imageSmoothingEnabled = false;
-    const spr = LEVEL.mode === 'racer'
-      ? spriteCanvas('mx5', SPRITES.mx5)
-      : spriteCanvas('bier', SPRITES.bier);
+    const spr = LEVEL.mode === 'racer' ? spriteCanvas('mx5', SPRITES.mx5)
+      : LEVEL.mode === 'probe' ? spriteCanvas('ohropax', SPRITES.ohropax)
+        : spriteCanvas('bier', SPRITES.bier);
     const iz = Math.round((40 / spr.w) * spr.h);
     g.drawImage(spr.canvas, 0, 0, spr.w, spr.h, 0, 0, 40, iz);
     ui.rewardBody.prepend(icon);
@@ -596,7 +620,8 @@ function frame(now) {
 function setzeKnopfBeschriftung() {
   // Während der Einstiegs-Cutscene (CUT-2) ist kein Knopf zuständig: die Szene
   // ist kurz und läuft durch, die Fahrt beginnt direkt danach.
-  const modus = einstieg ? 'einstieg' : grill ? 'grill' : racer ? 'racer' : 'lauf';
+  const modus = einstieg ? 'einstieg'
+    : probe ? 'probe' : grill ? 'grill' : racer ? 'racer' : 'lauf';
   const jump = modus === 'lauf' ? 'SPRUNG' : '—';
   // E ist im Laufmodus kontextsensitiv. Bei einer Figur oder einem Gegenstand
   // darf die Touch-Oberfläche nicht weiter behaupten, man würde zutreten.
@@ -613,6 +638,11 @@ function setzeKnopfBeschriftung() {
   if (ui.btnAction.textContent !== akt) ui.btnAction.textContent = akt;
   ui.btnJump.style.opacity = modus === 'lauf' ? '' : '0.3';
   ui.btnJump.style.pointerEvents = modus === 'lauf' ? '' : 'none';
+  // Die letzte Probe (DRR-P1) trägt zwei eigene Tasten: EINSATZ und OHROPAX.
+  // Dort ruht das SPRUNG/TRITT-Pad, sonst bleibt alles wie es war.
+  const istProbe = modus === 'probe';
+  if (ui.pad) ui.pad.classList.toggle('show', IS_TOUCH && !istProbe);
+  if (ui.probePad) ui.probePad.classList.toggle('show', IS_TOUCH && istProbe);
 }
 function refreshHud() {
   const a = aktiv();
@@ -624,6 +654,7 @@ function refreshHud() {
     ui.walkReadout.classList.add('hidden');
     ui.racerReadout.classList.add('hidden');
     ui.grillReadout.classList.add('hidden');
+    ui.probeReadout.classList.add('hidden');
     ui.aktsub.textContent = LEVEL.name;
     setzeJournal(null);
     ui.hintbar.classList.add('hidden');
@@ -639,6 +670,7 @@ function refreshHud() {
     ui.walkReadout.classList.add('hidden');
     ui.racerReadout.classList.add('hidden');
     ui.grillReadout.classList.remove('hidden');
+    ui.probeReadout.classList.add('hidden');
     setzeJournal(null);
     const sigG = [h.punkte, h.serviert, h.verbrannt, h.takt, h.hint,
       (h.stufen || []).join(''), h.fokus, h.knapp].join('|');
@@ -656,6 +688,25 @@ function refreshHud() {
     return;
   }
   ui.grillReadout.classList.add('hidden');
+  if (h.modus === 'probe') {
+    // Die letzte Probe (DRR-P1): Treffer, Patzer, Satzname und Restzeit.
+    ui.walkReadout.classList.add('hidden');
+    ui.racerReadout.classList.add('hidden');
+    ui.probeReadout.classList.remove('hidden');
+    const sigP = ['p', h.treffer, h.patzer, h.satz, Math.ceil(h.restzeit), h.hint].join('|');
+    if (sigP === hudPrev) return;
+    hudPrev = sigP;
+    ui.pTreffer.textContent = String(h.treffer);
+    ui.pPatzer.textContent = String(h.patzer);
+    ui.pSatz.textContent = h.satz;
+    ui.pRest.textContent = `${Math.ceil(h.restzeit)} s`;
+    ui.aktsub.textContent = LEVEL.name;
+    setzeJournal(h.ziel);
+    if (h.hint) { ui.hintbar.textContent = h.hint; ui.hintbar.classList.remove('hidden'); }
+    else ui.hintbar.classList.add('hidden');
+    return;
+  }
+  ui.probeReadout.classList.add('hidden');
   if (h.modus === 'racer') {
     // Fahr-Interludium: eigenes HUD
     ui.walkReadout.classList.add('hidden');
@@ -787,6 +838,7 @@ function applyDifficulty() {
   ui.diffBtn2.title = d.note;
   if (game) game.setDifficulty(diffKey);
   if (racer && racer.setDifficulty) racer.setDifficulty(diffKey);
+  if (probe && probe.setDifficulty) probe.setDifficulty(diffKey);
   if (grill && grill.setDifficulty) grill.setDifficulty(diffKey);
 }
 function cycleDifficulty() {
@@ -864,7 +916,7 @@ function syncMusik() {
 function musikAnhalten() { try { musik.stop(); } catch { /* still weiter */ } }
 applyDifficulty();
 ui.resumeBtn.onclick = () => { const a = aktivModus(); if (a && a.resume) a.resume(); hideAll(); };
-ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; einstieg = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); musikAnhalten(); show('title'); };
+ui.quitBtn.onclick = () => { game = null; racer = null; grill = null; probe = null; einstieg = null; hudPrev = ''; ui.hintbar.classList.add('hidden'); musikAnhalten(); show('title'); };
 ui.collapseBtn.onclick = () => { if (game) game.respawnFromCheckpoint(); hideAll(); };
 ui.rewardBtn.onclick = () => {
   if (ui.rewardBtn.dataset.modus === 'grill') {
@@ -939,6 +991,11 @@ function holdButton(el, name) {
 }
 holdButton(ui.btnJump, 'jump');
 holdButton(ui.btnAction, 'action');
+// Die letzte Probe (DRR-P1): die beiden Proben-Tasten sind dieselben Eingaben
+// wie E und O. Die Flankenerkennung liegt im Modul — ein gehaltener Knopf
+// wertet genau einmal.
+holdButton(ui.btnEinsatz, 'action');
+holdButton(ui.btnOhropax, 'ohropax');
 
 // Touch-Gerät erkennt sich selbst
 if (IS_TOUCH) ui.pad.classList.add('show');
@@ -972,7 +1029,7 @@ function startLevel() {
   audio.resume();
   // Erste Nutzeraktion: ab hier darf Musik entstehen (siehe musikBereit).
   starteMusik();
-  if (LEVEL.mode === 'racer') { newGame(OUTFITS.schwarz.id); return; }
+  if (LEVEL.mode === 'racer' || LEVEL.mode === 'probe') { newGame(OUTFITS.schwarz.id); return; }
   const kluft = startKluft();
   if (kluft) { newGame(kluft); return; }
   renderGarde('start');
@@ -1007,7 +1064,20 @@ fit();
 requestAnimationFrame(frame);
 window.__roland = {
   get game() { return game; }, get racer() { return racer; }, get grill() { return grill; },
-  get aktiv() { return grill || racer || game; },
+  // Die letzte Probe (DRR-P1): Phase, Treffer, Patzer, Restzeit, Verdikt, Plan.
+  probe: {
+    get szene() { return probe; },
+    get aktiv() { return !!probe; },
+    get phase() { return probe ? probe.state : null; },
+    get treffer() { return probe ? probe.treffer : 0; },
+    get patzer() { return probe ? probe.patzer : 0; },
+    get restzeit() { return probe ? probe.restzeit() : 0; },
+    get verdikt() { return probe && probe.verdikt ? probe.verdikt.id : null; },
+    get satz() { return probe ? probe.hud.satz : null; },
+    get plan() { return probe ? probe.plan : null; },
+    get figuren() { return probe && probe.figuren ? probe.figuren() : []; },
+  },
+  get aktiv() { return probe || grill || racer || game; },
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
   get levelCount() { return LEVELS.length; },
   get levelIds() { return LEVELS.map((l) => l.id); },

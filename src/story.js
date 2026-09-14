@@ -46,6 +46,10 @@ export const STATIONEN = [
     ziel: 'AUFTRITT IM FRACK: APPLAUS SAMMELN, DANN DEN FRACK AM VORHANG ABLEGEN',
   },
   {
+    id: 'probe', name: 'DIE LETZTE PROBE', mode: 'probe',
+    ziel: 'DIE LETZTE PROBE BESTEHEN — EINSATZ UND OHROPAX IM TAKT',
+  },
+  {
     id: 'motorrad', name: 'INTERLUDIUM — MOTORRAD NACH HAUSE', mode: 'racer',
     ziel: 'NACH HAUSE FAHREN — DAS MOTIV BLEIBT IM HELM',
   },
@@ -83,6 +87,10 @@ export const BELOHNUNGEN = {
     title: 'STEHENDE OVATIONEN',
     text: 'Der Vorhang ist gefallen und das Haus steht. Einundvierzig Jahre lang war das '
       + 'Bühnenlicht unangenehm hell — heute Abend nicht mehr.',
+  },
+  probe: {
+    title: 'STILLE AUF DEM PULT',
+    text: 'Kein Takt mehr offen, die Partitur liegt zugeklappt. Draußen wartet der Helm — der letzte Weg ist eine Heimfahrt.',
   },
   motorrad: {
     title: 'BELOHNUNG: KUEHLE NACHTLUFT',
