@@ -11,6 +11,8 @@
 // allem Lauten. Kein Fail-Zustand — der Lauf endet immer nach der Coda, das
 // Verdikt fällt nur über die Quote.
 import { DIFFICULTY } from './config.js';
+import { SPRITES } from './sprites.js';
+import { spriteCanvas } from './render.js';
 
 /** Gesamtdauer eines Laufs in Sekunden (Auftrag: 65–75 s). */
 export const PROBE_DAUER = 70;
@@ -365,6 +367,8 @@ export class Probe {
     this.uhr = 0;            // der Dirigent klopft an die Uhr
     this.bpm = this.level.bpm || PROBE_SAETZE[0].bpm;
     this.hud = this.buildHud();
+    // Die Ansage des Dirigenten steht vor dem ersten Einsatz (bei t ≈ 4 s).
+    this.message(PROBE_TEXTE.intro, 6, 2);
   }
 
   pause(reason = 'user') {
@@ -601,14 +605,180 @@ export class Probe {
   }
 
   draw(ctx) {
-    // Gerüst (Phase 1): Bühne, Pult und die Bedienzeile. Die Figuren und ihre
-    // Animationen kommen mit der Optik-Phase dazu.
+    // Die Szene: Pult-Perspektive. Vorne das Notenpult mit Blatt und Lampe,
+    // dahinter die Bühne — die Figuren tauchen „in etwas Entfernung" über der
+    // Bühnenkante auf, fünf Spalten breit.
     const w = this.vw, h = this.vh;
+    const boden = Math.round(h * PROBE_BUEHNENKANTE);
+    ctx.save();
+    if (this.shake > 0) {
+      // Kleiner Bildschirm-Schüttler beim Becken-Crash: deterministisch aus
+      // der Reststärke, damit Prüfungen reproduzierbar bleiben.
+      ctx.translate(Math.round(Math.sin(this.zeit * 60) * this.shake),
+        Math.round(Math.cos(this.zeit * 53) * this.shake * 0.6));
+    }
+    // ------------------------------------------------------------- Bühne ----
     ctx.fillStyle = '#141021';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(-8, -8, w + 16, h + 16);
+    ctx.fillStyle = '#1c1530';
+    ctx.fillRect(-8, -8, w + 16, boden + 8);
     ctx.fillStyle = '#241b33';
-    ctx.fillRect(0, Math.round(h * 0.62), w, h);
+    ctx.fillRect(-8, boden, w + 16, h - boden + 8);
     ctx.fillStyle = '#2f2440';
-    ctx.fillRect(0, Math.round(h * 0.62), w, 2);
+    ctx.fillRect(-8, boden, w + 16, 2);
+    ctx.fillStyle = '#1a1426';
+    ctx.fillRect(-8, boden + 2, w + 16, 1);
+    // Spaltenmarken am Bühnenrand (fünf Plätze)
+    const sp = Math.round(w / PROBE_SPALTEN);
+    ctx.fillStyle = '#2b2138';
+    for (let i = 1; i < PROBE_SPALTEN; i++) ctx.fillRect(i * sp, boden + 3, 1, 3);
+
+    // ------------------------------------------------------------ Figuren ----
+    for (const f of this.figuren()) {
+      const paket = this.sprite(f.figur);
+      if (!paket) continue;
+      const mass = 2;                      // Pixel-Art doppelt: erkennbar groß
+      const bw = paket.w * mass, bh = paket.h * mass;
+      const x = Math.round(f.x - bw / 2);
+      let y = boden - bh + 2;
+      let blitz = 0;
+      let alpha = 1;
+      if (f.status === 'rise') {
+        // Auftauchen mit Überschwinger: die Figur schiebt sich über die Kante.
+        const p = Math.max(0, Math.min(1, (this.zeit - (f.t - PROBE_RISE)) / PROBE_RISE));
+        const ueber = 1 + 0.35 * Math.sin(Math.PI * Math.min(1, p));
+        const sicht = Math.min(1, ueber * p);
+        y = boden - bh * sicht + 2;
+        alpha = Math.max(0.25, Math.min(1, p * 1.6));
+      } else if (f.status === 'treffer') {
+        blitz = 1;                          // kurzer Trefferblitz der Silhouette
+      } else if (f.status === 'verpasst') {
+        alpha = 0.55;
+      }
+      if (f.gleichzeitig) {
+        // Doppel-Lärm: die zweite Figur steht dicht daneben.
+        const paket2 = this.sprite(f.figuren[1] || f.figur);
+        if (paket2) {
+          ctx.globalAlpha = alpha * 0.95;
+          ctx.drawImage(paket2.canvas, Math.round(x + bw * 0.75), Math.round(y + 2),
+            paket2.w * mass, paket2.h * mass);
+          ctx.globalAlpha = 1;
+        }
+      }
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(blitz > 0 ? paket.solid : paket.canvas, x, Math.round(y), bw, bh);
+      ctx.globalAlpha = 1;
+      // Treffer/Patzer: kurzer Ring an der Figur.
+      if (f.status === 'treffer') this.ring(ctx, f.x, y + bh / 2, 10, '#5de0cf');
+      if (f.status === 'verpasst') this.ring(ctx, f.x, y + bh / 2, 12, '#b0392f');
+      // Ohropax ploppt in die Ohren.
+      for (const o of this.ohren) {
+        if (o.spalte !== f.spalte) continue;
+        const t = (this.zeit - o.t) / 0.5;
+        const paketOhr = this.sprite('ohropax');
+        if (paketOhr) {
+          const seite = t < 0.25 ? -1 : 1;
+          ctx.drawImage(paketOhr.canvas, Math.round(f.x + seite * (6 + t * 6) - 4),
+            Math.round(y + 6 + t * 6), 8, 6);
+        }
+      }
+      // Verpasste Geste des Dirigenten: er klopft an die Uhr.
+      if (this.uhr > 0 && f.figur === 'dirigent' && f.status === 'verpasst') {
+        const tick = Math.sin(this.zeit * 30) > 0 ? 1 : 0;
+        ctx.fillStyle = '#e8c46a';
+        ctx.fillRect(Math.round(f.x + 10), Math.round(y - 6 + tick), 5, 5);
+        ctx.fillStyle = '#0b0810';
+        ctx.fillRect(Math.round(f.x + 12), Math.round(y - 5 + tick), 1, 2);
+      }
+    }
+
+    // -------------------------------------------------- Notenflug aufs Blatt --
+    for (const n of this.noten) {
+      const t = Math.min(1, (this.zeit - n.t) / 0.5);
+      const spx = Math.round((n.spalte + 0.5) * sp);
+      const zx = Math.round(w / 2 - 14), zy = Math.round(h - 26);
+      const x = Math.round(spx + (zx - spx) * t);
+      const y = Math.round(boden - 6 + (zy - (boden - 6)) * t - Math.sin(Math.PI * t) * 12);
+      ctx.fillStyle = '#e9e5d8';
+      ctx.fillRect(x - 2, y, 4, 3);
+      ctx.fillRect(x + 2, y - 5, 1, 6);
+    }
+
+    // --------------------------------------------------- Becken-Crash-Ringe --
+    for (const b of this.becken) {
+      const t = Math.min(1, (this.zeit - b.t) / 0.45);
+      this.ring(ctx, Math.round((b.spalte + 0.5) * sp), boden - 10, 8 + t * 26, '#e8c46a', 1 - t);
+    }
+
+    // ------------------------------------------------------------ Notenpult --
+    const px = Math.round(w / 2 - 20), py = h - 40, pw = 40, ph = 26;
+    ctx.fillStyle = '#20202a';
+    ctx.fillRect(px + pw / 2 - 1, py + ph, 3, 14);              // Ständer
+    ctx.fillRect(px + pw / 2 - 8, h - 14, 17, 3);               // Fuß
+    ctx.fillStyle = '#2b2436';
+    ctx.fillRect(px, py, pw, ph);                               // Pult
+    ctx.fillStyle = '#3a3350';
+    ctx.fillRect(px + 2, py + 2, pw - 4, ph - 4);
+    // Das Blatt: eins für jede gelungene Geste (höchstens sechs Striche).
+    ctx.fillStyle = '#f0eee4';
+    ctx.fillRect(px + 5, py + 4, pw - 10, ph - 10);
+    ctx.fillStyle = '#20202a';
+    for (let i = 0; i < Math.min(5, this.treffer); i++) {
+      ctx.fillRect(px + 8, py + 7 + i * 3, pw - 18, 1);
+    }
+    // Die Pult-Lampe: sichtbarer Taktgeber, pulsiert auf jedem Schlag.
+    const puls = Math.max(0, Math.min(1, this.pultPuls));
+    ctx.fillStyle = `rgba(232,196,106,${0.25 + 0.75 * puls})`;
+    ctx.fillRect(px + pw / 2 - 6, py - 9, 12, 3);
+    ctx.fillStyle = `rgba(240,238,228,${0.10 + 0.5 * puls})`;
+    ctx.fillRect(px + pw / 2 - 3, py - 7, 6, 2);
+    if (puls > 0.05) {
+      ctx.fillStyle = `rgba(232,196,106,${0.10 * puls})`;
+      ctx.fillRect(px - 10, py - 14, pw + 20, 6 + 10 * puls);
+    }
+    // Schlussakkord: ein heller Blitz über der ganzen Bühne.
+    if (this.zeit >= this.plan.schlussakkord && this.zeit < this.plan.schlussakkord + 0.6) {
+      const t = (this.zeit - this.plan.schlussakkord) / 0.6;
+      ctx.fillStyle = `rgba(240,238,228,${0.35 * (1 - t)})`;
+      ctx.fillRect(-8, -8, w + 16, h + 16);
+    }
+    ctx.restore();
+  }
+
+  /** Sprite-Paket einer Figur (gecacht über render.js). */
+  sprite(name) {
+    if (!SPRITES[name] && name !== 'ohropax') return null;
+    return spriteCanvas(name, SPRITES[name]);
+  }
+
+  /** Kurzer Ring (Treffer, Patzer, Becken-Crash). */
+  ring(ctx, x, y, r, farbe, alpha = 0.9) {
+    ctx.strokeStyle = farbe;
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(Math.round(x) + 0.5, Math.round(y) + 0.5, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Die Texte der Station als logische Canvas-Rechtecke (derselbe Vertrag wie
+   * Grill und Fahrten): Titel, Zählerzeile und die Bedienzeile. Die Abbildung
+   * ins Fenster macht allein main.js.
+   */
+  beschriftungen() {
+    const schrift = this.vw < 320 ? 7 : 8;
+    const panel = 'rgba(16,12,26,.88)';
+    const breit = this.vw < 320 ? 150 : 210;
+    const zeile = `TREFFER ${this.treffer} · PATZER ${this.patzer}`;
+    return [
+      { id: 'pr-titel', text: 'DIE LETZTE PROBE', x: 10, y: 8, w: breit, h: 11,
+        fontSize: schrift, align: 'left', color: '#e8c46a', bg: panel, unterHud: true },
+      { id: 'pr-zaehler', text: `${zeile} · ${this.hud.satz}`, x: 10, y: 20, w: breit + 40, h: 10,
+        fontSize: schrift - 1, align: 'left', color: '#e9e5d8', bg: panel, unterHud: true },
+      { id: 'pr-bedienung', text: PROBE_TEXTE.bedienung, x: 10, y: 32, w: Math.min(this.vw - 20, 300), h: 10,
+        fontSize: schrift - 1, align: 'left', color: '#9cdbd3', bg: panel, unterHud: true },
+    ];
   }
 }
