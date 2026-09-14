@@ -658,6 +658,30 @@ export const SPRITES = {
     '  ....  ....  ',
   ],
 
+  // Beckenschläger: zwei Messingbecken in den Händen (DRR-P1, „DIE LETZTE
+  // PROBE"). Randfüllung sind Leerzeichen — kein '.' am Rand, sonst steht ein
+  // schwarzer Kasten um die Figur.
+  becken: [
+    '                ',
+    '      dddd      ',
+    '     dddddd     ',
+    '     s.ss.s     ',
+    '     ssssss     ',
+    '      SSSS      ',
+    '  yy  kkkk  yy  ',
+    ' yyyy kkkk yyyy ',
+    ' yYYy kkkk yYYy ',
+    '  yy  kkkk  yy  ',
+    '      kkkk      ',
+    '     kkkkkk     ',
+    '     kkkkkk     ',
+    '     kkkkkk     ',
+    '      kkkk      ',
+    '      kk kk     ',
+    '      kk kk     ',
+    '     ddd ddd    ',
+  ],
+
   // Instrumentenkoffer: helles Leder mit Messing, damit er sich vom Fels abhebt
   koffer: [
     '      ....      ',

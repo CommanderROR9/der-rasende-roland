@@ -123,6 +123,7 @@ async function evaluate(expr) {
 async function key(code, type) {
   const map = {
     KeyD: [68, 'd'], KeyA: [65, 'a'], Space: [32, ' '], KeyE: [69, 'e'], KeyP: [80, 'p'],
+    KeyO: [79, 'o'],
     ArrowDown: [40, 'ArrowDown'], KeyS: [83, 's'], ArrowUp: [38, 'ArrowUp'],
     Escape: [27, 'Escape'],
   };
@@ -1549,6 +1550,373 @@ async function pruefeSpinde({ zusatz = '' } = {}) {
   for (const akt of akte) await pruefeSpindAkt(akt, zusatz);
 }
 
+/**
+ * Gezielter Block für die letzte Probe (Auftrag DRR-P1).
+ *
+ * Startet die Station über den echten Stationsknopf `#actRow button[data-akt]`
+ * (aufgelöst über `levelIds`) und prüft:
+ *  - Start ohne Garderobe, DOM-Tasten sichtbar, Lauf-Pad ruht, HUD-Zeilen,
+ *  - echte Mausklicks auf EINSATZ/OHROPAX treffen Figuren,
+ *  - die Figuren sind im Canvas sichtbar (A/B gegen einen Frame ohne Figuren),
+ *  - ein deterministisch geführter guter Lauf (Szene im Testtaktschritt, Tasten
+ *    als pointerdown/pointerup auf den echten DOM-Buttons) → Verdikt 1,
+ *  - ein passiver Lauf bleibt stehen statt abzubrechen → Verdikt 3, kein Crash,
+ *  - O wirkt, ein gehaltener Knopf wertet genau einmal, WEITER führt zur Nachtfahrt.
+ *
+ * Die Szene wird im Testtaktschritt vorgespult, weil die Seite im Handy-Emulat
+ * nur wenige Bilder je Sekunde malt (die Spielzeit läuft dort ~1/3 so schnell) —
+ * die Tastendrücke gehen trotzdem über die echten DOM-Tasten. Wanduhr-Grenze 60 s.
+ */
+async function pruefeProbe() {
+  const start = Date.now();
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 412, height: 892, deviceScaleFactor: 2.6, mobile: true,
+  });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await evaluate("localStorage.setItem('rasender-roland/v1', JSON.stringify({ akt1: true, station: 'akt1' }))");
+  await send('Page.navigate', { url: URL_TO_TEST + (URL_TO_TEST.includes('?') ? '&' : '?') + 'v=' + Date.now() });
+  await sleep(2000);
+  await evaluate('window.__errors = [];');
+
+  const ids = JSON.parse(await evaluate('JSON.stringify(window.__roland.levelIds)'));
+  const idx = ids.indexOf('probe');
+  check('PROBE-SCHRITT: die Station steht zwischen Finale und Nachtfahrt',
+    idx > 0 && ids[idx - 1] === 'akt5' && ids[idx + 1] === 'motorrad', ids.join(','));
+  const knopfText = await evaluate(`(() => {
+    const b = document.querySelector('#actRow button[data-akt="${idx}"]');
+    return b ? b.textContent.trim() : '';
+  })()`);
+  check('PROBE-SCHRITT: die Stationswahl nennt die Probe', /LETZTE PROBE/.test(knopfText), knopfText);
+
+  /** Startet die Probe über den echten Knopf der Stationswahl. */
+  const stationStarten = async () => {
+    await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
+    await sleep(350);
+  };
+  await stationStarten();
+  const startbild = JSON.parse(await evaluate(`JSON.stringify({
+    id: window.__roland.level.id,
+    phase: window.__roland.probe.phase,
+    modus: window.__roland.probe.szene.hud.modus,
+    garde: !document.getElementById('garde').classList.contains('hidden'),
+    probePad: document.getElementById('probePad').classList.contains('show'),
+    pad: document.getElementById('pad').classList.contains('show'),
+    hoehe: Math.round(document.getElementById('btnEinsatz').getBoundingClientRect().height),
+    hoehe2: Math.round(document.getElementById('btnOhropax').getBoundingClientRect().height),
+    readout: !document.getElementById('probeReadout').classList.contains('hidden'),
+    journal: document.getElementById('journal').textContent,
+  })`));
+  check('PROBE-SCHRITT: Start ohne Garderobe, Szene läuft direkt',
+    startbild.id === 'probe' && startbild.phase === 'play' && startbild.garde === false
+      && startbild.modus === 'probe', JSON.stringify(startbild));
+  check('PROBE-SCHRITT: die beiden Proben-Tasten stehen groß im Bild, das Lauf-Pad ruht',
+    startbild.probePad === true && startbild.pad === false
+      && startbild.hoehe >= 44 && startbild.hoehe2 >= 44, JSON.stringify(startbild));
+  check('PROBE-SCHRITT: das HUD zeigt Treffer, Patzer, Satz und Restzeit',
+    startbild.readout === true && /LETZTE PROBE/.test(startbild.journal), JSON.stringify(startbild));
+
+  // ------------------------------------------- echte Mausklicks auf die Tasten
+  const taste = (f) => (f === 'dirigent' ? '#btnEinsatz' : '#btnOhropax');
+  let klicks = 0;
+  const ersteFigur = await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    let n = 0;
+    while (g.state === 'play' && n < 3000 && !g.ablauf.some((e) => e.status === 'offen')) { g.update(1 / 60); n++; }
+    const f = g.ablauf.find((e) => e.status === 'offen');
+    return f ? f.figur : '';
+  })()`);
+  for (let runde = 0; runde < 4; runde++) {
+    const vorher = await evaluate('window.__roland.probe.treffer');
+    if (!(await echtKlick$1(taste(ersteFigur === 'dirigent' ? 'dirigent' : 'becken')))) break;
+    klicks++;
+    const danach = await evaluate(`(() => {
+      const g = window.__roland.probe.szene;
+      for (let i = 0; i < 30 && g.treffer === ${vorher}; i++) g.update(1 / 60);
+      return g.treffer;
+    })()`);
+    if (danach <= vorher) break;
+  }
+  const klickStand = JSON.parse(await evaluate(`JSON.stringify({
+    treffer: window.__roland.probe.treffer, patzer: window.__roland.probe.patzer,
+    fehler: window.__errors.length,
+  })`));
+  check('PROBE-SCHRITT: echte Mausklicks auf die DOM-Tasten treffen Figuren',
+    klickStand.treffer >= 1 && klickStand.fehler === 0, JSON.stringify({ ...klickStand, klicks }));
+  results.push(`PROBE-SCHRITT: ${klickStand.treffer} Treffer aus ${klicks} echten Mausklicks (erste Figur: ${ersteFigur || '—'})`);
+
+  // --------------------------------------------- Figuren im Canvas (A/B-Bild)
+  const bild = JSON.parse(await evaluate(`(() => {
+    const cv = document.getElementById('game');
+    const c = cv.getContext('2d');
+    const g = window.__roland.probe.szene;
+    const halten = window.requestAnimationFrame;
+    window.requestAnimationFrame = () => 0;      // Bild einfrieren
+    let n = 0;
+    while (g.state === 'play' && n < 3000 && !g.ablauf.some((e) => e.status === 'offen' || e.status === 'rise')) { g.update(1 / 60); n++; }
+    g.shake = 0;
+    const daten = () => c.getImageData(0, 0, cv.width, cv.height).data;
+    const sichtbar = g.figuren().find((f) => f.status !== 'aus') || null;
+    g.draw(c);
+    const mit = daten();
+    const alt = g.figuren; g.figuren = () => [];
+    g.draw(c);
+    const ohne = daten();
+    g.figuren = alt;
+    window.requestAnimationFrame = halten;
+    let unterschied = 0;
+    for (let i = 0; i < mit.length; i += 4) {
+      if (mit[i] !== ohne[i] || mit[i + 1] !== ohne[i + 1] || mit[i + 2] !== ohne[i + 2]) unterschied++;
+    }
+    return JSON.stringify({ unterschied, breite: cv.width, hoehe: cv.height,
+      x: sichtbar ? sichtbar.x : null, figur: sichtbar ? sichtbar.figur : null });
+  })()`));
+  check('PROBE-SCHRITT: die Figuren sind im Canvas sichtbar (Gegenprobe: ohne sie 0 Punkte)',
+    bild.unterschied > 60 && bild.x !== null && bild.x >= 0 && bild.x <= bild.breite,
+    JSON.stringify(bild));
+  // Bildbeweise: Szene mit Figur und (spaeter) das Verdiktfenster.
+  const probeBild = async (name) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    const ziel = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+    mkdirSync(ziel, { recursive: true });
+    writeFileSync(join(ziel, name), daten);
+    writeFileSync(join(fileURLToPath(new URL('..', import.meta.url)), `screenshot-${name}`), daten);
+    return daten.length;
+  };
+  const groesse = await probeBild('probe-szene.png');
+  check('PROBE-SCHRITT: Bildbeweis der Szene liegt in .artifacts/probe-szene.png',
+    groesse > 1000, `${groesse} Bytes`);
+  results.push(`PROBE-BILD ${bild.unterschied} Figurenpunkte in ${bild.breite}x${bild.hoehe} (${bild.figur} bei x=${bild.x})`);
+
+  // --------------------------------- Erledigte Figuren räumen das Feld (P1b)
+  // Rolands Befund (14.09.): Treffer und Patzer blieben als weiße Schatten
+  // stehen und verdeckten die neuen Figuren. Hier wird dreimal wirklich
+  // getroffen, die Anzeige abgewartet und gemessen, dass danach keine Figur
+  // mehr steht und kein reinweißer Bildpunkt der Solid-Silhouette übrig ist
+  // (Kontrolle: im Blitzfenster stehen welche im Bild). Das Bild der geräumten
+  // Bühne wird als Beweis gezogen, solange der Lauf eingefroren ist.
+  const erledigt = JSON.parse(await evaluate(`(() => {
+    const cv = document.getElementById('game');
+    const c = cv.getContext('2d');
+    const g = window.__roland.probe.szene;
+    // Bild einfrieren: die Frame-Rueckrufe werden geparkt statt verworfen —
+    // ein \`() => 0\` ueber mehrere Aufrufe hinweg reisst die rAF-Kette von
+    // main.js (danach laeuft der Lauf nicht mehr von allein weiter, der
+    // Passiv-Block faellt um). Nach dem Bild werden sie wieder eingeplant.
+    window.__rAFHalt = window.requestAnimationFrame;
+    window.__rAFPark = [];
+    window.requestAnimationFrame = (cb) => { window.__rAFPark.push(cb); return 0; };
+    const boden = Math.round(g.vh * 0.62);
+    const weisse = () => {
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let y = Math.max(0, boden - 60); y <= Math.min(cv.height - 1, boden + 6); y++) {
+        for (let x = 0; x < cv.width; x++) {
+          const i = (y * cv.width + x) * 4;
+          if (d[i] === 255 && d[i + 1] === 255 && d[i + 2] === 255) n++;
+        }
+      }
+      return n;
+    };
+    const treffer = [];
+    for (let runde = 0; runde < 3; runde++) {
+      let n = 0;
+      while (g.state === 'play' && n++ < 4000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+      const f = g.ablauf.find((e) => e.status === 'offen');
+      if (!f) break;
+      const taste = f.taste === 'einsatz' ? 'action' : 'ohropax';
+      window.__roland.input.setKey(taste, true);
+      g.update(1 / 60);
+      window.__roland.input.setKey(taste, false);
+      g.update(1 / 60);
+      treffer.push(f.figur);
+    }
+    g.shake = 0;
+    g.draw(c);
+    const weissBlitz = weisse();                     // Kontrolle: im Blitz steht Weiß
+    // Anzeigefenster (Blitz/Marke) abklingen lassen, dann das ruhige Feld abwarten.
+    for (let i = 0; i < 32; i++) g.update(1 / 60);
+    let n2 = 0;
+    while (g.state === 'play' && n2++ < 300 && g.figuren().length > 0) g.update(1 / 60);
+    g.shake = 0;
+    g.draw(c);
+    const weissDanach = weisse();
+    const offen = g.ablauf.filter((e) => e.status === 'treffer' || e.status === 'verpasst').length;
+    const weg = g.ablauf.filter((e) => e.status === 'weg').length;
+    return JSON.stringify({ treffer, weissBlitz, weissDanach, sichtbar: g.figuren().length,
+      offen, weg, zeit: Number(g.zeit.toFixed(2)) });
+  })()`));
+  const feldBild = await probeBild('probe-feld-geraeumt.png');
+  await evaluate(`(() => {
+    window.requestAnimationFrame = window.__rAFHalt;
+    const park = window.__rAFPark || [];
+    delete window.__rAFHalt; delete window.__rAFPark;
+    for (const cb of park) requestAnimationFrame(cb);   // Frame-Kette wieder anwerfen
+  })()`);
+  check('PROBE-SCHRITT: erledigte Figuren blitzen kurz und räumen dann das Feld (keine weißen Schatten)',
+    erledigt.treffer.length === 3 && erledigt.weissBlitz >= 100 && erledigt.weissDanach === 0
+      && erledigt.sichtbar === 0 && erledigt.offen === 0 && erledigt.weg >= 3,
+    JSON.stringify(erledigt));
+  check('PROBE-SCHRITT: Bildbeweis der geräumten Bühne liegt in .artifacts/probe-feld-geraeumt.png',
+    feldBild > 1000, `${feldBild} Bytes`);
+  results.push(`PROBE-FELD ${erledigt.treffer.length} Treffer: ${erledigt.weissBlitz} weiße Blitzpunkte, `
+    + `danach ${erledigt.weissDanach} (${erledigt.sichtbar} Figuren sichtbar, ${erledigt.weg} abgeräumt, `
+    + `t=${erledigt.zeit}s)`);
+
+  // -------------------------------------------------- deterministischer guter Lauf
+  await stationStarten();
+  const gut = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    const knopf = (f) => document.getElementById(f === 'dirigent' ? 'btnEinsatz' : 'btnOhropax');
+    let vorher = 0;
+    for (let runde = 0; runde < 10 && g.state === 'play'; runde++) {
+      let n = 0;
+      while (g.state === 'play' && n++ < 3000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+      const f = g.ablauf.find((e) => e.status === 'offen');
+      if (!f) break;
+      const b = knopf(f.figur);
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));   // echter Button-Pfad
+      for (let i = 0; i < 8 && g.treffer === vorher; i++) g.update(1 / 60);
+      b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      // Der echte Weg loest die Taste einen Frame spaeter (input.js/main.js).
+      // Im synchronen Vorspulen gibt es diesen Frame nicht: die Taste wird
+      // deshalb hier ausdruecklich geloest, sonst bliebe der naechste Druck
+      // ohne Flanke.
+      window.__roland.input.setKey(f.taste === 'einsatz' ? 'action' : 'ohropax', false);
+      g.update(1 / 60);
+      if (g.treffer === vorher) { continue; }
+      vorher = g.treffer;
+    }
+    g.complete();
+    const t = g.treffer, p = g.patzer;
+    const quote = t + p > 0 ? t / (t + p) : 0;
+    const erwartet = quote >= 0.8 && p <= 6 ? 'steht' : quote >= 0.55 ? 'durchgewinkt' : 'mutig';
+    return JSON.stringify({ treffer: t, patzer: p, quote, erwartet,
+      verdikt: g.verdikt ? g.verdikt.id : null, phase: g.state,
+      plan: g.plan.ereignisse.length });
+  })()`));
+  await sleep(300);
+  const ergebnis = JSON.parse(await evaluate(`JSON.stringify({
+    offen: !document.getElementById('reward').classList.contains('hidden'),
+    titel: document.getElementById('rewardTitle').textContent,
+    text: document.getElementById('rewardText').textContent,
+    eyebrow: document.getElementById('rewardEyebrow').textContent,
+    body: document.getElementById('rewardBody').textContent,
+  })`));
+  check('PROBE-SCHRITT: guter Lauf endet mit Verdikt 1 „DIE PROBE STEHT" (Regel nachgerechnet)',
+    gut.verdikt === 'steht' && gut.verdikt === gut.erwartet && gut.phase === 'complete'
+      && gut.treffer >= 8 && gut.patzer === 0, JSON.stringify(gut));
+  const verdiktBild = await probeBild('probe-verdikt.png');
+  check('PROBE-SCHRITT: Bildbeweis des Verdikts liegt in .artifacts/probe-verdikt.png',
+    verdiktBild > 1000, `${verdiktBild} Bytes`);
+  check('PROBE-SCHRITT: das Ergebnisfenster nennt Verdikt, Quote und Belohnung',
+    ergebnis.offen === true && /NICKT/.test(ergebnis.text) && /STILLE AUF DEM PULT/.test(ergebnis.titel)
+      && /TREFFER/.test(ergebnis.body) && /VERDIKT/.test(ergebnis.body),
+    JSON.stringify(ergebnis));
+  results.push(`PROBE-SCHRITT: guter Lauf ${gut.treffer}/${gut.plan} Treffer, Patzer ${gut.patzer}, Verdikt ${gut.verdikt}`);
+
+  // --------------------------------------------------------------- passiver Lauf
+  await stationStarten();
+  const passivStart = JSON.parse(await evaluate(`JSON.stringify({
+    phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
+    patzer: window.__roland.probe.patzer,
+  })`));
+  // Die Spielzeit läuft im Emulat höchstens so schnell wie die Wanduhr (main.js
+  // deckelt dt auf 1/30 — unter 30 Bildern je Sekunde hinkt das Spiel nach).
+  // Die feste Wartezeit von 5 s lag knapp unter dem ersten verpassten Fenster
+  // (t ≈ 4,9 s): bei langsamem Bildlauf stand der Zähler noch auf 0. Jetzt wird
+  // auf den ersten Patzer gewartet — die Aussage bleibt „ohne Druck läuft die
+  // Probe weiter, kein Fail, Patzer statt Abbruch".
+  let passiv = passivStart;
+  let gewartet = 0;
+  while (passiv.patzer < 1 && passiv.phase === 'play' && gewartet < 20000) {
+    await sleep(500);
+    gewartet += 500;
+    passiv = JSON.parse(await evaluate(`JSON.stringify({
+      phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
+      patzer: window.__roland.probe.patzer, fehler: window.__errors.length,
+      zeit: Number(window.__roland.probe.szene.zeit.toFixed(2)),
+    })`));
+  }
+  check('PROBE-SCHRITT: ohne Druck läuft die Probe weiter (kein Fail, Patzer statt Abbruch)',
+    passivStart.treffer === 0 && passiv.phase === 'play' && passiv.patzer >= 1
+      && passiv.fehler === 0, JSON.stringify({ ...passiv, gewartet }));
+  results.push(`PROBE-SCHRITT: passiver Lauf — ${passiv.patzer} Patzer nach ${gewartet} ms `
+    + `(Spielzeit ${passiv.zeit} s), kein Fehler`);
+
+  // O-Taste: im Leerlauf neutral, kein Absturz.
+  const vorTaste = JSON.parse(await evaluate(
+    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
+  await key('KeyO', 'keyDown');
+  await sleep(60);
+  await key('KeyO', 'keyUp');
+  await sleep(150);
+  const nachTaste = JSON.parse(await evaluate(
+    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
+  check('PROBE-SCHRITT: die O-Taste wirkt (im Leerlauf neutral, kein Absturz)',
+    nachTaste.t >= vorTaste.t && nachTaste.p >= vorTaste.p
+      && (await evaluate('window.__errors.length')) === 0,
+    JSON.stringify({ vorTaste, nachTaste }));
+
+  // Ein gehaltener Knopf wertet genau einmal.
+  const gehalten = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    let n = 0;
+    while (g.state === 'play' && n++ < 3000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+    const f = g.ablauf.find((e) => e.status === 'offen');
+    if (!f) return JSON.stringify({ fehlt: true });
+    const b = document.getElementById(f.figur === 'dirigent' ? 'btnEinsatz' : 'btnOhropax');
+    const vorher = g.treffer;
+    b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    for (let i = 0; i < 60; i++) g.update(1 / 60);          // gehalten: eine Sekunde
+    const nachher = g.treffer;
+    b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    // Das Fenster bleibt offen: halten darf nicht mehrfach zählen.
+    for (let i = 0; i < 30; i++) g.update(1 / 60);
+    return JSON.stringify({ vorher, nachher, danach: g.treffer, figur: f.figur });
+  })()`));
+  check('PROBE-SCHRITT: ein gehaltener Knopf wertet genau einmal',
+    gehalten.fehlt !== true && gehalten.nachher - gehalten.vorher === 1
+      && gehalten.danach === gehalten.nachher,
+    JSON.stringify(gehalten));
+
+  // Der Rest des passiven Laufs im Schnelldurchlauf → Verdikt 3, nichts blockiert.
+  const schlecht = await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    while (g.state === 'play') g.update(1 / 60);
+    return g.verdikt ? g.verdikt.id : null;
+  })()`);
+  await sleep(250);
+  const passivEnde = JSON.parse(await evaluate(`JSON.stringify({
+    verdikt: window.__roland.probe.verdikt,
+    offen: !document.getElementById('reward').classList.contains('hidden'),
+    text: document.getElementById('rewardText').textContent,
+    fehler: window.__errors.length,
+  })`));
+  check('PROBE-SCHRITT: passiver Lauf endet mit Verdikt 3 „MUTIG." ohne Crash',
+    schlecht === 'mutig' && passivEnde.verdikt === 'mutig' && passivEnde.offen === true
+      && passivEnde.fehler === 0, JSON.stringify({ schlecht, passivEnde }));
+  check('PROBE-SCHRITT: das Verdikt führt normal weiter (WEITER startet die Nachtfahrt)',
+    await (async () => {
+      await evaluate("document.getElementById('rewardBtn').click()");
+      await sleep(400);
+      const weiter = JSON.parse(await evaluate(`JSON.stringify({
+        id: window.__roland.level.id, modus: window.__roland.level.mode,
+        fehler: window.__errors.length,
+      })`));
+      results.push(`PROBE-SCHRITT: nach dem Verdikt → ${weiter.id} (${weiter.modus})`);
+      return weiter.id === 'motorrad' && weiter.modus === 'racer' && weiter.fehler === 0;
+    })());
+
+  const sekunden = (Date.now() - start) / 1000;
+  check('PROBE-SCHRITT: der Block bleibt unter 60 s Wanduhr', sekunden <= 60, `${sekunden.toFixed(1)}s`);
+  results.push(`PROBE-SCHRITT: Gesamtzeit ${sekunden.toFixed(1)}s`);
+}
+
+/** Echter Mausklick über CDP (eigener Name, damit der Block nicht kollidiert). */
+async function echtKlick$1(selector) {
+  return echterKlick(selector);
+}
+
 try {
   await send('Runtime.enable');
   await send('Log.enable');
@@ -1696,6 +2064,13 @@ try {
     // Gezielter Lauf fuer DRR-F4: Zivil vor dem Garten gesperrt, im Garten
     // waehlbar und am Avatar zu sehen — ohne den ganzen Weg durch die Akte.
     await pruefeZivilGarten();
+    throw GEZIELTER_ABSCHLUSS;
+  }
+
+  if (TESTMODUS === 'probe') {
+    // Gezielter Lauf für die letzte Probe (Auftrag DRR-P1): Station über die
+    // echten Stationsknöpfe, guter und passiver Lauf, DOM-Tasten, Bildpunkte.
+    await pruefeProbe();
     throw GEZIELTER_ABSCHLUSS;
   }
 
@@ -2145,8 +2520,10 @@ try {
     await evaluate(`window.__roland.loadAct(${start})`);
     await evaluate("document.getElementById('startBtn').click()");
     await sleep(250);
-    const istFahr = await evaluate("window.__roland.level.mode === 'racer'");
-    if (!istFahr) { await evaluate("document.querySelectorAll('#gardeCards button')[0].click()"); await sleep(350); }
+    // Die letzte Probe startet wie die Fahrten direkt (Auftrag DRR-P1) — die
+    // Kleiderwahl ist nur dann zu bedienen, wenn sie wirklich offen ist.
+    const hatGarde = await evaluate("!!window.__roland.game && !document.getElementById('garde').classList.contains('hidden')");
+    if (hatGarde) { await evaluate("document.querySelectorAll('#gardeCards button')[0].click()"); await sleep(350); }
     await evaluate("(() => { const a = window.__roland.aktiv; a.complete ? a.complete() : a.ende(); })()");
     await sleep(250);
     await evaluate("document.getElementById('rewardBtn').click()");
@@ -5084,7 +5461,7 @@ try {
       return 1;
     })()`);
     await sleep(260);
-    if ((await evaluate("window.__roland.level.mode")) !== 'racer') {
+    if (await evaluate("!document.getElementById('garde').classList.contains('hidden')")) {
       await evaluate("document.querySelectorAll('#gardeCards button')[0].click()");
       await sleep(260);
     }

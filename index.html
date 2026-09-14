@@ -78,6 +78,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 .btns button.act{border-color:var(--amber);background:rgba(70,45,12,.85);color:var(--amber)}
 .btns button:active{transform:translateY(1px)}
 
+/* Letzte Probe (DRR-P1): zwei große Tasten unten links/rechts, nur im Modus
+   `probe`. Das SPRUNG/TRITT-Pad ruht dort. */
+.probePad{position:absolute;z-index:7;left:calc(16px + env(safe-area-inset-left));right:calc(16px + env(safe-area-inset-right));
+  bottom:calc(38px + env(safe-area-inset-bottom));display:none;gap:14px}
+.probePad.show{display:flex}
+.probePad button{flex:1 1 0;min-height:74px;border:1px solid var(--cyan);background:rgba(11,57,68,.85);color:var(--ink);
+  font:800 13px ui-monospace,monospace;letter-spacing:.08em;border-radius:5px}
+.probePad button.act{border-color:var(--amber);background:rgba(70,45,12,.85);color:var(--amber)}
+.probePad button:active{transform:translateY(1px)}
+
 /* Panels */
 .panel{position:absolute;z-index:10;inset:0;display:grid;place-items:center;padding:14px;
   background:rgba(5,3,10,.74);backdrop-filter:blur(3px);overflow:auto}
@@ -151,6 +161,12 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       <span>STRECKE<b id="rDist">0%</b></span>
       <span>TAKT<b id="rTakt">104</b></span>
     </div>
+    <div class="readout hidden" id="probeReadout">
+      <span>TREFFER<b id="pTreffer">0</b></span>
+      <span>PATZER<b id="pPatzer">0</b></span>
+      <span>SATZ<b id="pSatz">VOM BLATT</b></span>
+      <span>REST<b id="pRest">70 s</b></span>
+    </div>
   </div>
 
   <div class="hintbar hidden" id="hintbar"></div>
@@ -162,6 +178,13 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
       <button id="btnJump" type="button">SPRUNG</button>
       <button id="btnAction" class="act" type="button">TRITT</button>
     </div>
+  </div>
+
+  <!-- Letzte Probe (DRR-P1): zwei große Tasten, links EINSATZ, rechts OHROPAX.
+       Nur im Modus `probe` sichtbar — das SPRUNG/TRITT-Pad ruht dann. -->
+  <div class="probePad" id="probePad">
+    <button id="btnEinsatz" class="act" type="button">EINSATZ</button>
+    <button id="btnOhropax" type="button">OHROPAX</button>
   </div>
 
   <div class="rotate">FÜR MEHR ÜBERSICHT: GERÄT QUER HALTEN</div>
