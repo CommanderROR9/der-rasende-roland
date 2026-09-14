@@ -67,6 +67,7 @@ export function buildProbe() {
     subtitle: 'Eine geht noch: der Dirigent lässt dich nicht ohne Probe gehen.',
     mode: 'probe',
     bpm: PROBE_SAETZE[0].bpm,
+    dauer: PROBE_DAUER,
     pult: true,
     takts: [
       { at: 0.29, bpm: 104, label: 'NOCHMAL VON VORNE — DIE AKZENTE WECHSELN' },
@@ -178,6 +179,8 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
       if (letzte) {
         unten = Math.max(unten, letzte.t + (letzte.taste !== taste ? PROBE_TASTEN_ABSTAND : Math.min(min, 0.4)));
       }
+      // Satzgrenze: ein Satz beginnt nicht vor seiner Zeit (Auftrag 20/45 s).
+      if (extra.nichtVor !== undefined) unten = Math.max(unten, extra.nichtVor);
       const band = [];
       const k0 = Math.floor(rohT / schritt);
       for (let k = k0 - 1; k <= k0 + 2; k++) {
@@ -207,10 +210,13 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
       rasterTeiler: teiler,
       ...extra,
     };
-    delete e.min; delete e.max;
+    delete e.min; delete e.max; delete e.nichtVor;
     ereignisse.push(e);
     return e;
   };
+
+  const abstandZuLetztem = () => (ereignisse.length ? ereignisse[ereignisse.length - 1].t : 0);
+  const zurueck = (n) => { for (let i = 0; i < n; i++) ereignisse.pop(); };
 
   // --- Satz 1 „VOM BLATT": Einzelfiguren, erste drei fest ---------------------
   const s1 = PROBE_SAETZE[0];
@@ -222,6 +228,7 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
       : (rnd() < 0.5 ? 'dirigent' : LAUTE[Math.floor(rnd() * LAUTE.length)]);
     druecke(t, s1, [figur], 'einzeln', { fest: n < fest.length });
     n++;
+    if (abstandZuLetztem() > s1.bis - 0.3) { zurueck(1); break; }
     t += s1.abstand[0] + rnd() * (s1.abstand[1] - s1.abstand[0]);
   }
 
@@ -236,10 +243,11 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
     if (art === 'stich') {
       // Einsatz, danach ≤ 1,3 s später der Lärm — der Abstand bleibt über
       // 0,55 s (verschiedene Tasten), das Fenster des Stichs ist eng.
-      druecke(t, s2, ['dirigent'], 'stich');
+      druecke(t, s2, ['dirigent'], 'stich', { nichtVor: s2.von });
       const laut = LAUTE[Math.floor(rnd() * LAUTE.length)];
-      druecke(t + 0.9, s2, [laut], 'stich-laut', { min: 0.6, max: 1.3 });
-      t = ereignisse[ereignisse.length - 1].t + (s2.abstand[0] + rnd() * (s2.abstand[1] - s2.abstand[0]));
+      druecke(t + 0.9, s2, [laut], 'stich-laut', { min: 0.6, max: 1.3, nichtVor: s2.von });
+      if (abstandZuLetztem() > s2.bis - 0.2) { zurueck(2); break; }
+      t = abstandZuLetztem() + (s2.abstand[0] + rnd() * (s2.abstand[1] - s2.abstand[0]));
       continue;
     }
     if (art === 'doppel') {
@@ -248,13 +256,15 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
       const g = laut
         ? [LAUTE[Math.floor(rnd() * LAUTE.length)], LAUTE[Math.floor(rnd() * LAUTE.length)]]
         : ['dirigent', 'dirigent'];
-      const e1 = druecke(t, s2, [g[0]], 'doppel');
-      druecke(e1.t + 0.5, s2, [g[1]], 'doppel', { min: 0.4, max: 0.8 });
-      t = ereignisse[ereignisse.length - 1].t + (s2.abstand[0] + rnd() * (s2.abstand[1] - s2.abstand[0]));
+      const e1 = druecke(t, s2, [g[0]], 'doppel', { nichtVor: s2.von });
+      druecke(e1.t + 0.5, s2, [g[1]], 'doppel', { min: 0.4, max: 0.8, nichtVor: s2.von });
+      if (abstandZuLetztem() > s2.bis - 0.2) { zurueck(2); break; }
+      t = abstandZuLetztem() + (s2.abstand[0] + rnd() * (s2.abstand[1] - s2.abstand[0]));
       continue;
     }
     const figur = rnd() < 0.55 ? 'dirigent' : LAUTE[Math.floor(rnd() * LAUTE.length)];
-    druecke(t, s2, [figur], 'einzeln');
+    druecke(t, s2, [figur], 'einzeln', { nichtVor: s2.von });
+    if (abstandZuLetztem() > s2.bis - 0.2) { zurueck(1); break; }
     t += s2.abstand[0] + rnd() * (s2.abstand[1] - s2.abstand[0]);
   }
 
@@ -271,27 +281,35 @@ export function bauProbePlan({ schwierigkeit = 'gemuetlich', seed = PROBE_SEED }
       const a = LAUTE[Math.floor(rnd() * LAUTE.length)];
       let b = LAUTE[Math.floor(rnd() * LAUTE.length)];
       if (b === a) b = LAUTE[(LAUTE.indexOf(a) + 1) % LAUTE.length];
-      druecke(t, s3, [a, b], 'doppel-laerm', { gleichzeitig: true });
+      druecke(t, s3, [a, b], 'doppel-laerm', { gleichzeitig: true, nichtVor: s3.von });
+      if (abstandZuLetztem() > s3.bis - 0.2) { zurueck(1); break; }
     } else if (art === 'kette') {
       // Drei kurze Einsätze auf derselben Taste, dichter als der Satzabstand.
       const figur = rnd() < 0.5 ? 'dirigent' : LAUTE[Math.floor(rnd() * LAUTE.length)];
-      let letzter = druecke(t, s3, [figur], 'kette');
+      let letzter = druecke(t, s3, [figur], 'kette', { nichtVor: s3.von });
       for (let q = 1; q < 3; q++) {
-        letzter = druecke(letzter.t + 0.65, s3, [figur], 'kette', { min: 0.5, max: 0.9 });
+        letzter = druecke(letzter.t + 0.65, s3, [figur], 'kette', { min: 0.5, max: 0.9, nichtVor: s3.von });
       }
+      if (abstandZuLetztem() > s3.bis - 0.2) { zurueck(3); break; }
     } else {
       const figur = rnd() < 0.5 ? 'dirigent' : LAUTE[Math.floor(rnd() * LAUTE.length)];
-      druecke(t, s3, [figur], 'einzeln');
+      druecke(t, s3, [figur], 'einzeln', { nichtVor: s3.von });
+      if (abstandZuLetztem() > s3.bis - 0.2) { zurueck(1); break; }
     }
-    t = ereignisse[ereignisse.length - 1].t + (s3.abstand[0] + rnd() * (s3.abstand[1] - s3.abstand[0]));
+    t = abstandZuLetztem() + (s3.abstand[0] + rnd() * (s3.abstand[1] - s3.abstand[0]));
   }
 
   // --- Coda „SCHLUSSAKKORD": vier feste Einsätze im Wechsel ------------------
   const coda = PROBE_SAETZE[3];
   const codaSchritt = (60 / coda.bpm) / 2;               // Achtelraster des Satzes
   const codaAbstand = codaSchritt * 2 * PROBE_CODA_SCHLAEGE;   // 1,5 Schläge = 0,703 s
-  // Auf dem Raster verankert, damit die Coda exakt im Puls liegt.
-  const codaStart = Math.round(coda.von / codaSchritt) * codaSchritt;
+  // Auf dem Raster verankert, damit die Coda exakt im Puls liegt. Liegt das
+  // letzte Ereignis des Vorsatzes zu dicht, rückt die Coda in Achtelschritten.
+  let codaStart = Math.round(coda.von / codaSchritt) * codaSchritt;
+  const vorCoda = abstandZuLetztem();
+  if (vorCoda && codaStart - vorCoda < PROBE_TASTEN_ABSTAND) {
+    codaStart += Math.ceil((PROBE_TASTEN_ABSTAND - (codaStart - vorCoda)) / codaSchritt) * codaSchritt;
+  }
   const codaFiguren = ['dirigent', 'becken', 'dirigent', 'sopran'];
   for (let c = 0; c < codaFiguren.length; c++) {
     druecke(codaStart + c * codaAbstand, coda, [codaFiguren[c]], 'coda',
@@ -531,12 +549,15 @@ export class Probe {
   gnadeGeben() {
     this.gnade += 1;
     this.serie = 0;
+    // Das nächste Intervall ist das, das jetzt ansteht: der Abstand vom letzten
+    // gebuchten Ereignis zum nächsten. Es wächst um 40 % — alle weiteren
+    // Ereignisse wandern mit, damit der Rest des Laufs zusammenbleibt.
     const ab = this.ablauf.findIndex((e) => e.status === 'aus' || e.status === 'rise');
     if (ab < 0) return;
-    const naechstes = this.ablauf[ab + 1];
-    const intervall = naechstes ? Math.max(0.5, naechstes.tEff - this.ablauf[ab].tEff) : 1;
+    const davor = ab > 0 ? this.ablauf[ab - 1].tEff : this.ablauf[ab].tEff;
+    const intervall = Math.max(0.5, this.ablauf[ab].tEff - davor);
     const delta = (PROBE_GNADE_FAKTOR - 1) * intervall;
-    for (let i = ab + 1; i < this.ablauf.length; i++) {
+    for (let i = ab; i < this.ablauf.length; i++) {
       const e = this.ablauf[i];
       e.tEff += delta; e.vonEff += delta; e.bisEff += delta; e.riseEff += delta;
     }
