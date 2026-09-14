@@ -31,6 +31,9 @@ jobs:
 
       - name: Android-SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Das Action-Default `tools` ist aus dem SDK-Repository entfernt.
+          packages: platform-tools
 
       - name: SDK-Pakete installieren
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null
