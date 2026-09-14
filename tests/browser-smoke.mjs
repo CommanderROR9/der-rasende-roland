@@ -7,6 +7,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Die Vornamen des Abspanns stehen im Modul — der Browserlauf vergleicht die
+// Textebene damit, statt Namen im Testskript zu wiederholen (F2).
+import { abspannNamen } from '../src/credits.js';
 
 const URL_TO_TEST = process.argv[2] || 'http://127.0.0.1:8123/';
 const TESTMODUS = new URL(URL_TO_TEST).searchParams.get('test');
@@ -4176,9 +4179,120 @@ try {
   writeFileSync(abPortraitPfad, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   results.push(`SCREENSHOT ${abPortraitPfad}`);
 
+  // --- F2: die Namen liegen in der DOM-Textebene, nicht mehr im Bild ---------
+  // Rolands Befund (13.09.): „Die Namen in den Credits sind unleserlich
+  // verpixelt." Deshalb: Namentext als DOM-Beschriftung in echter Aufloesung,
+  // und das Namensband der Leinwand muss leer sein.
+  const abspannTextMessung = `(() => {
+    const a = window.__roland.abspann;
+    const cv = a.canvas;
+    const r = cv.getBoundingClientRect();
+    const L = a.layout(a.seite);
+    const feld = L.widmung || L.kacheln[0];
+    const name = L.widmung ? L.widmung.text : (L.kacheln[0] ? L.kacheln[0].name : null);
+    const ebene = a.texteEbene;
+    const kinder = ebene ? [...ebene.querySelectorAll('.game-text-label')] : [];
+    const g = cv.getContext('2d');
+    const boxY = feld.nameBoxY !== undefined ? feld.nameBoxY : feld.y + feld.size;
+    const boxH = feld.nameBoxH !== undefined ? feld.nameBoxH : 22;
+    const d = g.getImageData(0, boxY, cv.width, boxH).data;
+    let canvasPunkte = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!(Math.abs(d[i] - 11) <= 3 && Math.abs(d[i + 1] - 8) <= 3 && Math.abs(d[i + 2] - 16) <= 3)) canvasPunkte++;
+    }
+    const masse = kinder.map((el) => {
+      const b = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return { id: el.dataset.textId, text: el.textContent, font: parseFloat(cs.fontSize),
+        schrift: cs.fontFamily, farbe: cs.color, sichtbar: b.width > 0 && b.height > 0,
+        links: Math.round(b.left * 100) / 100, oben: Math.round(b.top * 100) / 100,
+        rechts: Math.round(b.right * 100) / 100, unten: Math.round(b.bottom * 100) / 100,
+        breite: Math.round(b.width * 100) / 100, hoehe: Math.round(b.height * 100) / 100 };
+    });
+    return JSON.stringify({
+      offen: a.offen, seite: a.seite, name, ebeneDA: !!ebene, id: ebene ? ebene.id : null,
+      anzahl: kinder.length, texte: masse, canvasPunkte,
+      canvas: { links: r.left, oben: r.top, rechts: r.right, unten: r.bottom,
+        breite: Math.round(r.width * 100) / 100, hoehe: Math.round(r.height * 100) / 100,
+        logischW: cv.width, logischH: cv.height,
+        skalierung: Math.round((r.width / cv.width) * 10000) / 10000 },
+      portraitUnten: r.top + (feld.y + feld.size) * (r.height / cv.height),
+      nameBoxY: boxY, nameBoxH: boxH,
+    });
+  })()`;
+
+  const seite0Text = JSON.parse(await evaluate(abspannTextMessung));
+  check('Abspann-Browser: der Vorname steht als DOM-Text ueber der Leinwand',
+    seite0Text.ebeneDA === true && seite0Text.id === 'abspannTextLayer' && seite0Text.anzahl === 1
+      && seite0Text.texte[0]?.id === 'abspann-name' && seite0Text.texte[0]?.text === 'ANNA'
+      && seite0Text.texte[0]?.sichtbar === true,
+    JSON.stringify({ ebene: seite0Text.ebeneDA, id: seite0Text.id, anzahl: seite0Text.anzahl, texte: seite0Text.texte }));
+  check('Abspann-Browser: das Namensband der Leinwand ist leer (kein Text mehr im Bild)',
+    seite0Text.canvasPunkte === 0,
+    `${seite0Text.canvasPunkte} Bildpunkte im Band y=${seite0Text.nameBoxY}..${seite0Text.nameBoxY + seite0Text.nameBoxH}`);
+  check('Abspann-Browser: die Namensschrift haelt den 12-CSS-Pixel-Boden und den Monospace-Stack',
+    !!seite0Text.texte[0] && seite0Text.texte[0].font >= 12
+      && /monospace/i.test(seite0Text.texte[0].schrift)
+      && seite0Text.texte[0].hoehe >= 12,
+    JSON.stringify({ font: seite0Text.texte[0]?.font, schrift: seite0Text.texte[0]?.schrift,
+      hoehe: seite0Text.texte[0]?.hoehe }));
+  check('Abspann-Browser: der Name sitzt unter dem Portrait und innerhalb der Leinwand',
+    !!seite0Text.texte[0]
+      && seite0Text.texte[0].oben >= seite0Text.portraitUnten - 0.5
+      && seite0Text.texte[0].links >= seite0Text.canvas.links - 0.5
+      && seite0Text.texte[0].rechts <= seite0Text.canvas.rechts + 0.5
+      && seite0Text.texte[0].unten <= seite0Text.canvas.unten + 0.5,
+    JSON.stringify({ text: seite0Text.texte[0], portraitUnten: seite0Text.portraitUnten, canvas: seite0Text.canvas }));
+  // Bildbeweis der Namenszeile: Ausschnitt genau der Namensbox.
+  const namenClip = {
+    x: seite0Text.canvas.links, y: seite0Text.portraitUnten, width: seite0Text.canvas.breite,
+    height: Math.max(12, seite0Text.nameBoxH * (seite0Text.canvas.hoehe / (seite0Text.canvas.logischH || 216))),
+  };
+  const abNamePfad = join(shotDirAb, 'abspann-namenszeile.png');
+  writeFileSync(abNamePfad, Buffer.from((await send('Page.captureScreenshot', {
+    format: 'png', clip: { x: namenClip.x, y: namenClip.y, width: namenClip.width, height: namenClip.height, scale: 1 },
+  })).data, 'base64'));
+  const abNameRandPfad = fileURLToPath(new URL('../screenshot-abspann-namenszeile.png', import.meta.url));
+  writeFileSync(abNameRandPfad, Buffer.from((await send('Page.captureScreenshot', {
+    format: 'png', clip: { x: namenClip.x, y: namenClip.y, width: namenClip.width, height: namenClip.height, scale: 1 },
+  })).data, 'base64'));
+  results.push(`SCREENSHOT ${abNamePfad}`);
+  results.push(`SCREENSHOT ${abNameRandPfad}`);
+  // Der Klick auf die Leinwand muss weiterblaettern — die Textebene darf ihn
+  // nicht schlucken (pointer-events: none).
+  const klickPunkt = seite0Text.texte[0]
+    ? { x: Math.round((seite0Text.texte[0].links + seite0Text.texte[0].rechts) / 2),
+      y: Math.round((seite0Text.texte[0].oben + seite0Text.texte[0].unten) / 2) }
+    : null;
+  if (klickPunkt) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: klickPunkt.x, y: klickPunkt.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: klickPunkt.x, y: klickPunkt.y, button: 'left', clickCount: 1 });
+  }
+  await sleep(250);
+  const nachKlickAufName = JSON.parse(await evaluate(abspannTextMessung));
+  check('Abspann-Browser: ein Klick auf den Namen blaettert weiter (Textebene schluckt keine Klicks)',
+    !!klickPunkt && nachKlickAufName.seite === 1 && nachKlickAufName.anzahl === 1
+      && nachKlickAufName.texte[0].text === 'NICOLA' && nachKlickAufName.canvasPunkte === 0,
+    JSON.stringify({ klickPunkt, seite: nachKlickAufName.seite, texte: nachKlickAufName.texte.map((t) => t.text) }));
+  // Zurueck auf Seite 1 fuer die Filmfolge weiter unten: der Abspann blaettert
+  // im Kreis — deshalb hier nicht klick-zählen, sondern auf die Seite warten.
+  let zurueckKlicks = 0;
+  while (zurueckKlicks < 11 && (await evaluate('window.__roland.abspann.seite')) !== 0) {
+    await echterKlick('#abspannWeiter');
+    await sleep(110);
+    zurueckKlicks++;
+  }
+  const wiederSeite1 = JSON.parse(await evaluate(abspannTextMessung));
+  check('Abspann-Browser: nach zehn Seiten blaettert der Abspann zurueck auf Seite 1',
+    wiederSeite1.seite === 0 && wiederSeite1.texte[0]?.text === 'ANNA' && wiederSeite1.canvasPunkte === 0,
+    JSON.stringify({ seite: wiederSeite1.seite, klicks: zurueckKlicks, texte: wiederSeite1.texte.map((t) => t.text) }));
+
   // Filmfolge: WEITER blaettert Portrait fuer Portrait, jedes anders.
   const abspannGesehen = [seite0.portrait];
   const abspannBemalt = [seite0.gemalt];
+  const abspannNamenDom = [];
+  const abspannNamenImBild = [];
+  let kleinsteSchrift = Infinity;
   for (let i = 1; i < 10; i++) {
     await echterKlick('#abspannWeiter');
     await sleep(220);
@@ -4186,6 +4300,11 @@ try {
     if (s.seite !== i) { check(`Abspann-Browser: WEITER erreicht Seite ${i + 1}`, false, JSON.stringify(s)); break; }
     abspannGesehen.push(s.portrait);
     abspannBemalt.push(s.gemalt);
+    // F2: jede Seite traegt ihren Namen in der Textebene — und keiner im Bild.
+    const st = JSON.parse(await evaluate(abspannTextMessung));
+    abspannNamenDom.push(st.texte.map((t) => t.text).join('+'));
+    abspannNamenImBild.push(st.canvasPunkte);
+    for (const t of st.texte) kleinsteSchrift = Math.min(kleinsteSchrift, t.font);
     if (i === 9) {
       check('Abspann-Browser: die letzte Seite ist die Widmung an den Geehrten',
         s.widmung === true && s.kacheln === 0 && s.portrait === 'roland-s',
@@ -4211,6 +4330,19 @@ try {
   }
   check('Abspann-Browser: neun verschiedene Portraits in der Filmfolge',
     new Set(abspannGesehen.slice(0, 9)).size === 9, abspannGesehen.join(' -> '));
+  // Der Filmfolge-Lauf hat die Seiten 2 bis 10 gesehen (Seite 1 kam davor).
+  const erwarteteNamen = [...abspannNamen().slice(1), 'FÜR ROLAND SCHREIBER'];
+  check('Abspann-Browser: jede Seite traegt ihren Namentext in der Textebene (Seite 2 bis 10)',
+    JSON.stringify(abspannNamenDom) === JSON.stringify(erwarteteNamen),
+    JSON.stringify(abspannNamenDom));
+  check('Abspann-Browser: auf keiner Seite liegt noch ein Name im Bild',
+    abspannNamenImBild.length === 9 && abspannNamenImBild.every((n) => n === 0)
+      && seite0Text.canvasPunkte === 0,
+    JSON.stringify({ seite1: seite0Text.canvasPunkte, weitere: abspannNamenImBild }));
+  check('Abspann-Browser: die Namensschrift bleibt auf allen Seiten mindestens 12 CSS-Pixel',
+    kleinsteSchrift >= 12 && Number.isFinite(kleinsteSchrift), `${kleinsteSchrift} CSS-px`);
+  check('Abspann-Browser: die Widmungsseite traegt ihren Text als DOM-Beschriftung',
+    abspannNamenDom[8] === 'FÜR ROLAND SCHREIBER', JSON.stringify(abspannNamenDom[8]));
   check('Abspann-Browser: jede Portraitseite malt Bildpunkte',
     abspannBemalt.slice(0, 9).every((n) => n > 2000), abspannBemalt.join(','));
   check('Abspann-Browser: keine Fehler im Abspann',

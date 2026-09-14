@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   ABSPANN, ABSPANN_SEITEN, ABSPANN_TITEL, ABSPANN_HINWEIS, ABSPANN_HINWEIS_KOMPAKT,
-  ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL, ABSPANN_WEITER,
-  WIDMUNG, abspannLayout, abspannNamen, zeichneAbspann, zeichnePortrait, portraitKante,
+  ABSPANN_ZURUECK, ABSPANN_ZURUECK_TITEL, ABSPANN_WEITER, ABSPANN_FARBEN,
+  WIDMUNG, abspannBeschriftungen, abspannLayout, abspannNamen, zeichneAbspann, zeichnePortrait, portraitKante,
 } from '../src/credits.js';
 import { PORTRAITS, PORTRAIT_PALETTE, PORTRAIT_KANTE } from '../src/credits-portraits.js';
 
@@ -65,8 +65,12 @@ function protokoll() {
 
 const PALETTE_FARBEN = new Set(Object.values(PORTRAIT_PALETTE).filter(Boolean));
 
-/** Alle Texte, die der Abspann überhaupt zeichnen kann. */
-function alleTexte() {
+/**
+ * Alle Texte, die der Abspann überhaupt in den Canvas zeichnet. Seit F2 gehören
+ * die Namentexte ausdrücklich NICHT dazu — sie liegen in der Textebene
+ * (abspannBeschriftungen) und werden dort in echter Auflösung gerendert.
+ */
+function alleCanvasTexte() {
   const gesehen = new Set();
   for (const v of VIEWS) {
     for (let s = 0; s < ABSPANN_SEITEN; s++) {
@@ -76,6 +80,15 @@ function alleTexte() {
     }
   }
   return [...gesehen];
+}
+
+/** Alle Namentexte des Abspanns als DOM-Beschriftungen (F2), beide Ansichten. */
+function alleTextDaten() {
+  const daten = [];
+  for (const v of VIEWS) {
+    for (let s = 0; s < ABSPANN_SEITEN; s++) daten.push(...abspannBeschriftungen(v, s));
+  }
+  return daten;
 }
 
 /** Bildpunkte, die auf einer Seite wirklich gemalt wurden (ohne Seitenhintergrund). */
@@ -126,29 +139,38 @@ test('Portraitdaten sind die Upload-Ausschnitte: 96x96, Palettenzeichen, durchsi
 });
 
 test('Nur Vornamen, keine Nachnamen und keine Funktionsbezeichnungen', () => {
-  const texte = alleTexte();
+  const canvasTexte = alleCanvasTexte();
+  const daten = alleTextDaten();
   const namen = new Set(abspannNamen());
-  // Funktions- und Rollenbezeichnungen dürfen im Abspann nicht vorkommen.
+  // Funktions- und Rollenbezeichnungen dürfen im Abspann nicht vorkommen —
+  // weder im Bild noch in der Textebene.
   const verboten = [
     'VIOLINE', 'VIOLIN', 'GEIGE', 'GEIGER', 'BRATSCHE', 'CELLO', 'KONZERTMEISTER',
     'DIRIGENT', 'ORCHESTER', 'MUSIKER', 'SOLIST', 'STIMMFÜHRER', 'TUTTI', 'PULT',
     'MASKE', 'BÜHNENTECHNIK', 'TONMEISTER', 'INSTRUMENT', 'NOTENWART', 'ARCHIV',
   ];
-  for (const t of texte) {
+  for (const t of [...canvasTexte, ...daten.map((d) => d.text)]) {
     for (const wort of verboten) {
       assert.ok(!t.toUpperCase().includes(wort), `"${t}" enthält die Rollenangabe ${wort}`);
     }
+  }
+  // Die Namentexte der Textebene: nur Vornamen, dazu die Widmung.
+  const textTexte = daten.map((d) => d.text);
+  for (const name of namen) {
+    assert.ok(textTexte.includes(name), `Vorname ${name} steht nicht in der Textebene`);
+  }
+  for (const t of textTexte) {
+    if (t === WIDMUNG.zeile) continue;
+    assert.match(t, /^[A-ZÄÖÜ]+$/, `"${t}" ist kein einzelner Vorname`);
+    assert.ok(!t.includes(' '), `"${t}" enthält ein Leerzeichen (Nachname?)`);
     // Ein Nachname wäre ein zweites Wort in Großbuchstaben hinter einem Vornamen.
     assert.ok(!/^[A-ZÄÖÜ]{3,}\s+[A-ZÄÖÜ]{3,}$/.test(t), `"${t}" sieht nach Nachname aus`);
-    // Nur Titel, Hinweiszeile und Widmung sind mehrwortig.
-    if (t.trim().includes(' ') && !namen.has(t)) {
-      assert.ok(t === ABSPANN_TITEL || t === ABSPANN_HINWEIS || t === ABSPANN_HINWEIS_KOMPAKT
-        || t === WIDMUNG.zeile, `"${t}" ist mehrwortig, aber im Abspann nicht vorgesehen`);
-    }
   }
-  // Gegenprobe zur Prüfung selbst: alle neun Namen kommen als Schrift vor.
+  // Gegenprobe zur Prüfung selbst: alle neun Vornamen sind Namentexte.
+  assert.equal(new Set(textTexte.filter((t) => namen.has(t))).size, 9, 'nicht alle Vornamen sind Namentexte');
+  // F2: kein Vorname darf als Canvas-Schrift zurückkommen.
   for (const name of namen) {
-    assert.ok(texte.includes(name), `Vorname ${name} wird nicht gezeichnet`);
+    assert.ok(!canvasTexte.includes(name), `Vorname ${name} wird wieder in den Canvas gezeichnet`);
   }
   // Der Geehrte steht ausdrücklich nicht in der Liste der Kollegen.
   assert.ok(!namen.has('SCHREIBER'), 'SCHREIBER steht in der Kollegenliste');
@@ -160,8 +182,12 @@ test('Widmung an Roland Schreiber ist vorhanden', () => {
   assert.equal(WIDMUNG.zeile, 'FÜR ROLAND SCHREIBER');
   assert.equal(WIDMUNG.portrait, 'roland-s');
   assert.equal(WIDMUNG.raster, 'bild', 'die Widmung nutzt das Upload-Portrait');
-  const widmungsTexte = alleTexte().filter((t) => t.includes('SCHREIBER'));
-  assert.deepEqual(widmungsTexte, ['FÜR ROLAND SCHREIBER'], `${widmungsTexte.join(' | ')}`);
+  // Nur die Widmungszeile nennt den Geehrten — und sie liegt in der Textebene.
+  const widmungsTexte = alleTextDaten().filter((d) => d.text.includes('SCHREIBER'));
+  assert.deepEqual([...new Set(widmungsTexte.map((d) => d.text))], ['FÜR ROLAND SCHREIBER'],
+    `${widmungsTexte.map((d) => d.text).join(' | ')}`);
+  assert.ok(!alleCanvasTexte().some((t) => t.includes('SCHREIBER')),
+    'die Widmung wird wieder in den Canvas gezeichnet');
   // Neun Seiten Filmfolge plus die Widmung als eigene Seite.
   assert.equal(ABSPANN_SEITEN, ABSPANN.length + 1, `${ABSPANN_SEITEN} Seiten statt ${ABSPANN.length + 1}`);
 });
@@ -194,17 +220,25 @@ test('Filmfolge: jede Seite zeigt genau ein Portrait, der Vorname steht darunter
       for (const r of innen) {
         assert.ok(PALETTE_FARBEN.has(r.stil), `${k.name}: Farbe ${r.stil} ist nicht in der Palette`);
       }
-      // Der Vorname steht unter dem Portrait.
-      const name = p.texte.find((t) => t.text === k.name);
-      assert.ok(name, `${v.name}/${k.name}: Vorname wird nicht gezeichnet`);
-      assert.equal(name.x, k.nameX, `${k.name}: Name x=${name.x} statt ${k.nameX}`);
-      assert.equal(name.y, k.nameY, `${k.name}: Name y=${name.y} statt ${k.nameY}`);
-      assert.ok(name.y > k.y + k.size, `${k.name}: Name steht nicht unter der Kachel`);
-      assert.ok(name.x >= k.x && name.x <= k.x + k.size, `${k.name}: Name steht nicht über der Kachel`);
-      assert.ok(/^\d+px monospace$/.test(name.font), `${k.name}: Schrift ${name.font}`);
+      // Der Vorname steht unter dem Portrait: seit F2 als DOM-Beschriftung in
+      // der Textebene, ausdrücklich NICHT mehr als Canvas-Schrift.
+      assert.ok(!p.texte.some((t) => t.text === k.name),
+        `${v.name}/${k.name}: Vorname liegt wieder im Canvas`);
+      const texte = abspannBeschriftungen(v, seite);
+      assert.equal(texte.length, 1, `${v.name}/Seite ${seite}: ${texte.length} Namentexte`);
+      const eintrag = texte[0];
+      assert.equal(eintrag.id, 'abspann-name', `${k.name}: Kennung ${eintrag.id}`);
+      assert.equal(eintrag.text, k.name, `${k.name}: Textebene zeigt ${eintrag.text}`);
+      assert.equal(eintrag.color, ABSPANN_FARBEN.name, `${k.name}: Farbe ${eintrag.color}`);
+      assert.equal(eintrag.align, 'center', `${k.name}: Ausrichtung ${eintrag.align}`);
+      assert.equal(eintrag.x + eintrag.w / 2, k.nameX, `${k.name}: Textebene nicht mittig`);
+      // Die Box beginnt an der Portraitunterkante und bleibt im Bild.
+      assert.ok(eintrag.y >= k.y + k.size, `${k.name}: Box beginnt über der Portraitunterkante`);
+      assert.ok(eintrag.y + eintrag.h <= v.h, `${k.name}: Box ragt aus dem Bild`);
+      assert.ok(eintrag.fontSize > 0 && eintrag.h > 0 && eintrag.w > 0, `${k.name}: Masse fehlen`);
       // Genau ein Vorname je Seite - kein Raster mehr.
-      const namensTexte = p.texte.filter((t) => abspannNamen().includes(t.text));
-      assert.deepEqual(namensTexte.map((t) => t.text), [k.name], `${v.name}/Seite ${seite}: ${namensTexte.length} Vornamen`);
+      assert.equal(texte.filter((e) => abspannNamen().includes(e.text)).length, 1,
+        `${v.name}/Seite ${seite}: ${texte.length} Vornamen in der Textebene`);
       // Titel und Hinweis stehen im Bild.
       const titel = p.texte.find((t) => t.text === ABSPANN_TITEL);
       assert.ok(titel, `${v.name}: Titel fehlt`);
@@ -237,9 +271,16 @@ test('Die letzte Seite ist die Widmung an den Geehrten', () => {
     assert.equal(punkte, voll, `${v.name}: ${punkte} Bildpunkte im Widmungsportrait statt ${voll}`);
     // Bildgröße wie auf den Portraitseiten, aber die Widmungszeile bleibt darunter.
     assert.equal(g.size, abspannLayout(v, 0).kacheln[0].size, `${v.name}: Widmung anders groß als die Portraits`);
-    const zeile = p.texte.find((t) => t.text === WIDMUNG.zeile);
-    assert.ok(zeile, `${v.name}: Widmungszeile fehlt`);
-    assert.ok(zeile.y > g.y + g.size, `${v.name}: Widmungszeile steht nicht unter dem Portrait`);
+    // Die Widmungszeile liegt seit F2 in der Textebene, nicht im Bild.
+    assert.ok(!p.texte.some((t) => t.text === WIDMUNG.zeile),
+      `${v.name}: Widmungszeile liegt wieder im Canvas`);
+    const texte = abspannBeschriftungen(v, ABSPANN_SEITEN - 1);
+    assert.equal(texte.length, 1, `${v.name}: ${texte.length} Namentexte auf der Widmungsseite`);
+    assert.equal(texte[0].id, 'abspann-widmung');
+    assert.equal(texte[0].text, WIDMUNG.zeile, `${v.name}: Textebene zeigt ${texte[0].text}`);
+    assert.equal(texte[0].color, ABSPANN_FARBEN.widmung, `${v.name}: Widmungsfarbe ${texte[0].color}`);
+    assert.ok(texte[0].y >= g.y + g.size, `${v.name}: Widmungsbox beginnt über der Portraitunterkante`);
+    assert.ok(texte[0].y + texte[0].h <= v.h, `${v.name}: Widmungsbox ragt aus dem Bild`);
     for (const t of p.texte) assert.ok(t.x >= 0 && t.x <= v.w && t.y > 0 && t.y <= v.h, `${v.name}: Text außerhalb`);
   }
 });
