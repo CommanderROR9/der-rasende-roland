@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildMotorrad, buildCabrio } from '../src/world.js';
 import { Racer, buildTrack, SEG_LEN, project, CAM_H } from '../src/racer.js';
 import { createInput } from '../src/input.js';
@@ -186,5 +187,21 @@ test('Tunnellampen hängen mit Perspektive an der Decke, nicht als seitliches Ba
   for (const q of lampen) assert.ok(q.y < horizont - 2, `Lampe bei y=${q.y} hängt nicht an der Decke`);
   assert.ok(Math.max(...lampen.map((q) => q.w)) >= 2 * Math.min(...lampen.map((q) => q.w)),
     'Lampen werden zum Fluchtpunkt hin nicht schmaler');
+});
+
+// --- Schärfe: Rolands Befund vom 13.09. („Motorrad extrem unscharf und
+// verwaschen") ---------------------------------------------------------------
+// Ursache war die Reihenfolge in src/main.js: `imageSmoothingEnabled = false`
+// stand VOR `canvas.width/height = VIEW.*`. Die Zuweisung an width/height setzt
+// den 2D-Kontext auf die Voreinstellungen zurück (Glättung an) — auch wenn der
+// Wert derselbe ist. Danach rechnet der Browser jedes skalierte drawImage weich.
+test('Spiel-Canvas: die Pixel-Regel steht hinter der Canvas-Groesse', () => {
+  const quelle = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const groesse = quelle.indexOf('ui.canvas.height = VIEW.h');
+  const regel = quelle.indexOf('ctx.imageSmoothingEnabled = false');
+  assert.ok(groesse >= 0, 'src/main.js setzt die Canvas-Hoehe (ui.canvas.height = VIEW.h) nicht mehr');
+  assert.ok(regel >= 0, 'src/main.js schaltet die Kantenglaettung des Spiel-Canvas nicht mehr ab');
+  assert.ok(regel > groesse,
+    'imageSmoothingEnabled steht vor der Canvas-Groesse — die Zuweisung an width/height setzt es zurueck');
 });
 console.log(`${passed} Motorrad tests passed`);

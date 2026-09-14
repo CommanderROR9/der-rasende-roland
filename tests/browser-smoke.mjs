@@ -3435,6 +3435,26 @@ try {
     moto.nacht === true && moto.laub > 5 && moto.tunnel > 0, JSON.stringify(moto));
   check('Motorrad faehrt los', moto.kmh > 20, JSON.stringify(moto));
 
+  // Schaerfe-Beleg (Auftrag DRR-F1): der Spiel-Canvas muss ohne Kantenglaettung
+  // zeichnen. Steht die Regel in src/main.js vor der Canvas-Groesse, setzt die
+  // Zuweisung an width/height den 2D-Kontext zurueck — der Browser rechnet die
+  // skalierten Fahrzeug-Sprites dann weich ("verwaschen", hunderte Mischfarben
+  // im Fahrzeugbereich statt reiner Palettenfarben).
+  const motoScharf = JSON.parse(await evaluate(`(() => {
+    const cv = document.getElementById('game'), g = cv.getContext('2d');
+    const vw = cv.width, vh = cv.height;
+    const w = Math.round(vw * 0.20), h = Math.round(w * 26 / 30);
+    const x = Math.round(vw / 2 - w / 2), y = vh - 8 - h;
+    const d = g.getImageData(x, y, w, h).data;
+    const farben = new Set();
+    for (let i = 0; i < d.length; i += 4) farben.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]);
+    return JSON.stringify({ glattung: g.imageSmoothingEnabled, farben: farben.size, pixel: w * h });
+  })()`));
+  check('Motorrad: der Spiel-Canvas zeichnet ohne Kantenglaettung',
+    motoScharf.glattung === false, JSON.stringify(motoScharf));
+  check('Motorrad: das Fahrzeug traegt reine Palettenfarben (keine Mischfarben)',
+    motoScharf.farben <= 120, JSON.stringify(motoScharf));
+
   const nachtBild = JSON.parse(await evaluate(bildStat));
   check('Nachtfahrt ist dunkel, aber nicht schwarz',
     nachtBild.schnitt >= 3 && nachtBild.schnitt < 70, JSON.stringify(nachtBild));

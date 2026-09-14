@@ -47,14 +47,18 @@ const ui = {
   pad: $('#pad'), stick: $('#stick'), nub: $('#nub'), btnJump: $('#btnJump'), btnAction: $('#btnAction'),
 };
 const ctx = ui.canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
 
 // Gerät, Sichtbereich, Bedienart einmal feststellen.
 const COARSE = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || COARSE;
 const VIEW = pickView(COARSE);
+// Erst die Canvas-Größe, dann die Pixel-Regel: die Zuweisung an width/height
+// setzt den 2D-Kontext auf die Voreinstellungen zurück (Glättung an) — auch
+// wenn der Wert derselbe ist. Vorher stand die Zeile über der Größe, damit
+// wurden Fahrzeug- und Strecken-Sprites weichgerechnet statt pixeltreu.
 ui.canvas.width = VIEW.w;
 ui.canvas.height = VIEW.h;
+ctx.imageSmoothingEnabled = false;
 let scaleNow = 1;
 
 // Ein Skalierungsvertrag fuer alle hochaufgeloesten Spieltexte. Die Daten
