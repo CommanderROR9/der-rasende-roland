@@ -1,10 +1,16 @@
 // tests/spind.test.mjs — Auftrag DRR-F5: die Kleiderwechsel-Stände sind graue
 // Metall-Spinde (Roland, 14.09.: „die Kleiderwechsel Stationen … nicht so
 // abstrakt wie bisher …, sondern als graue Metall-Spinde").
+// Auftrag DRR-F5b (Roland, 14.09.: „die Spinde sollen am Boden stehen, nicht in
+// der Luft hängen"): dieselben Sprites, aber die Unterkante liegt auf der
+// Bodenlinie — gemessen als Fusskontakt, nicht als Offset. Dafür steht unten
+// der Abschnitt „Fusskontakt": die unterste belegte Sprite-Zeile muss die
+// letzte Bildzeile der begehbaren Kachel treffen (dieselbe Linie, auf der die
+// Schuhe der Figur stehen).
 //
 // Geprüft werden zwei Ebenen: die Sprite-Daten selbst (Palette, Maße, Türen,
 // Luftschlitze, Griffe, Füße) und der echte Zeichenpfad — `drawEntities` legt
-// für einen `stand` wirklich das Spind-Sprite auf die alte Standfläche, und die
+// für einen `stand` wirklich das Spind-Sprite auf den Boden der Kachel, und die
 // alte Kiste ist verschwunden. Der Bildbeweis im Browser kommt aus
 // tests/browser-smoke.mjs (?test=spind); Sprite-Daten allein beweisen kein Bild.
 //
@@ -97,9 +103,10 @@ check('Spind: komplett in Grautönen (kein Holz, kein Violett, kein Rot)',
   fremd.length === 0 && metall / belegt >= 0.5,
   `fremde Zeichen ${fremd.join('') || '—'}, Metallanteil ${(metall / belegt).toFixed(2)}`);
 
-// Der sichtbare Körper liegt genau auf der alten Standfläche: 12 px breit
-// (Spalten 2–13) und 26 px hoch (Zeilen 4–29). Die Zeilen 0–3 sind leer, damit
-// der Sprite mit `y - spr.h` an derselben Unterkante landet wie die alte Skizze.
+// Der sichtbare Körper ist 12 px breit (Spalten 2–13) und 26 px hoch (Zeilen
+// 4–29); die Zeilen 0–3 sind leer, damit die Deckplatte nicht in den Raum
+// darüber ragt. Gezeichnet wird die **Unterkante** des Sprites auf den Boden
+// der Kachel (F5b), die Standfüße liegen damit in der letzten Bildzeile.
 const RAENDER = [0, 1, 14, 15];
 check('Spind: 12x26 px Körper auf der alten Standfläche (Spalten 2–13, Zeilen 4–29)',
   SPIND.slice(0, 4).every((r) => r.trim() === '')
@@ -137,8 +144,8 @@ const paket = game.spr('spind');
 check('Spind: drawEntities zeichnet für den Stand das Spind-Sprite',
   ctx.ops.drawImage.some((d) => d.img === paket.canvas),
   `${ctx.ops.drawImage.length} drawImage-Aufrufe`);
-check('Spind: Unterkante auf dem Boden der Kachel (Sprite mit y - 30 gesetzt)',
-  ctx.ops.translate.some(([tx, ty]) => tx === stand.x && ty === stand.y - paket.h),
+check('Spind: Unterkante auf dem Boden der Kachel (Sprite mit y + h - 30 gesetzt)',
+  ctx.ops.translate.some(([tx, ty]) => tx === stand.x && ty === stand.y + TILE - paket.h),
   JSON.stringify({ stand: [stand.x, stand.y], h: paket.h, translate: ctx.ops.translate.slice(0, 4) }));
 check('Spind: kein Bildpunkt der alten Kiste mehr (#3b2f4a)',
   !ctx.ops.fillStyles.some((f) => String(f).toLowerCase() === '#3b2f4a'),
@@ -190,17 +197,79 @@ check('Spind: auch die anderen Akte zeichnen dasselbe Paket',
     return c.ops.drawImage.some((d) => d.img === g.spr('spind').canvas) && !!st;
   }), '');
 
+// ------------------------------------------------------------- Fusskontakt ----
+// Auftrag DRR-F5b (Roland, 14.09.: „die Spinde sollen am Boden stehen, nicht in
+// der Luft hängen"). Gemessen wird der Fusskontakt, nicht der Offset: die
+// unterste belegte Sprite-Zeile (die Standfüße) muss die Bodenlinie treffen.
+// Die Bodenlinie ist die Unterkante der begehbaren Kachel `(walkRow + 1) * TILE`
+// — dieselbe Linie, auf der die Boxen aller geerdeten Objekte enden (Schrank
+// `(walkRow+1)*TILE-28`, Garderobe `(walkRow+1)*TILE-h`, Spielerbox) und auf
+// der die Schuhe der Figur stehen.
+const fussZeile = SPIND.reduce((acc, r, i) => (r.trim() !== '' ? i : acc), -1);
+check('Spind: unterste belegte Sprite-Zeile ist die Fusszeile (Standfüße)',
+  fussZeile === HOEHE - 1 && SPIND[fussZeile].includes('b'),
+  JSON.stringify({ zeile: fussZeile, inhalt: SPIND[fussZeile] }));
+
+const fussBefunde = [];
+for (const [name, lv] of akte) {
+  const { game: g } = spiel(lv);
+  const c = recorder();
+  g.drawEntities(c, 0, 0);
+  for (const en of g.entities.filter((e) => e.kind === 'stand')) {
+    const aufruf = c.ops.translate.find(([tx]) => tx === en.x);
+    const fuss = aufruf ? aufruf[1] + fussZeile : null;   // Bildzeile der Standfüße
+    const boden = en.y + en.h;                            // Oberkante der Bodenkachel
+    fussBefunde.push({
+      akt: name, tx: Math.round(en.x / TILE), fuss, boden,
+      luecke: fuss === null ? null : boden - 1 - fuss,
+    });
+  }
+}
+check('Spind: zehn Stände in fünf Akten für die Fussmessung gefunden',
+  fussBefunde.length === 10 && fussBefunde.every((f) => f.luecke !== null),
+  JSON.stringify(fussBefunde));
+check('Spind: Fusskontakt in allen zehn Ständen — Fusszeile == Bodenlinie (Lücke 0)',
+  fussBefunde.every((f) => f.luecke === 0),
+  JSON.stringify(fussBefunde.filter((f) => f.luecke !== 0)));
+check('Spind: jeder Stand steht auf einer begehbaren Kachel (Boden unter dem Fuss)',
+  akte.every(([, lv]) => lv.spawns.filter((s) => s.kind === 'stand')
+    .every((s) => (lv.grid[s.walkRow + 1] || [])[s.tx] > 0)),
+  akte.map(([n, lv]) => `${n}:` + lv.spawns.filter((s) => s.kind === 'stand')
+    .map((s) => (lv.grid[s.walkRow + 1] || [])[s.tx]).join('/')).join(' '));
+// Die Figur fällt im echten Spiel auf dieselbe Linie: sie wird über der Kachel
+// des Standes abgesetzt und sinkt in der Physik auf den Boden.
+const spielerFuss = [];
+for (const [name, lv] of akte) {
+  const { game: g } = spiel(lv);
+  const en = g.entities.find((e) => e.kind === 'stand');
+  g.player.x = en.x - 20;
+  g.player.y = en.y - 3;
+  g.player.vx = 0; g.player.vy = 0;
+  for (let i = 0; i < 80 && !g.player.onGround; i++) g.update(1 / 60);
+  spielerFuss.push({
+    akt: name, aufgesetzt: g.player.onGround, box: g.player.y + g.player.h, boden: en.y + en.h,
+  });
+}
+check('Spind: Fusszeile == Zeile der Spielerschuhe (Figur landet auf derselben Bodenlinie)',
+  spielerFuss.every((s) => s.aufgesetzt && s.box === s.boden)
+    && fussBefunde.every((f) => f.fuss === f.boden - 1),
+  JSON.stringify({ spieler: spielerFuss, staende: fussBefunde.map((f) => [f.akt, f.fuss, f.boden]) }));
+
 // Der alte Kisten-Code muss aus dem Quelltext verschwunden sein (kein Rest,
 // der bei einem anderen Level wieder auftauchen könnte).
 const quelle = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
 check('Spind: kein Rest der alten Kistenfarbe in src/game.js', !quelle.includes('#3b2f4a'));
 const start = quelle.indexOf("case 'stand': {");
 const standBlock = start < 0 ? '' : quelle.slice(start, quelle.indexOf("case '", start + 5));
+const standCode = standBlock.replace(/\/\/[^\n]*/g, '');   // Kommentare raus: sie nennen den alten Anker
 check('Spind: der Stand-Zweig in src/game.js nutzt den Sprite (nur der Marker bleibt Rechteck)',
-  start >= 0 && standBlock.includes("this.spr('spind')") && standBlock.includes('y - spr.h')
+  start >= 0 && standBlock.includes("this.spr('spind')")
     && !standBlock.includes('#3b2f4a')
-    && (standBlock.match(/ctx\.fillRect\(/g) || []).length <= 1,
+    && (standCode.match(/ctx\.fillRect\(/g) || []).length <= 1,
   standBlock.replace(/\s+/g, ' ').slice(0, 160));
+check('Spind: der Stand-Zweig verankert die Unterkante auf der Kachelunterkante (y + en.h - spr.h)',
+  standCode.includes('y + en.h - spr.h') && !standCode.includes('y - spr.h'),
+  standCode.replace(/\s+/g, ' ').slice(0, 200));
 
 console.log(results.join('\n'));
 console.log(`\n${results.length - failed}/${results.length} Spind-Checks bestanden`);

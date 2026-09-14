@@ -2473,16 +2473,19 @@ export class Game {
         }
         case 'stand': {
           // Der Kleiderwechsel-Stand ist seit dem Auftrag DRR-F5 ein grauer
-          // Metall-Spind statt der abstrakten Kiste (Roland, 14.09.). Der Sprite
-          // ist 30 px hoch und wird mit der Unterkante auf den Boden der Kachel
-          // gesetzt — der sichtbare Körper liegt damit auf derselben Flaeche
-          // (y-26 .. y-1) wie die alte Zeichnung, kein Standort verschiebt sich.
+          // Metall-Spind statt der abstrakten Kiste (Roland, 14.09.). Er steht
+          // auf der Bodenlinie wie Schrank, Garderobe und Notenpult: die
+          // Unterkante des 30 px hohen Sprites liegt auf dem Boden der Kachel
+          // (y + en.h) — die Standfuesse in der letzten Sprite-Zeile treffen
+          // damit genau die Linie, auf der die Schuhe der Figur stehen. Vorher
+          // wurde der Sprite mit `y - spr.h` gesetzt und hing 16 px (eine
+          // Kachel) in der Luft (Auftrag DRR-F5b, Roland 14.09.).
           const spr = this.spr('spind');
-          blit(ctx, spr, x, y - spr.h);
+          blit(ctx, spr, x, y + en.h - spr.h);
           const near = Math.abs((this.player.x + this.player.w / 2) - (en.x + 8)) < 26;
           if (near) {
             ctx.fillStyle = 'rgba(93,224,207,0.75)';
-            ctx.fillRect(x + 4, y - 32, 8, 2);
+            ctx.fillRect(x + 4, y + en.h - spr.h - 2, 8, 2);   // 2 px ueber der Deckplatte
           }
           break;
         }

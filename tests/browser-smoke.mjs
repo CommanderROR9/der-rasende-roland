@@ -1111,45 +1111,106 @@ async function tippeSzene(halten = 180, danach = 120) {
  * `DRR_PC=1 node tests/browser-smoke.mjs "http://…/?test=spind"`.
  */
 const SPIND_PALETTE = ['142,142,156', '184,184,196', '154,154,168', '58,58,74', '32,32,42', '20,20,28'];
+const SPIND_BILDPUNKTE = 302;   // belegte Zellen der 16x30-Matrix (Zeilen 4–29)
 
-/** Das Stand-Rechteck (Sprite-Spalten 2–13, Zeilen 4–29) im Canvas ausmessen. */
+/**
+ * Den Spind im echten Bild vermessen (Auftrag DRR-F5, erweitert in DRR-F5b).
+ * Zwei Zeichnungen im **selben** Aufruf — zwischen zwei Anweisungen läuft kein
+ * rAF, die Szene ist also identisch und der Unterschied ist exakt der Spind
+ * (Silhouette über die Maske, nicht über ein festes Fenster). Damit ist die
+ * Messung ortsunabhängig: die Farbmasse kommen aus den Spind-Bildpunkten
+ * selbst, der Bodenlinien-Vergleich aus der untersten Maskenzeile.
+ *
+ * `boden` ist die Oberkante der Bodenkachel unter der Stand-Kachel — die Linie,
+ * auf der geerdete Objekte stehen. `unten` ist die unterste Bildzeile des
+ * Spinds; sein Fusskontakt stimmt, wenn `unten === boden - 1` (`luecke === 0`).
+ */
 async function messeSpind() {
   return JSON.parse(await evaluate(`(() => {
     const c = document.getElementById('game');
     const g = window.__roland.game;
     const en = g.entities.find((e) => e.kind === 'stand');
     if (!en) return JSON.stringify({ fehlt: 'stand' });
-    const px = Math.round(en.x - g.cam.x), py = Math.round(en.y - g.cam.y);
-    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let treffer = 0, grau = 0, violett = 0, deckend = 0, fuge = 0, fugeN = 0, tuer = 0, tuerN = 0;
-    const violettStellen = [];
-    for (let y = py - 26; y < py; y++) for (let x = px + 2; x < px + 14; x++) {
-      if (x < 0 || y < 0 || x >= c.width || y >= c.height) continue;
-      const i = (y * c.width + x) * 4;
-      const r = d[i], gg = d[i + 1], b = d[i + 2];
-      if (d[i + 3] === 0) continue;
-      deckend++; const spalte0 = x - px - 2;
-      const k = r + ',' + gg + ',' + b;
-      if (${JSON.stringify(SPIND_PALETTE)}.indexOf(k) >= 0) treffer++;
+    const ctx = c.getContext('2d');
+    // Kamera exakt wie draw(): Wackeln aus, Schleppkammer (stunTimer) nur auf X
+    g.shake = 0;
+    const sway = g.stunTimer > 0 ? Math.sin(g.time * 3.2) * 2.2 : 0;
+    const camX = Math.round(g.cam.x + sway), camY = Math.round(g.cam.y);
+    const px = en.x - camX, py = en.y - camY;
+    const boden = py + en.h;                 // Oberkante der Bodenkachel = Bodenlinie
+    const X0 = Math.max(0, px - 5), Y0 = Math.max(0, py - 40);
+    const W = Math.min(c.width - X0, 26), H = Math.min(c.height - Y0, 64);
+    const holen = () => ctx.getImageData(X0, Y0, W, H).data;
+    const abw = (a, b, i) => Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+    g.draw(ctx); const mit = holen();
+    en.alive = false; g.draw(ctx); const ohne = holen();
+    en.alive = true; g.draw(ctx);
+    let minx = 1e9, maxx = -1, miny = 1e9, maxy = -1, punkte = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (abw(mit, ohne, (y * W + x) * 4) > 0) {
+        punkte++;
+        if (x < minx) minx = x; if (x > maxx) maxx = x;
+        if (y < miny) miny = y; if (y > maxy) maxy = y;
+      }
+    }
+    if (!punkte) return JSON.stringify({ leer: true, px, py, canvas: [c.width, c.height] });
+    const oben = Y0 + miny, unten = Y0 + maxy, links = X0 + minx, rechts = X0 + maxx;
+    let treffer = 0, grau = 0, violett = 0, fuge = 0, fugeN = 0, tuer = 0, tuerN = 0;
+    const violettStellen = [], fussZellen = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (abw(mit, ohne, (y * W + x) * 4) <= 0) continue;
+      const i = (y * W + x) * 4;
+      const r = mit[i], gg = mit[i + 1], b = mit[i + 2];
+      const spalte = x + X0 - px;            // Spalte der Sprite-Matrix
+      if (y + Y0 === unten) fussZellen.push(spalte);
+      if (${JSON.stringify(SPIND_PALETTE)}.indexOf(r + ',' + gg + ',' + b) >= 0) treffer++;
       const max = Math.max(r, gg, b), min = Math.min(r, gg, b);
       if (max - min <= 22 && min >= 70) grau++;          // hell und neutral: Metall
       // Die alte Stand-Zeichnung war ein violetter Kasten (#3b2f4a = 59,47,74):
       // Rot UND Blau deutlich ueber Gruen. Kein Metallton des Spinds hat das —
       // auch nicht von der Abendsonne getoent (Akt 3) oder abgedunkelt (Akt 4).
-      // Die unterste Zeile bleibt ausgenommen: dort steht der Boden durch die
-      // Fussluecken (gemessen in Akt 2: 2 Bodenbildpunkte in Violetttoenen).
-      if (y < py - 1 && r - gg >= 8 && b - gg >= 8) { violett++; if (violettStellen.length < 6) violettStellen.push([spalte0, y - py, k]); }
-      const spalte = x - px - 2;
+      if (r - gg >= 8 && b - gg >= 8) { violett++; if (violettStellen.length < 6) violettStellen.push([spalte, y + Y0 - py, r + ',' + gg + ',' + b]); }
       if (spalte === 5 || spalte === 6) { fuge += r + gg + b; fugeN++; }
       if (spalte === 1 || spalte === 2) { tuer += r + gg + b; tuerN++; }
     }
     return JSON.stringify({ level: g.level.id, canvas: [c.width, c.height], state: g.state,
       staende: g.entities.filter((e) => e.kind === 'stand').length,
-      treffer, grau, violett, deckend, violettStellen,
+      px, py, boden, oben, unten, links, rechts, breite: rechts - links + 1, hoehe: unten - oben + 1,
+      punkte, luecke: boden - 1 - unten, fussZellen,
+      treffer, grau, violett, deckend: punkte, violettStellen,
       fuge: Math.round(fuge / Math.max(1, fugeN)), tuer: Math.round(tuer / Math.max(1, tuerN)),
       schleier: g.level.dark === true || g.wetterKind === 'sonne' });
   })()`));
 }
+
+/** Fusszeile der Figur im echten Bild: dieselbe Maske, aber mit ausgeblendetem Spieler. */
+async function messeSpielerFuss() {
+  return JSON.parse(await evaluate(`(() => {
+    const c = document.getElementById('game');
+    const g = window.__roland.game;
+    const ctx = c.getContext('2d');
+    const p = g.player;
+    g.shake = 0;
+    const sway = g.stunTimer > 0 ? Math.sin(g.time * 3.2) * 2.2 : 0;
+    const camX = Math.round(g.cam.x + sway), camY = Math.round(g.cam.y);
+    const px = Math.round(p.x - camX), py = Math.round(p.y - camY);
+    const X0 = Math.max(0, px - 6), Y0 = Math.max(0, py - 30);
+    const W = Math.min(c.width - X0, 30), H = Math.min(c.height - Y0, 64);
+    const holen = () => ctx.getImageData(X0, Y0, W, H).data;
+    const abw = (a, b, i) => Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+    g.draw(ctx); const mit = holen();
+    g.drawPlayer = () => {};                 // nur die Figur ausblenden
+    g.draw(ctx); const ohne = holen();
+    delete g.drawPlayer; g.draw(ctx);
+    let unten = -1, punkte = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (abw(mit, ohne, (y * W + x) * 4) > 0) { punkte++; if (Y0 + y > unten) unten = Y0 + y; }
+    }
+    // Dieselbe Rechnung wie drawPlayer: Unterkante der Box = Bodenlinie
+    return JSON.stringify({ punkte, unten, boden: Math.round(p.y - camY) + p.h });
+  })()`));
+}
+
 
 /** Zweite Messung ohne Schleier (Abendsonne/Dunkelheit), danach wieder an. */
 async function messeSpindOhneSchleier() {
@@ -1172,7 +1233,10 @@ async function spindZoom(faktor = 4) {
       const g = window.__roland.game;
       const en = g.entities.find((e) => e.kind === 'stand');
       const px = Math.round(en.x - g.cam.x), py = Math.round(en.y - g.cam.y);
-      const w = 56, h = 48;
+      // Fenster zeigt den ganzen Spind samt Bodenstreifen darunter: der
+      // Fusskontakt (oder die Lücke) ist im 4x-Bild direkt sichtbar. Es deckt
+      // beide Lagen ab (alter Offset y-30 und F5b-Anker y+h-30).
+      const w = 56, h = 54;
       const x = Math.max(0, Math.min(c.width - w, px - 22));
       const y = Math.max(0, Math.min(c.height - h, py - 30));
       const t = document.createElement('canvas');
@@ -1204,6 +1268,10 @@ async function pruefeSpindAkt(akt, zusatz) {
     const g = window.__roland.game;
     const en = g.entities.find((e) => e.kind === 'stand');
     if (!en) return JSON.stringify({ fehlt: 'stand' });
+    // 26 px Abstand wie in den F5-Belegen: der Naehe-Marker braucht < 26 px
+    // (29 px Abstand -> aus) und im dunklen Akt 4 haengt die Helligkeit am
+    // eigenen Sichtkreis der Figur — weiter weg wird der Spind messbar dunkler.
+    // Ein doch gezeichneter Marker faellt an der Silhouettenpruefung auf (32 statt 26 Zeilen).
     g.player.x = en.x - 26; g.player.y = en.y + en.h - g.player.h;
     g.player.vx = 0; g.player.vy = 0;
     return JSON.stringify({ state: g.state, outfit: g.outfit.id, x: Math.round(en.x) });
@@ -1220,14 +1288,26 @@ async function pruefeSpindAkt(akt, zusatz) {
   if (zoom) writeFileSync(join(artefakte, `spind-${akt.id}${zusatz}-4x.png`), zoom);
 
   const roh = mass.schleier ? await messeSpindOhneSchleier() : mass;
-  results.push(`SPIND ${akt.id}${zusatz} canvas=${mass.canvas.join('x')} bildpunkte=${mass.treffer}`
-    + ` hell-neutral=${mass.grau}/${mass.deckend} alte-kiste=${mass.violett}`
+  const figur = await messeSpielerFuss();
+  results.push(`SPIND ${akt.id}${zusatz} canvas=${mass.canvas.join('x')} silhouette=${mass.breite}x${mass.hoehe}`
+    + ` bildpunkte=${mass.treffer}/${mass.punkte} fuss=${mass.unten} boden=${mass.boden} luecke=${mass.luecke}`
+    + ` figurfuss=${figur.unten} hell-neutral=${mass.grau} alte-kiste=${mass.violett}`
     + ` fuge=${mass.fuge} tuer=${mass.tuer} schleier=${mass.schleier} zoom=${zoom ? 'ok' : 'fehlt'}`
     + (mass.violett ? ` stellen=${JSON.stringify(mass.violettStellen)}` : ''));
 
-  check(`Spind ${akt.id}${zusatz}: heller Metallkörper im Stand-Rechteck (Aktionen unverändert)`,
-    gestellt.state === 'play' && mass.staende === akt.staende && mass.deckend >= 300 && mass.grau >= 200,
-    JSON.stringify({ gestellt, staende: mass.staende, deckend: mass.deckend, hell: mass.grau }));
+  check(`Spind ${akt.id}${zusatz}: heller Metallkörper auf der Stand-Kachel (Aktionen unverändert)`,
+    gestellt.state === 'play' && mass.staende === akt.staende && mass.punkte >= 300 && mass.grau >= 200,
+    JSON.stringify({ gestellt, staende: mass.staende, punkte: mass.punkte, hell: mass.grau }));
+  check(`Spind ${akt.id}${zusatz}: Silhouette der Matrix (12x26 px, 302 Bildpunkte)`,
+    mass.breite === 12 && mass.hoehe === 26 && mass.punkte === SPIND_BILDPUNKTE,
+    `breite=${mass.breite} hoehe=${mass.hoehe} punkte=${mass.punkte}`);
+  check(`Spind ${akt.id}${zusatz}: Fusszeile trifft die Bodenlinie (Lücke 0 Bildpunkte)`,
+    mass.luecke === 0, `fuss=${mass.unten} boden=${mass.boden} luecke=${mass.luecke}`);
+  check(`Spind ${akt.id}${zusatz}: in der Fusszeile stehen genau die zwei Standfüße (Spalten 3 und 12)`,
+    JSON.stringify(mass.fussZellen) === '[3,12]', `fussZellen=${JSON.stringify(mass.fussZellen)}`);
+  check(`Spind ${akt.id}${zusatz}: Fusszeile == Schuhe der Figur (gleiche Bildzeile)`,
+    figur.punkte > 0 && figur.unten === mass.unten && figur.boden - 1 === mass.unten,
+    `figur=${figur.unten} (Box endet auf ${figur.boden}, ${figur.punkte} Bildpunkte) spind=${mass.unten}`);
   check(`Spind ${akt.id}${zusatz}: kein Rest der alten violetten Kiste (#3b2f4a)`,
     mass.violett === 0, `violett=${mass.violett}`);
   check(`Spind ${akt.id}${zusatz}: Mittelfuge dunkler als die Türflächen`,
@@ -1460,15 +1540,24 @@ try {
   const spindAkt1 = await (async () => {
     await evaluate(`(() => { const g = window.__roland.game;
       const en = g.entities.find((e) => e.kind === 'stand');
+      // 26 px wie in pruefeSpindAkt: Naehe-Marker aus (< 26 px noetig),
+      // Sichtkreis der Figur unveraendert (Akt-4-Helligkeit).
       g.player.x = en.x - 26; g.player.y = en.y + en.h - g.player.h;
       g.player.vx = 0; g.player.vy = 0; })()`);
     await sleep(750);
     return messeSpind();
   })();
+  const spindFigur1 = await messeSpielerFuss();
   check('Akt-1-Browser: der Kleiderwechsel-Stand ist ein grauer Metall-Spind',
-    spindAkt1.grau >= 200 && spindAkt1.deckend >= 300 && spindAkt1.violett === 0
+    spindAkt1.grau >= 200 && spindAkt1.punkte >= 300 && spindAkt1.violett === 0
       && spindAkt1.treffer >= 290,
     JSON.stringify(spindAkt1));
+  check('Akt-1-Browser: der Spind steht mit den Standfüßen auf der Bodenlinie',
+    spindAkt1.luecke === 0, `fuss=${spindAkt1.unten} boden=${spindAkt1.boden} luecke=${spindAkt1.luecke}`);
+  check('Akt-1-Browser: Spindfuss und Spielerschuhe liegen auf derselben Bildzeile',
+    spindFigur1.punkte > 0 && spindFigur1.unten === spindAkt1.unten
+      && spindFigur1.boden - 1 === spindAkt1.unten,
+    `figur=${spindFigur1.unten} (Box endet auf ${spindFigur1.boden}) spind=${spindAkt1.unten}`);
   check('Akt-1-Browser: die Mittelfuge des Spinds liegt dunkler als die Türflächen',
     spindAkt1.fuge * 1.15 < spindAkt1.tuer, `fuge=${spindAkt1.fuge} tuer=${spindAkt1.tuer}`);
 
