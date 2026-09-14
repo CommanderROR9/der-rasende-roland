@@ -517,10 +517,11 @@ await testAsync('der Planer springt beim Abschnittswechsel in den B-Teil', async
 });
 
 // ============================================================================
-// LASTPROBE — 24 Stationswechsel und langes Laufen
+// LASTPROBE — Stationswechsel und langes Laufen
 // ============================================================================
 async function lastprobe() {
   const { musik, ctx, gestoppt } = mitKontext({ laufendeZeit: true });
+  const erwarteteWechsel = 3 * STATIONEN_MUSIK.length;
   let strecke = 0;
   let wechsel = 0;
   let maxKnoten = 0;
@@ -537,9 +538,9 @@ async function lastprobe() {
   }
   clearInterval(uhr);
   await schlaf(150);
-  assert.equal(wechsel, 24, `${wechsel} Stationswechsel`);
+  assert.equal(wechsel, erwarteteWechsel, `${wechsel} Stationswechsel`);
   assert.ok(ctx.currentTime > 1000.2, 'die Uhr lief wirklich weiter');
-  assert.ok(gestoppt.length >= 24, `nur ${gestoppt.length} Noten gestoppt`);
+  assert.ok(gestoppt.length >= erwarteteWechsel, `nur ${gestoppt.length} Noten gestoppt`);
   assert.ok(maxKnoten <= 24, `Nodes während der Wechsel: ${maxKnoten}`);
   assert.ok(musik.offeneKnoten() <= 32, `Nodes am Ende: ${musik.offeneKnoten()}`);
   // Schalter dürfen auch nach 24 Wechseln nichts anhängen.
@@ -550,9 +551,9 @@ async function lastprobe() {
   assert.ok(musik.offeneKnoten() <= Math.max(vorher, 32), 'Schalter hängen Noten an');
   musik.stop();
   assert.equal(musik.offeneKnoten(), 0, 'nach dem Stopp bleibt nichts stehen');
-  console.log(`   24 Stationswechsel, höchste Node-Zahl ${maxKnoten}, ${gestoppt.length} Noten gestoppt`);
+  console.log(`   ${erwarteteWechsel} Stationswechsel, höchste Node-Zahl ${maxKnoten}, ${gestoppt.length} Noten gestoppt`);
 }
 
-await testAsync('24 Stationswechsel und langes Laufen ohne Node-Wildwuchs', lastprobe);
+await testAsync(`Stationswechsel (${3 * STATIONEN_MUSIK.length}) und langes Laufen ohne Node-Wildwuchs`, lastprobe);
 
 console.log(`${passed} Musik-Tests bestanden`);

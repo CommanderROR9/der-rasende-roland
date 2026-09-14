@@ -984,7 +984,18 @@ ui.stick.addEventListener('pointercancel', stickReset);
 
 function holdButton(el, name) {
   el.addEventListener('pointerdown', (e) => { e.preventDefault(); input.setKey(name, true); audio.resume(); });
-  const off = () => input.setKey(name, false);
+  // Ein Druck, der kürzer ist als ein Frame (schnelles Tippen), darf nicht
+  // verloren gehen: die Spieltasten werden erst einen Frame später gelöst —
+  // sonst sieht die Simulation den Druck nie (input.js macht dasselbe für die
+  // Tastatur; seit DRR-P1 gilt es auch für die Proben-Tasten EINSATZ/OHROPAX).
+  const off = () => {
+    if ((name === 'jump' || name === 'action' || name === 'ohropax')
+      && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => input.setKey(name, false));
+    } else {
+      input.setKey(name, false);
+    }
+  };
   el.addEventListener('pointerup', off);
   el.addEventListener('pointercancel', off);
   el.addEventListener('pointerleave', off);
@@ -1075,7 +1086,7 @@ window.__roland = {
     get verdikt() { return probe && probe.verdikt ? probe.verdikt.id : null; },
     get satz() { return probe ? probe.hud.satz : null; },
     get plan() { return probe ? probe.plan : null; },
-    get figuren() { return probe && probe.figuren ? probe.figuren() : []; },
+    figuren: () => (probe && probe.figuren ? probe.figuren() : []),
   },
   get aktiv() { return probe || grill || racer || game; },
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },

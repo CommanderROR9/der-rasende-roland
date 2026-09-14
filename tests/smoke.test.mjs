@@ -2171,7 +2171,9 @@ function place(game, px, py) {
   };
   const falsch = [];
   for (const l of LEVELS) {
-    if (l.mode === 'racer') continue;                 // Fahr-Interludien haben ihren eigenen Himmel
+    // Fahr-Interludien haben ihren eigenen Himmel, die letzte Probe zeigt die
+    // Buehne als eigene Szene (DRR-P1) — beide bauen keinen Seitenscroller.
+    if (l.mode !== 'sidescroller') continue;
     const g = new Game({
       level: l.build(), input: createInput(null),
       audio: { play() {}, engine() {}, engineOff() {} },
@@ -2385,9 +2387,9 @@ function place(game, px, py) {
 
 // ------------------------------------ STORY-GERÜST (DRR-03) -------------------
 {
-  check('Reihenfolge: Finale vor der Nachtfahrt, Garten zuletzt',
+  check('Reihenfolge: Finale vor der letzten Probe, Probe vor der Nachtfahrt, Garten zuletzt',
     LEVELS.map((l) => l.id).join(' > ')
-      === 'akt1 > akt2 > cabrio > akt3 > akt4 > akt5 > motorrad > epilog',
+      === 'akt1 > akt2 > cabrio > akt3 > akt4 > akt5 > probe > motorrad > epilog',
     LEVELS.map((l) => l.id).join(' > '));
   check('Jede Station hat ID, Name, Modus und ein Ziel',
     STATIONEN.every((s) => s.id && s.name && s.mode && s.ziel && s.ziel.length > 12),
@@ -2410,8 +2412,13 @@ function place(game, px, py) {
     if (s.station !== id) falsch.push(`act=${idx} → ${s.station} (erwartet ${id})`);
   }
   check('Alte Spielstände landen auf derselben Station wie vorher', falsch.length === 0, falsch.join(' | '));
+  // Die Station bleibt dieselbe (Nachtfahrt) — der Index verschiebt sich, weil
+  // die letzte Probe zwischen Finale und Nachtfahrt sitzt (DRR-P1). Geprüft
+  // wird deshalb beides: die Station und ihr Platz in der aktuellen Liste.
   check('Alter Index 5 zeigt weiter auf die Nachtfahrt, nicht auf das Finale',
-    stationIndex(migriereSave({ act: 5 })) === 6, String(stationIndex(migriereSave({ act: 5 }))));
+    migriereSave({ act: 5 }).station === 'motorrad'
+      && stationIndex(migriereSave({ act: 5 })) === LEVELS.findIndex((l) => l.id === 'motorrad'),
+    `${migriereSave({ act: 5 }).station} @ ${stationIndex(migriereSave({ act: 5 }))}`);
   check('Alter Index 6 zeigt auf die Bühne', migration6(), String(migration6()));
   function migration6() { return stationIndex(migriereSave({ act: 6 })); }
 

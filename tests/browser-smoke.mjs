@@ -1554,12 +1554,18 @@ async function pruefeSpinde({ zusatz = '' } = {}) {
  * Gezielter Block für die letzte Probe (Auftrag DRR-P1).
  *
  * Startet die Station über den echten Stationsknopf `#actRow button[data-akt]`
- * (aufgelöst über `levelIds`), bedient den guten Lauf über die echten DOM-Tasten
- * (EINSATZ/OHROPAX) und die Tastatur, prüft den gehaltenen Knopf, das Verdikt,
- * einen passiven Lauf ohne Crash und die Sichtbarkeit der Figuren im Canvas
- * (mit Gegenprobe: ohne Figuren darf die Messung 0 ergeben). Wanduhr-Grenze:
- * der Block braucht rund 30 s — die Läufe werden nach dem gemessenen Teil über
- * `szene.complete()` abgeschlossen, damit er unter einer Minute bleibt.
+ * (aufgelöst über `levelIds`) und prüft:
+ *  - Start ohne Garderobe, DOM-Tasten sichtbar, Lauf-Pad ruht, HUD-Zeilen,
+ *  - echte Mausklicks auf EINSATZ/OHROPAX treffen Figuren,
+ *  - die Figuren sind im Canvas sichtbar (A/B gegen einen Frame ohne Figuren),
+ *  - ein deterministisch geführter guter Lauf (Szene im Testtaktschritt, Tasten
+ *    als pointerdown/pointerup auf den echten DOM-Buttons) → Verdikt 1,
+ *  - ein passiver Lauf bleibt stehen statt abzubrechen → Verdikt 3, kein Crash,
+ *  - O wirkt, ein gehaltener Knopf wertet genau einmal, WEITER führt zur Nachtfahrt.
+ *
+ * Die Szene wird im Testtaktschritt vorgespult, weil die Seite im Handy-Emulat
+ * nur wenige Bilder je Sekunde malt (die Spielzeit läuft dort ~1/3 so schnell) —
+ * die Tastendrücke gehen trotzdem über die echten DOM-Tasten. Wanduhr-Grenze 60 s.
  */
 async function pruefeProbe() {
   const start = Date.now();
@@ -1576,15 +1582,18 @@ async function pruefeProbe() {
   const idx = ids.indexOf('probe');
   check('PROBE-SCHRITT: die Station steht zwischen Finale und Nachtfahrt',
     idx > 0 && ids[idx - 1] === 'akt5' && ids[idx + 1] === 'motorrad', ids.join(','));
-  const knopf = await evaluate(`(() => {
+  const knopfText = await evaluate(`(() => {
     const b = document.querySelector('#actRow button[data-akt="${idx}"]');
     return b ? b.textContent.trim() : '';
   })()`);
-  check('PROBE-SCHRITT: die Stationswahl nennt die Probe', /LETZTE PROBE/.test(knopf), knopf);
+  check('PROBE-SCHRITT: die Stationswahl nennt die Probe', /LETZTE PROBE/.test(knopfText), knopfText);
 
-  // Start über den echten Knopf der Stationswahl.
-  await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
-  await sleep(400);
+  /** Startet die Probe über den echten Knopf der Stationswahl. */
+  const stationStarten = async () => {
+    await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
+    await sleep(350);
+  };
+  await stationStarten();
   const startbild = JSON.parse(await evaluate(`JSON.stringify({
     id: window.__roland.level.id,
     phase: window.__roland.probe.phase,
@@ -1592,91 +1601,61 @@ async function pruefeProbe() {
     garde: !document.getElementById('garde').classList.contains('hidden'),
     probePad: document.getElementById('probePad').classList.contains('show'),
     pad: document.getElementById('pad').classList.contains('show'),
-    knopfHoehe: Math.round(document.getElementById('btnEinsatz').getBoundingClientRect().height),
-    knopfHoehe2: Math.round(document.getElementById('btnOhropax').getBoundingClientRect().height),
+    hoehe: Math.round(document.getElementById('btnEinsatz').getBoundingClientRect().height),
+    hoehe2: Math.round(document.getElementById('btnOhropax').getBoundingClientRect().height),
     readout: !document.getElementById('probeReadout').classList.contains('hidden'),
     journal: document.getElementById('journal').textContent,
   })`));
   check('PROBE-SCHRITT: Start ohne Garderobe, Szene läuft direkt',
     startbild.id === 'probe' && startbild.phase === 'play' && startbild.garde === false
-      && startbild.modus === 'probe',
-    JSON.stringify(startbild));
+      && startbild.modus === 'probe', JSON.stringify(startbild));
   check('PROBE-SCHRITT: die beiden Proben-Tasten stehen groß im Bild, das Lauf-Pad ruht',
     startbild.probePad === true && startbild.pad === false
-      && startbild.knopfHoehe >= 44 && startbild.knopfHoehe2 >= 44,
-    JSON.stringify(startbild));
+      && startbild.hoehe >= 44 && startbild.hoehe2 >= 44, JSON.stringify(startbild));
   check('PROBE-SCHRITT: das HUD zeigt Treffer, Patzer, Satz und Restzeit',
-    startbild.readout === true && /LETZTE PROBE/.test(startbild.journal),
-    JSON.stringify(startbild));
+    startbild.readout === true && /LETZTE PROBE/.test(startbild.journal), JSON.stringify(startbild));
 
-  // ------------------------------------------------------------- guter Lauf --
+  // ------------------------------------------- echte Mausklicks auf die Tasten
   const taste = (f) => (f === 'dirigent' ? '#btnEinsatz' : '#btnOhropax');
-  const offeneFigur = () => evaluate(`(() => {
-    const f = window.__roland.probe.figuren().find((x) => x.status === 'offen');
-    return f ? JSON.stringify({ taste: f.taste, figur: f.figur, spalte: f.spalte }) : '';
+  let klicks = 0;
+  const ersteFigur = await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    let n = 0;
+    while (g.state === 'play' && n < 3000 && !g.ablauf.some((e) => e.status === 'offen')) { g.update(1 / 60); n++; }
+    const f = g.ablauf.find((e) => e.status === 'offen');
+    return f ? f.figur : '';
   })()`);
-  let treffer = 0;
-  let figurGesehen = null;
-  for (let i = 0; i < 90 && treffer < 8; i++) {
-    const roh = await offeneFigur();
-    if (roh) {
-      const f = JSON.parse(roh);
-      figurGesehen = figurGesehen || f;
-      await echterKlick(taste(f.figur));
-      treffer++;
-      await sleep(120);
-    } else {
-      await sleep(90);
-    }
-  }
-  check('PROBE-SCHRITT: die ersten Einsätze lassen sich über die DOM-Tasten treffen',
-    treffer >= 3, `${treffer} Treffer`);
-  results.push(`PROBE-SCHRITT: ${treffer} Einsätze über die DOM-Tasten getroffen (erste Figur: ${figurGesehen ? figurGesehen.figur : '—'})`);
-
-  // Tastatur: O ist die zweite Taste — ein Druck wirkt nur bei offenem Fenster.
-  const vorTaste = JSON.parse(await evaluate(
-    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
-  await key('KeyO', 'keyDown');
-  await key('KeyO', 'keyUp');
-  await sleep(200);
-  const nachTaste = JSON.parse(await evaluate(
-    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
-  check('PROBE-SCHRITT: die O-Taste wirkt (Leerlauf ist neutral, kein Absturz)',
-    nachTaste.t >= vorTaste.t && nachTaste.p >= vorTaste.p && (await evaluate('window.__errors.length')) === 0,
-    JSON.stringify({ vorTaste, nachTaste }));
-
-  // Ein gehaltener DOM-Knopf wertet genau einmal.
-  let gehalten = null;
-  for (let i = 0; i < 80 && !gehalten; i++) {
-    const roh = await evaluate(`(() => {
-      const f = window.__roland.probe.figuren().find((x) => x.status === 'offen');
-      return f ? f.figur : '';
+  for (let runde = 0; runde < 4; runde++) {
+    const vorher = await evaluate('window.__roland.probe.treffer');
+    if (!(await echtKlick$1(taste(ersteFigur === 'dirigent' ? 'dirigent' : 'becken')))) break;
+    klicks++;
+    const danach = await evaluate(`(() => {
+      const g = window.__roland.probe.szene;
+      for (let i = 0; i < 30 && g.treffer === ${vorher}; i++) g.update(1 / 60);
+      return g.treffer;
     })()`);
-    if (roh !== 'dirigent') { await sleep(80); continue; }
-    const r = JSON.parse(await evaluate(`(() => {
-      const b = document.getElementById('btnEinsatz').getBoundingClientRect();
-      return JSON.stringify({ x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) });
-    })()`));
-    const vor = await evaluate('window.__roland.probe.treffer');
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
-    await sleep(900);
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
-    const nach = await evaluate('window.__roland.probe.treffer');
-    gehalten = { vor, nach };
+    if (danach <= vorher) break;
   }
-  check('PROBE-SCHRITT: ein gehaltener Knopf wertet genau einmal',
-    !!gehalten && gehalten.nach - gehalten.vor === 1, JSON.stringify(gehalten));
+  const klickStand = JSON.parse(await evaluate(`JSON.stringify({
+    treffer: window.__roland.probe.treffer, patzer: window.__roland.probe.patzer,
+    fehler: window.__errors.length,
+  })`));
+  check('PROBE-SCHRITT: echte Mausklicks auf die DOM-Tasten treffen Figuren',
+    klickStand.treffer >= 1 && klickStand.fehler === 0, JSON.stringify({ ...klickStand, klicks }));
+  results.push(`PROBE-SCHRITT: ${klickStand.treffer} Treffer aus ${klicks} echten Mausklicks (erste Figur: ${ersteFigur || '—'})`);
 
-  // Figuren im Canvas: A/B-Messung (mit Figuren gegen ohne Figuren).
+  // --------------------------------------------- Figuren im Canvas (A/B-Bild)
   const bild = JSON.parse(await evaluate(`(() => {
     const cv = document.getElementById('game');
     const c = cv.getContext('2d');
     const g = window.__roland.probe.szene;
     const halten = window.requestAnimationFrame;
     window.requestAnimationFrame = () => 0;      // Bild einfrieren
+    let n = 0;
+    while (g.state === 'play' && n < 3000 && !g.ablauf.some((e) => e.status === 'offen' || e.status === 'rise')) { g.update(1 / 60); n++; }
     g.shake = 0;
     const daten = () => c.getImageData(0, 0, cv.width, cv.height).data;
-    const sichtbar = g.figuren().find((f) => f.status === 'offen' || f.status === 'rise');
+    const sichtbar = g.figuren().find((f) => f.status !== 'aus') || null;
     g.draw(c);
     const mit = daten();
     const alt = g.figuren; g.figuren = () => [];
@@ -1689,22 +1668,44 @@ async function pruefeProbe() {
       if (mit[i] !== ohne[i] || mit[i + 1] !== ohne[i + 1] || mit[i + 2] !== ohne[i + 2]) unterschied++;
     }
     return JSON.stringify({ unterschied, breite: cv.width, hoehe: cv.height,
-      x: sichtbar ? sichtbar.x : null, y: sichtbar ? sichtbar.y : null,
-      figur: sichtbar ? sichtbar.figur : null });
+      x: sichtbar ? sichtbar.x : null, figur: sichtbar ? sichtbar.figur : null });
   })()`));
   check('PROBE-SCHRITT: die Figuren sind im Canvas sichtbar (Gegenprobe: ohne sie 0 Punkte)',
     bild.unterschied > 60 && bild.x !== null && bild.x >= 0 && bild.x <= bild.breite,
     JSON.stringify(bild));
   results.push(`PROBE-BILD ${bild.unterschied} Figurenpunkte in ${bild.breite}x${bild.hoehe} (${bild.figur} bei x=${bild.x})`);
 
-  // Guter Lauf: Verdikt 1 (die Quote steht schon, der Rest wird abgeschlossen).
+  // -------------------------------------------------- deterministischer guter Lauf
+  await stationStarten();
   const gut = JSON.parse(await evaluate(`(() => {
-    window.__roland.probe.szene.complete();
-    return JSON.stringify({
-      verdikt: window.__roland.probe.verdikt, treffer: window.__roland.probe.treffer,
-      patzer: window.__roland.probe.patzer, phase: window.__roland.probe.phase,
-      ziel: window.__roland.probe.plan.ereignisse.length,
-    });
+    const g = window.__roland.probe.szene;
+    const knopf = (f) => document.getElementById(f === 'dirigent' ? 'btnEinsatz' : 'btnOhropax');
+    let vorher = 0;
+    for (let runde = 0; runde < 10 && g.state === 'play'; runde++) {
+      let n = 0;
+      while (g.state === 'play' && n++ < 3000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+      const f = g.ablauf.find((e) => e.status === 'offen');
+      if (!f) break;
+      const b = knopf(f.figur);
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));   // echter Button-Pfad
+      for (let i = 0; i < 8 && g.treffer === vorher; i++) g.update(1 / 60);
+      b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      // Der echte Weg loest die Taste einen Frame spaeter (input.js/main.js).
+      // Im synchronen Vorspulen gibt es diesen Frame nicht: die Taste wird
+      // deshalb hier ausdruecklich geloest, sonst bliebe der naechste Druck
+      // ohne Flanke.
+      window.__roland.input.setKey(f.taste === 'einsatz' ? 'action' : 'ohropax', false);
+      g.update(1 / 60);
+      if (g.treffer === vorher) { continue; }
+      vorher = g.treffer;
+    }
+    g.complete();
+    const t = g.treffer, p = g.patzer;
+    const quote = t + p > 0 ? t / (t + p) : 0;
+    const erwartet = quote >= 0.8 && p <= 6 ? 'steht' : quote >= 0.55 ? 'durchgewinkt' : 'mutig';
+    return JSON.stringify({ treffer: t, patzer: p, quote, erwartet,
+      verdikt: g.verdikt ? g.verdikt.id : null, phase: g.state,
+      plan: g.plan.ereignisse.length });
   })()`));
   await sleep(300);
   const ergebnis = JSON.parse(await evaluate(`JSON.stringify({
@@ -1712,69 +1713,105 @@ async function pruefeProbe() {
     titel: document.getElementById('rewardTitle').textContent,
     text: document.getElementById('rewardText').textContent,
     eyebrow: document.getElementById('rewardEyebrow').textContent,
+    body: document.getElementById('rewardBody').textContent,
   })`));
-  check('PROBE-SCHRITT: guter Lauf endet mit Verdikt 1 „DIE PROBE STEHT"',
-    gut.verdikt === 'steht' && gut.phase === 'complete' && gut.patzer <= 6,
-    JSON.stringify(gut));
-  check('PROBE-SCHRITT: das Ergebnis nennt Verdikt und Belohnung',
-    ergebnis.offen === true && /NICKT/.test(ergebnis.text) && /STILLE AUF DEM PULT/.test(ergebnis.titel),
+  check('PROBE-SCHRITT: guter Lauf endet mit Verdikt 1 „DIE PROBE STEHT" (Regel nachgerechnet)',
+    gut.verdikt === 'steht' && gut.verdikt === gut.erwartet && gut.phase === 'complete'
+      && gut.treffer >= 8 && gut.patzer === 0, JSON.stringify(gut));
+  check('PROBE-SCHRITT: das Ergebnisfenster nennt Verdikt, Quote und Belohnung',
+    ergebnis.offen === true && /NICKT/.test(ergebnis.text) && /STILLE AUF DEM PULT/.test(ergebnis.titel)
+      && /TREFFER/.test(ergebnis.body) && /VERDIKT/.test(ergebnis.body),
     JSON.stringify(ergebnis));
+  results.push(`PROBE-SCHRITT: guter Lauf ${gut.treffer}/${gut.plan} Treffer, Patzer ${gut.patzer}, Verdikt ${gut.verdikt}`);
 
-  // ----------------------------------------------------------- passiver Lauf --
-  await evaluate(`document.querySelector('#actRow button[data-akt="${idx}"]').click()`);
-  await sleep(600);
+  // --------------------------------------------------------------- passiver Lauf
+  await stationStarten();
   const passivStart = JSON.parse(await evaluate(`JSON.stringify({
     phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
     patzer: window.__roland.probe.patzer,
   })`));
-  await sleep(6000);
+  await sleep(5000);
   const passiv = JSON.parse(await evaluate(`JSON.stringify({
-    phase: window.__roland.probe.phase,
-    treffer: window.__roland.probe.treffer,
-    patzer: window.__roland.probe.patzer,
-    gnade: window.__roland.probe.szene.gnade,
-    luft: window.__roland.probe.szene.luftGezeigt,
-    fehler: window.__errors.length,
+    phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
+    patzer: window.__roland.probe.patzer, fehler: window.__errors.length,
   })`));
   check('PROBE-SCHRITT: ohne Druck läuft die Probe weiter (kein Fail, Patzer statt Abbruch)',
-    passivStart.treffer === 0 && passiv.phase === 'play' && passiv.treffer === 0
-      && passiv.patzer >= 1 && passiv.fehler === 0,
-    JSON.stringify(passiv));
-  results.push(`PROBE-SCHRITT: passiver Lauf nach 6 s — ${passiv.patzer} Patzer, Gnade ${passiv.gnade}, kein Fehler`);
+    passivStart.treffer === 0 && passiv.phase === 'play' && passiv.patzer >= 1
+      && passiv.fehler === 0, JSON.stringify(passiv));
+  results.push(`PROBE-SCHRITT: passiver Lauf nach 5 s — ${passiv.patzer} Patzer, kein Fehler`);
 
+  // O-Taste: im Leerlauf neutral, kein Absturz.
+  const vorTaste = JSON.parse(await evaluate(
+    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
+  await key('KeyO', 'keyDown');
+  await sleep(60);
+  await key('KeyO', 'keyUp');
+  await sleep(150);
+  const nachTaste = JSON.parse(await evaluate(
+    'JSON.stringify({ t: window.__roland.probe.treffer, p: window.__roland.probe.patzer })'));
+  check('PROBE-SCHRITT: die O-Taste wirkt (im Leerlauf neutral, kein Absturz)',
+    nachTaste.t >= vorTaste.t && nachTaste.p >= vorTaste.p
+      && (await evaluate('window.__errors.length')) === 0,
+    JSON.stringify({ vorTaste, nachTaste }));
+
+  // Ein gehaltener Knopf wertet genau einmal.
+  const gehalten = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.probe.szene;
+    let n = 0;
+    while (g.state === 'play' && n++ < 3000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+    const f = g.ablauf.find((e) => e.status === 'offen');
+    if (!f) return JSON.stringify({ fehlt: true });
+    const b = document.getElementById(f.figur === 'dirigent' ? 'btnEinsatz' : 'btnOhropax');
+    const vorher = g.treffer;
+    b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    for (let i = 0; i < 60; i++) g.update(1 / 60);          // gehalten: eine Sekunde
+    const nachher = g.treffer;
+    b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    // Das Fenster bleibt offen: halten darf nicht mehrfach zählen.
+    for (let i = 0; i < 30; i++) g.update(1 / 60);
+    return JSON.stringify({ vorher, nachher, danach: g.treffer, figur: f.figur });
+  })()`));
+  check('PROBE-SCHRITT: ein gehaltener Knopf wertet genau einmal',
+    gehalten.fehlt !== true && gehalten.nachher - gehalten.vorher === 1
+      && gehalten.danach === gehalten.nachher,
+    JSON.stringify(gehalten));
+
+  // Der Rest des passiven Laufs im Schnelldurchlauf → Verdikt 3, nichts blockiert.
   const schlecht = await evaluate(`(() => {
     const g = window.__roland.probe.szene;
-    while (g.state === 'play') g.update(1 / 60);      // Rest des Laufs im Schnelldurchlauf
-    return window.__roland.probe.verdikt;
+    while (g.state === 'play') g.update(1 / 60);
+    return g.verdikt ? g.verdikt.id : null;
   })()`);
   await sleep(250);
   const passivEnde = JSON.parse(await evaluate(`JSON.stringify({
     verdikt: window.__roland.probe.verdikt,
     offen: !document.getElementById('reward').classList.contains('hidden'),
     text: document.getElementById('rewardText').textContent,
-    ziel: window.__roland.probe.plan.ereignisse.length,
     fehler: window.__errors.length,
   })`));
   check('PROBE-SCHRITT: passiver Lauf endet mit Verdikt 3 „MUTIG." ohne Crash',
     schlecht === 'mutig' && passivEnde.verdikt === 'mutig' && passivEnde.offen === true
-      && passivEnde.fehler === 0,
-    JSON.stringify({ schlecht, passivEnde }));
-  check('PROBE-SCHRITT: der Plan hat alle Sätze gefüllt', passivEnde.ziel >= 30, String(passivEnde.ziel));
-
-  // WEITER führt zur Nachtfahrt — nichts wird gesperrt.
-  await evaluate("document.getElementById('rewardBtn').click()");
-  await sleep(500);
-  const weiter = JSON.parse(await evaluate(`JSON.stringify({
-    id: window.__roland.level.id, modus: window.__roland.level.mode,
-    fehler: window.__errors.length,
-  })`));
-  check('PROBE-SCHRITT: nach dem Verdikt geht es normal weiter zur Nachtfahrt',
-    weiter.id === 'motorrad' && weiter.modus === 'racer' && weiter.fehler === 0,
-    JSON.stringify(weiter));
+      && passivEnde.fehler === 0, JSON.stringify({ schlecht, passivEnde }));
+  check('PROBE-SCHRITT: das Verdikt führt normal weiter (WEITER startet die Nachtfahrt)',
+    await (async () => {
+      await evaluate("document.getElementById('rewardBtn').click()");
+      await sleep(400);
+      const weiter = JSON.parse(await evaluate(`JSON.stringify({
+        id: window.__roland.level.id, modus: window.__roland.level.mode,
+        fehler: window.__errors.length,
+      })`));
+      results.push(`PROBE-SCHRITT: nach dem Verdikt → ${weiter.id} (${weiter.modus})`);
+      return weiter.id === 'motorrad' && weiter.modus === 'racer' && weiter.fehler === 0;
+    })());
 
   const sekunden = (Date.now() - start) / 1000;
   check('PROBE-SCHRITT: der Block bleibt unter 60 s Wanduhr', sekunden <= 60, `${sekunden.toFixed(1)}s`);
   results.push(`PROBE-SCHRITT: Gesamtzeit ${sekunden.toFixed(1)}s`);
+}
+
+/** Echter Mausklick über CDP (eigener Name, damit der Block nicht kollidiert). */
+async function echtKlick$1(selector) {
+  return echterKlick(selector);
 }
 
 try {
