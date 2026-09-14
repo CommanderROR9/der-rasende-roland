@@ -30,22 +30,22 @@ const VIEWS = [
  * ausgeschnitten aus quelle-chenyan-neu/chenyan-neu.jpg) — siehe Kommentar im Modul.
  */
 const MATRIX_SHA256 = {
-  anna: 'ea87c0c493fe24756bc6da60b7b7629740a889eaad50c17464a8d5e00a649f3b',
-  aoi: '6bd7f6a0d4e6cb30ce98541f82bd3b6890a1f92e1a69f27ca2c21ed5d5bc850b',
-  barbara: '43a12d9b303796627cdb00f37ae00ded738257413c24f7e28980f1264fc8ce12',
+  anna: '015e2ac0f7940e3f4a0188bb9f37e934c6f24e05ed7054685747a8530a83f6b9',
+  aoi: '90c0c2870ae9b17541685cddef3a2f875f0c7bd970cedd4ca18eb959584a913d',
+  barbara: 'a9dbc5c1dbab126757761164cf9c64e8d46b39c6b3735ddcecf39deeca54eeea',
   nicola: '9fafe76bb35b39ec59838fc16e648445d7e21c5d8f02cfd9440edbcdbca48d08',
-  annekatrin: 'd635e5c0631456a9274b0b23f3b7b9c1d8dde6a573883bbf3afee7aab4a8a231',
+  annekatrin: 'f8fd1b5b34e73d02497d331cc84c929117f6c8da797f4148cf1408c41b641158',
   'roland-r': 'ac202486a9ff7b0169d0841771a345be981d5ea5c24d38a2b0af32568f8a8f38',
-  chenyan: '36eae17f8feaad4d8fc0ff9f7cfeb20d8883e7474d07d11d3d90f74f2f226721',
-  annett: '07490c9a5938ca4066c27b3333529443ec098084687277bc7d6e11351dafd4ac',
-  bruno: 'c9c64807647820a7b8c780d56feeb404548c508460c771e018a3a2bf42563bd5',
-  'roland-s': '55c6b6703842592c8260168375a61653c22c489ac25c5782bd1ba6b1b3291b29',
+  chenyan: '875634041dc7d6bfd8af921e1e6a357a8589b787e3ae354843847249173f35ec',
+  annett: '6afcc248dafd5ea83f72dfff337946098d892ac7ee410a94c8ab00ce62ad1b80',
+  bruno: '581c604f8d86e24f948a7267665c9b7eae45a31b54d5a2a337c7bf26751d725d',
+  'roland-s': '667190caa171736a2b0936c3908d5789a979fc0cca037feaf9c4ea71ba6f2a76',
 };
 
 /** Farbpunkte je Portrait laut Erzeugungsprotokoll (Nachweis unveränderter Daten). */
 const FARBPUNKTE = {
   anna: 5005, aoi: 5002, barbara: 5626, nicola: 3183, annekatrin: 4548,
-  'roland-r': 5931, chenyan: 4786, annett: 3404, bruno: 3724, 'roland-s': 5839,
+  'roland-r': 5931, chenyan: 4782, annett: 3403, bruno: 3723, 'roland-s': 5839,
 };
 
 let passed = 0;
@@ -340,6 +340,48 @@ test('main.js verdrahtet den Abspann als Belohnung, nicht als Pflicht', () => {
   // Die Knopfbeschriftungen setzt main.js aus den Konstanten des Abspanns.
   assert.match(main, /ui\.abspannWeiter\.textContent = ABSPANN_WEITER/);
   assert.match(main, /ui\.abspannZurueck\.textContent = [^;]*ABSPANN_ZURUECK/);
+});
+
+/**
+ * P2 (Karte t_cb2daaff, Branch feature/abspann-putz): die bereinigten Stellen.
+ * Roland hat weiße Punkte auf den Abspann-Portraits gemeldet; diese Koordinaten sind
+ * nach dem Putz leer (Kategorie A: Hintergrundrest) oder mit der umgebenden Farbe
+ * gefüllt (Kategorie B: Sprenkel). Der Test nagelt fest, dass dort kein heller
+ * Bildpunkt zurückkommt — mit dem Stand vor dem Putz wird er rot.
+ */
+const BEREINIGTE_STELLEN = {
+  chenyan: [[36, 6], [37, 6], [90, 77], [92, 82], [84, 72]],
+  anna: [[81, 36], [80, 37], [78, 38], [76, 39], [75, 40], [69, 44], [65, 46], [66, 46], [64, 47], [61, 49], [56, 52], [46, 59], [39, 63], [35, 66], [34, 67], [33, 68], [13, 76], [88, 79]],
+  aoi: [[61, 79], [62, 79], [22, 51], [54, 51], [87, 62]],
+  barbara: [[59, 37], [59, 38], [26, 53], [26, 54], [40, 38], [54, 38], [83, 40], [73, 47]],
+  annekatrin: [[40, 42]],
+  annett: [[64, 37], [64, 38], [52, 44], [80, 78]],
+  bruno: [[87, 61], [87, 62], [77, 60], [38, 8]],
+  'roland-s': [[86, 84], [87, 84], [87, 85], [54, 44], [54, 45], [56, 32], [76, 73]],
+};
+
+/** Luminanz eines Palettenzeichens (Leerzeichen = leer). */
+function zeichenLuminanz(ch) {
+  if (ch === ' ') return 0;
+  const hex = PORTRAIT_PALETTE[ch];
+  assert.ok(hex, `unbekanntes Zeichen "${ch}"`);
+  const v = parseInt(hex.slice(1), 16);
+  return 0.2126 * ((v >> 16) & 255) + 0.7152 * ((v >> 8) & 255) + 0.0722 * (v & 255);
+}
+
+test('P2: bereinigte Stellen sind nicht mehr hell (>200)', () => {
+  let geprueft = 0;
+  for (const [name, stellen] of Object.entries(BEREINIGTE_STELLEN)) {
+    const bild = PORTRAITS[name].bild;
+    for (const [x, y] of stellen) {
+      const ch = bild[y][x];
+      const lum = zeichenLuminanz(ch);
+      assert.ok(lum <= 200,
+        `${name} (${x},${y}): Zeichen "${ch}" ist wieder hell (Luminanz ${lum.toFixed(0)} > 200)`);
+      geprueft += 1;
+    }
+  }
+  assert.equal(geprueft, 52, `${geprueft} bereinigte Stellen geprüft statt 52`);
 });
 
 console.log(`${passed} Abspann-Tests bestanden`);
