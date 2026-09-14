@@ -975,6 +975,46 @@ export const SPRITES = {
     'LL            LL',
   ],
 
+  // Der Kleiderwechsel-Stand in den Akten 1–5 (Roland, 14.09.: „nicht so abstrakt
+  // wie bisher, sondern als graue Metall-Spinde"). Ein Stahlspind mit Deckplatte,
+  // zwei Türen mit Mittelfuge, Luftschlitzen oben, Griffen neben der Fuge und
+  // Standfüßen. Licht kommt von links oben (G), der Schatten liegt rechts (m) —
+  // dadurch bleibt der Schrank auch auf hellem Bühnenboden lesbar.
+  // 16x30 wie der Kleiderschrank; der Körper liegt in den Spalten 2–13 und den
+  // Zeilen 4–29, also auf genau der Fläche, die der alte Ständer einnahm.
+  spind: [
+    '                ',
+    '                ',
+    '                ',
+    '                ',
+    '  GGGGGGGGGGGG  ',   // Deckplatte
+    '  Gggggggggggm  ',
+    '  GgKKgKKgKKgm  ',   // Luftschlitze
+    '  GgKKgKKgKKgm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GgKKgKKgKKgm  ',   // zweite Schlitzreihe
+    '  GgKKgKKgKKgm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GgggaKKagggm  ',   // Griffe links und rechts der Mittelfuge
+    '  GgggaKKagggm  ',
+    '  GgggaKKagggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GggggKKggggm  ',
+    '  GKKKKKKKKKKm  ',   // Sockel
+    '   b        b   ',   // Standfüße
+  ],
+
   // Der Kleiderschrank im Kleingarten (Epilog). Bewusst anders als der Schrank
   // der Laube: Metallblende, helle Türen, und aus dem Türspalt hängt das
   // Hawaii-Hemd (türkis mit orangem Saum) — man sieht von weitem, wofür er da ist.
