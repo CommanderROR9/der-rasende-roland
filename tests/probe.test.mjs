@@ -8,6 +8,7 @@ import {
   bauProbePlan, probeFensterSkala, verdiktIndex, Probe, buildProbe,
   satzBei, PROBE_SAETZE, PROBE_RISE, PROBE_DAUER, PROBE_TASTEN_ABSTAND,
   PROBE_GNADE_FAKTOR, PROBE_GNADE_MAX, PROBE_VERDIKTE, PROBE_TASTEN, PROBE_SPALTEN,
+  PROBE_TREFFER_BLITZ, PROBE_PATZER_MARKE,
 } from '../src/probe.js';
 import { LEVELS, buildProbe as buildProbeAusWorld } from '../src/world.js';
 import { STATIONEN, BELOHNUNGEN, stationIds } from '../src/story.js';
@@ -288,6 +289,88 @@ test('Zustand: ein verpasstes Fenster ist ein Patzer, der Lauf läuft weiter', (
   assert.equal(probe.state, 'play');
 });
 
+// ------------------------------------------------- Anzeige-Lebenslauf (P1b) --
+// Rolands Befund (14.09.): erledigte Figuren blieben als weiße Schatten stehen
+// und verdeckten die neu auftauchenden. Geprüft wird hier nur der Anzeige-
+// Lebenslauf — Plan, Fenster, Gnade und Quote bleiben unangetastet.
+test('Anzeige: ein Treffer blitzt kurz und räumt dann das Feld', () => {
+  const { probe, druck, bis } = mache();
+  const erstes = probe.ablauf[0];
+  bis(erstes.tEff + 0.05);
+  druck(TASTE_FUER[erstes.taste]);
+  assert.equal(probe.treffer, 1);
+  assert.equal(erstes.status, 'treffer');
+  assert.ok(typeof erstes.erledigtT === 'number', 'der Treffer vermerkt keinen Erledigt-Zeitpunkt');
+  const imBlitz = probe.figuren().filter((f) => f.t === erstes.tEff);
+  assert.equal(imBlitz.length, 1, 'während des Blitzes muss die Figur noch stehen');
+  assert.equal(imBlitz[0].erledigt, erstes.erledigtT);
+  bis(erstes.tEff + PROBE_TREFFER_BLITZ + 0.2);
+  assert.equal(erstes.status, 'weg', `Status nach dem Blitz: ${erstes.status}`);
+  assert.equal(probe.figuren().some((f) => f.t === erstes.tEff), false,
+    'die erledigte Figur steht noch im Bild');
+  // Kein Wiederauftauchen: der Endstatus bleibt stehen und ist NICHT 'aus'
+  // (über aus→rise würde dieselbe Figur sonst erneut aufploppen).
+  for (let i = 0; i < 20 * 60; i++) {
+    probe.update(1 / 60);
+    assert.equal(probe.figuren().some((f) => f.t === erstes.tEff), false,
+      `die erledigte Figur ist nach ${probe.zeit.toFixed(1)} s wieder da`);
+  }
+  assert.equal(erstes.status, 'weg');
+});
+
+test('Anzeige: eine verpasste Figur trägt die rote Marke kurz und ist dann weg', () => {
+  const { probe, bis } = mache();
+  const erstes = probe.ablauf[0];
+  bis(erstes.bisEff + 0.05);
+  assert.equal(erstes.status, 'verpasst');
+  assert.ok(typeof erstes.erledigtT === 'number', 'der Patzer vermerkt keinen Erledigt-Zeitpunkt');
+  assert.equal(probe.figuren().some((f) => f.t === erstes.tEff), true, 'die rote Marke fehlt sofort');
+  bis(erstes.bisEff + PROBE_PATZER_MARKE + 0.2);
+  assert.equal(erstes.status, 'weg', `Status nach der Marke: ${erstes.status}`);
+  assert.equal(probe.figuren().some((f) => f.t === erstes.tEff), false,
+    'die verpasste Figur steht noch im Bild');
+});
+
+test('Anzeige: über den ganzen Lauf bleibt keine erledigte Figur stehen', () => {
+  const { probe } = mache();
+  let maxRest = 0;
+  while (probe.state === 'play') {
+    probe.update(1 / 60);
+    for (const e of probe.ablauf) {
+      if (e.status === 'weg' || e.erledigtT === undefined) continue;
+      const grenze = e.status === 'treffer' ? PROBE_TREFFER_BLITZ : PROBE_PATZER_MARKE;
+      maxRest = Math.max(maxRest, probe.zeit - e.erledigtT - grenze);
+    }
+  }
+  assert.ok(maxRest <= 1 / 60 + 1e-9,
+    `eine erledigte Figur überlebte ihr Anzeigefenster um ${maxRest.toFixed(3)} s`);
+  assert.equal(probe.ablauf.filter((e) => e.erledigtT !== undefined).length, probe.ablauf.length,
+    'nicht jede Figur wurde als erledigt vermerkt');
+  assert.equal(probe.ablauf.filter((e) => e.status === 'weg').length >= probe.ablauf.length - 1, true,
+    'am Ende stehen erledigte Figuren im Bild');
+});
+
+test('Anzeige: die weiße Silhouette blitzt nur im Fenster', () => {
+  const bilder = [];
+  const ctx = {
+    fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1,
+    fillRect() {}, beginPath() {}, arc() {}, stroke() {}, save() {}, restore() {}, translate() {},
+    drawImage(bild) { bilder.push(bild); },
+  };
+  const { probe, druck, bis } = mache();
+  const erstes = probe.ablauf[0];
+  bis(erstes.tEff + 0.05);
+  druck(TASTE_FUER[erstes.taste]);
+  const solid = probe.sprite(erstes.figur).solid;
+  probe.draw(ctx);
+  assert.equal(bilder.includes(solid), true, 'im Blitz fehlt die weiße Silhouette');
+  bilder.length = 0;
+  bis(erstes.tEff + PROBE_TREFFER_BLITZ + 0.2);
+  probe.draw(ctx);
+  assert.equal(bilder.includes(solid), false, 'die weiße Silhouette blitzt nach dem Fenster weiter');
+  assert.equal(probe.figuren().some((f) => f.t === erstes.tEff), false);
+});
+
 test('Zustand: Gnade dehnt das nächste Intervall ×1,4 (höchstens dreimal, eine Meldung)', () => {
   const { probe, bis } = mache();
   const [e1, e2, e3, e4] = probe.ablauf;
@@ -466,7 +549,8 @@ test('Szene: baut ohne DOM und zeichnet die Figuren in fünf Spalten', () => {
   assert.ok(zeichnung.filter((z) => z.bild).length >= 1, 'die Figur wird nicht gezeichnet');
   druck(TASTE_FUER[erstes.taste]);
   assert.equal(probe.treffer, 1);
-  // Nach dem Treffer ist die Figur erledigt, das Bild bleibt aber stehen.
+  // Nach dem Treffer blitzt die Figur noch kurz (Anzeige-Lebenslauf, DRR-P1b);
+  // erst nach dem Blitzfenster ist sie vom Feld.
   probe.draw(ctx);
   assert.ok(zeichnung.length > 10, 'die Szene zeichnet zu wenig');
   assert.ok(satzBei(0).id === 'vom-blatt' && satzBei(69).id === 'coda');

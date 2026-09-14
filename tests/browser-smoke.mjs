@@ -1687,6 +1687,81 @@ async function pruefeProbe() {
     groesse > 1000, `${groesse} Bytes`);
   results.push(`PROBE-BILD ${bild.unterschied} Figurenpunkte in ${bild.breite}x${bild.hoehe} (${bild.figur} bei x=${bild.x})`);
 
+  // --------------------------------- Erledigte Figuren räumen das Feld (P1b)
+  // Rolands Befund (14.09.): Treffer und Patzer blieben als weiße Schatten
+  // stehen und verdeckten die neuen Figuren. Hier wird dreimal wirklich
+  // getroffen, die Anzeige abgewartet und gemessen, dass danach keine Figur
+  // mehr steht und kein reinweißer Bildpunkt der Solid-Silhouette übrig ist
+  // (Kontrolle: im Blitzfenster stehen welche im Bild). Das Bild der geräumten
+  // Bühne wird als Beweis gezogen, solange der Lauf eingefroren ist.
+  const erledigt = JSON.parse(await evaluate(`(() => {
+    const cv = document.getElementById('game');
+    const c = cv.getContext('2d');
+    const g = window.__roland.probe.szene;
+    // Bild einfrieren: die Frame-Rueckrufe werden geparkt statt verworfen —
+    // ein \`() => 0\` ueber mehrere Aufrufe hinweg reisst die rAF-Kette von
+    // main.js (danach laeuft der Lauf nicht mehr von allein weiter, der
+    // Passiv-Block faellt um). Nach dem Bild werden sie wieder eingeplant.
+    window.__rAFHalt = window.requestAnimationFrame;
+    window.__rAFPark = [];
+    window.requestAnimationFrame = (cb) => { window.__rAFPark.push(cb); return 0; };
+    const boden = Math.round(g.vh * 0.62);
+    const weisse = () => {
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let y = Math.max(0, boden - 60); y <= Math.min(cv.height - 1, boden + 6); y++) {
+        for (let x = 0; x < cv.width; x++) {
+          const i = (y * cv.width + x) * 4;
+          if (d[i] === 255 && d[i + 1] === 255 && d[i + 2] === 255) n++;
+        }
+      }
+      return n;
+    };
+    const treffer = [];
+    for (let runde = 0; runde < 3; runde++) {
+      let n = 0;
+      while (g.state === 'play' && n++ < 4000 && !g.ablauf.some((e) => e.status === 'offen')) g.update(1 / 60);
+      const f = g.ablauf.find((e) => e.status === 'offen');
+      if (!f) break;
+      const taste = f.taste === 'einsatz' ? 'action' : 'ohropax';
+      window.__roland.input.setKey(taste, true);
+      g.update(1 / 60);
+      window.__roland.input.setKey(taste, false);
+      g.update(1 / 60);
+      treffer.push(f.figur);
+    }
+    g.shake = 0;
+    g.draw(c);
+    const weissBlitz = weisse();                     // Kontrolle: im Blitz steht Weiß
+    // Anzeigefenster (Blitz/Marke) abklingen lassen, dann das ruhige Feld abwarten.
+    for (let i = 0; i < 32; i++) g.update(1 / 60);
+    let n2 = 0;
+    while (g.state === 'play' && n2++ < 300 && g.figuren().length > 0) g.update(1 / 60);
+    g.shake = 0;
+    g.draw(c);
+    const weissDanach = weisse();
+    const offen = g.ablauf.filter((e) => e.status === 'treffer' || e.status === 'verpasst').length;
+    const weg = g.ablauf.filter((e) => e.status === 'weg').length;
+    return JSON.stringify({ treffer, weissBlitz, weissDanach, sichtbar: g.figuren().length,
+      offen, weg, zeit: Number(g.zeit.toFixed(2)) });
+  })()`));
+  const feldBild = await probeBild('probe-feld-geraeumt.png');
+  await evaluate(`(() => {
+    window.requestAnimationFrame = window.__rAFHalt;
+    const park = window.__rAFPark || [];
+    delete window.__rAFHalt; delete window.__rAFPark;
+    for (const cb of park) requestAnimationFrame(cb);   // Frame-Kette wieder anwerfen
+  })()`);
+  check('PROBE-SCHRITT: erledigte Figuren blitzen kurz und räumen dann das Feld (keine weißen Schatten)',
+    erledigt.treffer.length === 3 && erledigt.weissBlitz >= 100 && erledigt.weissDanach === 0
+      && erledigt.sichtbar === 0 && erledigt.offen === 0 && erledigt.weg >= 3,
+    JSON.stringify(erledigt));
+  check('PROBE-SCHRITT: Bildbeweis der geräumten Bühne liegt in .artifacts/probe-feld-geraeumt.png',
+    feldBild > 1000, `${feldBild} Bytes`);
+  results.push(`PROBE-FELD ${erledigt.treffer.length} Treffer: ${erledigt.weissBlitz} weiße Blitzpunkte, `
+    + `danach ${erledigt.weissDanach} (${erledigt.sichtbar} Figuren sichtbar, ${erledigt.weg} abgeräumt, `
+    + `t=${erledigt.zeit}s)`);
+
   // -------------------------------------------------- deterministischer guter Lauf
   await stationStarten();
   const gut = JSON.parse(await evaluate(`(() => {
@@ -1745,15 +1820,28 @@ async function pruefeProbe() {
     phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
     patzer: window.__roland.probe.patzer,
   })`));
-  await sleep(5000);
-  const passiv = JSON.parse(await evaluate(`JSON.stringify({
-    phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
-    patzer: window.__roland.probe.patzer, fehler: window.__errors.length,
-  })`));
+  // Die Spielzeit läuft im Emulat höchstens so schnell wie die Wanduhr (main.js
+  // deckelt dt auf 1/30 — unter 30 Bildern je Sekunde hinkt das Spiel nach).
+  // Die feste Wartezeit von 5 s lag knapp unter dem ersten verpassten Fenster
+  // (t ≈ 4,9 s): bei langsamem Bildlauf stand der Zähler noch auf 0. Jetzt wird
+  // auf den ersten Patzer gewartet — die Aussage bleibt „ohne Druck läuft die
+  // Probe weiter, kein Fail, Patzer statt Abbruch".
+  let passiv = passivStart;
+  let gewartet = 0;
+  while (passiv.patzer < 1 && passiv.phase === 'play' && gewartet < 20000) {
+    await sleep(500);
+    gewartet += 500;
+    passiv = JSON.parse(await evaluate(`JSON.stringify({
+      phase: window.__roland.probe.phase, treffer: window.__roland.probe.treffer,
+      patzer: window.__roland.probe.patzer, fehler: window.__errors.length,
+      zeit: Number(window.__roland.probe.szene.zeit.toFixed(2)),
+    })`));
+  }
   check('PROBE-SCHRITT: ohne Druck läuft die Probe weiter (kein Fail, Patzer statt Abbruch)',
     passivStart.treffer === 0 && passiv.phase === 'play' && passiv.patzer >= 1
-      && passiv.fehler === 0, JSON.stringify(passiv));
-  results.push(`PROBE-SCHRITT: passiver Lauf nach 5 s — ${passiv.patzer} Patzer, kein Fehler`);
+      && passiv.fehler === 0, JSON.stringify({ ...passiv, gewartet }));
+  results.push(`PROBE-SCHRITT: passiver Lauf — ${passiv.patzer} Patzer nach ${gewartet} ms `
+    + `(Spielzeit ${passiv.zeit} s), kein Fehler`);
 
   // O-Taste: im Leerlauf neutral, kein Absturz.
   const vorTaste = JSON.parse(await evaluate(

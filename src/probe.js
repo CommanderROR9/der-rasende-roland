@@ -23,6 +23,10 @@ export const PROBE_RISE = 0.35;
 /** Gnade: drei Patzer in Folge dehnen das nächste Intervall — höchstens dreimal. */
 export const PROBE_GNADE_FAKTOR = 1.4;
 export const PROBE_GNADE_MAX = 3;
+/** Anzeige (DRR-P1b): so lange steht der Trefferblitz an der Figur. */
+export const PROBE_TREFFER_BLITZ = 0.3;
+/** Anzeige (DRR-P1b): so lange steht die rote Marke einer verpassten Figur. */
+export const PROBE_PATZER_MARKE = 0.45;
 
 /** Figuren → Taste. Der Dirigent bekommt den Einsatz, alles Laute die Ohropax. */
 export const PROBE_TASTEN = {
@@ -428,17 +432,26 @@ export class Probe {
     return e ? e.figur : null;
   }
 
-  /** Sichtbare Figuren mit Lage (Zeichnung und Prüfungen). */
+  /**
+   * Sichtbare Figuren mit Lage (Zeichnung und Prüfungen). `weg` ist der
+   * Endstatus einer erledigten Figur — sie steht nicht mehr im Bild (DRR-P1b).
+   * `rest` ist der Anteil des Anzeigefensters, der noch läuft (1 → 0); daran
+   * hängen Blitz und Ring, damit beide mit der Figur enden.
+   */
   figuren() {
     const sp = Math.round(this.vw / PROBE_SPALTEN);
     const boden = Math.round(this.vh * PROBE_BUEHNENKANTE);
     return this.ablauf
-      .filter((e) => e.status !== 'aus')
+      .filter((e) => e.status !== 'aus' && e.status !== 'weg')
       .map((e) => ({
         figur: e.figur, figuren: e.figuren.slice(), taste: e.taste, status: e.status,
         spalte: e.spalte, art: e.art, gleichzeitig: !!e.gleichzeitig,
         x: Math.round((e.spalte + 0.5) * sp), spaltenbreite: sp, y: boden,
         t: e.tEff, bis: e.bisEff,
+        erledigt: e.erledigtT === undefined ? null : e.erledigtT,
+        rest: e.erledigtT === undefined ? 1
+          : Math.max(0, 1 - (this.zeit - e.erledigtT)
+            / (e.status === 'treffer' ? PROBE_TREFFER_BLITZ : PROBE_PATZER_MARKE)),
       }));
   }
 
@@ -471,6 +484,11 @@ export class Probe {
   /**
    * Lebenslauf der Ereignisse: auftauchen (Rise), Fenster öffnen, verfallen.
    * Ein verfallenes Fenster ist ein Patzer — der Lauf geht trotzdem weiter.
+   *
+   * Anzeige-Lebenslauf (DRR-P1b): ein Treffer blitzt kurz, ein Patzer trägt
+   * kurz die rote Marke — danach räumt die Figur das Feld. Der Endstatus heißt
+   * `weg` und NICHT `aus`: die aus→rise-Transition oben würde dieselbe Figur
+   * sonst erneut aufploppen lassen (und neue Figuren verdecken).
    */
   ablaufSchritt() {
     for (const e of this.ablauf) {
@@ -478,8 +496,12 @@ export class Probe {
       if (e.status === 'rise' && this.zeit >= e.tEff) { e.status = 'offen'; continue; }
       if ((e.status === 'offen') && this.zeit > e.bisEff) {
         e.status = 'verpasst';
+        e.erledigtT = this.zeit;
         this.patzerBuchen(e, 'verpasst');
+        continue;
       }
+      if (e.status === 'treffer' && this.zeit - e.erledigtT >= PROBE_TREFFER_BLITZ) { e.status = 'weg'; continue; }
+      if (e.status === 'verpasst' && this.zeit - e.erledigtT >= PROBE_PATZER_MARKE) e.status = 'weg';
     }
   }
 
@@ -512,6 +534,7 @@ export class Probe {
 
   trefferBuchen(e) {
     e.status = 'treffer';
+    e.erledigtT = this.zeit;          // Anzeige-Lebenslauf: Blitz und Ring enden hier
     this.treffer += 1;
     this.serie = 0;
     if (e.taste === 'einsatz') {
@@ -689,9 +712,10 @@ export class Probe {
       ctx.globalAlpha = alpha;
       ctx.drawImage(blitz > 0 ? paket.solid : paket.canvas, x, Math.round(y), bw, bh);
       ctx.globalAlpha = 1;
-      // Treffer/Patzer: kurzer Ring an der Figur.
-      if (f.status === 'treffer') this.ring(ctx, f.x, y + bh / 2, 10, '#5de0cf');
-      if (f.status === 'verpasst') this.ring(ctx, f.x, y + bh / 2, 12, '#b0392f');
+      // Treffer/Patzer: kurzer Ring an der Figur — er läuft mit dem
+      // Anzeigefenster der Figur aus (DRR-P1b), statt stehenzubleiben.
+      if (f.status === 'treffer') this.ring(ctx, f.x, y + bh / 2, 10, '#5de0cf', f.rest);
+      if (f.status === 'verpasst') this.ring(ctx, f.x, y + bh / 2, 12, '#b0392f', f.rest);
       // Ohropax ploppt in die Ohren.
       for (const o of this.ohren) {
         if (o.spalte !== f.spalte) continue;
