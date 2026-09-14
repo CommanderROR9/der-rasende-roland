@@ -4078,6 +4078,70 @@ try {
       && Math.abs(sitzBild.rx - (sitzBild.bank ? sitzBild.bank.rSeatX : -1)) <= 1,
     JSON.stringify(sitzBild));
   await schussRom('screenshot-epilog-sitzen.png');
+  // Auftrag DRR-F3 (Rolands Playtest-Befund „Ramona sitzt hinter der Bank"):
+  // Gemessen wird an genau den Pixeln, die die Sitzszene zeigt. Der Frame wird
+  // viermal gezeichnet — ohne Figuren, ohne Bank, ohne beides, wie im Spiel —
+  // und verglichen, welcher Figurenpixel dabei verschwindet. Kein Spielzustand
+  // wird veraendert: drawEntities/drawPlayer/spr werden nur kurz getauscht.
+  const bankDeckung = JSON.parse(await evaluate(`(() => {
+    const g = window.__roland.game;
+    const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    const echteSpr = g.spr.bind(g);
+    const leerCv = document.createElement('canvas'); leerCv.width = 32; leerCv.height = 10;
+    const leer = { canvas: leerCv, solid: leerCv, w: 32, h: 10 };
+    const zeichne = (mitFiguren, mitBank) => {
+      if (!mitFiguren) { g.drawEntities = () => {}; g.drawPlayer = () => {}; }
+      if (!mitBank) g.spr = (n, p) => (n === 'bank' ? leer : echteSpr(n, p));
+      g.draw(ctx);
+      if (!mitFiguren) { delete g.drawEntities; delete g.drawPlayer; }
+      if (!mitBank) delete g.spr;
+      return ctx.getImageData(0, 0, W, H).data.slice();
+    };
+    const nichts = zeichne(false, false);
+    const nurBank = zeichne(false, true);
+    const figuren = zeichne(true, false);
+    const voll = zeichne(true, true);
+    const ox = Math.round(g.cam.x), oy = Math.round(g.cam.y);
+    const ziel = g.level.goal, bank = g.bankSitz;
+    const rom = g.entities.find((e) => e.kind === 'ramona');
+    const boxen = {
+      region: { x: Math.round(bank.x - 10), y: Math.round(bank.boden - 26), w: 60, h: 30 },
+      roland: { x: Math.round(g.player.x - 2), y: Math.round(g.player.y + g.player.h - 23), w: 16, h: 23 },
+      ramona: { x: Math.round(rom.x - 1), y: Math.round(rom.y + rom.h - 19), w: 14, h: 19 },
+      bank: { x: Math.round(ziel.x), y: Math.round(ziel.y + ziel.h - 10), w: 32, h: 10 },
+    };
+    const anders = (a, b, i) => a[i] !== b[i] || a[i+1] !== b[i+1] || a[i+2] !== b[i+2] || a[i+3] !== b[i+3];
+    const aus = {};
+    for (const [name, b] of Object.entries(boxen)) {
+      let figur = 0, verdeckt = 0, bankPix = 0, bankSichtbar = 0;
+      for (let y = Math.max(0, b.y - oy); y < Math.min(H, b.y - oy + b.h); y++) {
+        for (let x = Math.max(0, b.x - ox); x < Math.min(W, b.x - ox + b.w); x++) {
+          const i = (y * W + x) * 4;
+          if (anders(figuren, nichts, i)) {
+            figur++;
+            if (anders(voll, figuren, i)) verdeckt++;
+          }
+          if (anders(nurBank, nichts, i)) {
+            bankPix++;
+            if (!anders(voll, nurBank, i)) bankSichtbar++;
+          }
+        }
+      }
+      aus[name] = { figur, verdeckt, bankPix, bankSichtbar };
+    }
+    return JSON.stringify(aus);
+  })()`));
+  check('Epilog-F3-Browser: die Bank verdeckt keinen Pixel der Sitzenden',
+    bankDeckung.region.verdeckt === 0, JSON.stringify(bankDeckung.region));
+  check('Epilog-F3-Browser: Ramona ist ganz zu sehen — die Bank liegt hinter ihr',
+    bankDeckung.ramona.figur >= 130 && bankDeckung.ramona.verdeckt === 0,
+    JSON.stringify(bankDeckung.ramona));
+  check('Epilog-F3-Browser: die Bank bleibt im Bild (nicht weggeschoben)',
+    bankDeckung.region.bankPix >= 100, JSON.stringify(bankDeckung.region));
+  check('Epilog-F3-Browser: die Bank liegt hinter Ramona (sie verdeckt sie)',
+    bankDeckung.ramona.bankPix >= 50 && bankDeckung.ramona.bankSichtbar < bankDeckung.ramona.bankPix,
+    JSON.stringify(bankDeckung.ramona));
   // Danach laeuft der Abschluss wie gehabt: Ergebnis und Abspann-Knopf.
   let ende = null;
   for (let i = 0; i < 60; i++) {

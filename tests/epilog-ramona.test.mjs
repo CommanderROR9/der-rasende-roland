@@ -14,6 +14,7 @@ import { Game } from '../src/game.js';
 import { createInput } from '../src/input.js';
 import { PHYS, TILE, PAL, VIEW_DESKTOP } from '../src/config.js';
 import { SPRITES } from '../src/sprites.js';
+import { readFileSync } from 'node:fs';
 
 const results = [];
 let failed = 0;
@@ -244,6 +245,42 @@ function steheVorDerBank(game) {
     !!SPRITES.roland_sitz && !!SPRITES.ramona_sitz
       && roland.slice(-4).some((zeile) => /^ {2,}/.test(zeile))
       && romana.slice(-4).some((zeile) => /^ {2,}/.test(zeile)));
+}
+
+// ------------------------------- 4. Zeichenreihenfolge der Bank (DRR-F3) ----
+// Rolands Playtest-Befund: Ramona sieht aus, als saesse sie hinter der Bank.
+// Ursache war die Zeichenreihenfolge: die Bank lag als Ganzes in der
+// Vordergrund-Ebene und ihre Sitzflaeche (fuenf Pixel hoch) deckte die
+// Rumpfzeilen der Sitzenden. Der Waechter hier ist absichtlich streng: die Bank
+// darf nur an EINER Stelle geholt und gezeichnet werden — in der Welt-Ebene.
+{
+  const quelle = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
+  const bankHolt = quelle.match(/this\.spr\('bank'\)/g) || [];
+  check('DRR-F3: die Bank wird an genau einer Stelle gezeichnet (keine Vordergrund-Kopie)',
+    bankHolt.length === 1, `${bankHolt.length} Stellen`);
+
+  const drawGoal = quelle.slice(quelle.indexOf('  drawGoal('), quelle.indexOf('  drawEntities('));
+  const blitZeile = /^\s*blit\(ctx, spr, x, Math\.round\(\(g\.y \+ g\.h\) - camY\) - spr\.h\);/m.test(drawGoal);
+  check('DRR-F3: drawGoal zeichnet die Bank auch dann, wenn jemand darauf sitzt',
+    drawGoal.length > 0 && /this\.spr\('bank'\)/.test(drawGoal) && blitZeile
+      && !/!this\.setzen/.test(drawGoal),
+    JSON.stringify({ gefunden: drawGoal.length > 0, blit: blitZeile, abfrage: /!this\.setzen/.test(drawGoal) }));
+
+  const vorn = quelle.slice(quelle.indexOf('  drawBierVorn('), quelle.indexOf('  bierUnterwegs('));
+  check('DRR-F3: im Vordergrund liegt nur noch das Bier (es bleibt sichtbar)',
+    vorn.length > 0 && /this\.spr\('bier'\)/.test(vorn) && !/this\.spr\('bank'\)/.test(vorn)
+      && /bierBeiIhm/.test(vorn),
+    JSON.stringify({ gefunden: vorn.length > 0, bier: /this\.spr\('bier'\)/.test(vorn) }));
+
+  // Die tatsaechliche Sortierregel: erst die Welt (drawGoal mit der Bank),
+  // dann die Figuren (drawEntities/drawPlayer), zuletzt der Vordergrund
+  // (drawBierVorn). Diese Reihenfolge ist es, die „vor der Bank" sichtbar macht.
+  const drawMethode = quelle.slice(quelle.indexOf('  draw(ctx) {'), quelle.indexOf('  usesSky()'));
+  const pos = (name) => drawMethode.indexOf(`this.${name}(`);
+  check('DRR-F3: Zeichenreihenfolge Welt -> Figuren -> Vordergrund',
+    drawMethode.length > 0 && pos('drawGoal') > -1 && pos('drawGoal') < pos('drawEntities')
+      && pos('drawEntities') < pos('drawPlayer') && pos('drawPlayer') < pos('drawBierVorn'),
+    JSON.stringify({ ziel: pos('drawGoal'), figuren: pos('drawEntities'), spieler: pos('drawPlayer'), vorn: pos('drawBierVorn') }));
 }
 
 console.log(results.join('\n'));

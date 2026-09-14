@@ -2130,10 +2130,10 @@ export class Game {
     // dem, was gerade getragen wird.
     if (this.szene) this.szene.draw(ctx, this, camX, camY);
     else this.drawPlayer(ctx, camX, camY);
-    // Die Bank liegt vor den Sitzenden (Auftrag „Epilog-Ramona"): die Bank ist
-    // nur eine Kachel hoch — erst in der Vordergrund-Ebene ist das Sitzen zu
-    // sehen. Dazu das Bier, das auf der Sitzfläche steht.
-    if (this.setzen && this.bankSitz) this.drawBankVorn(ctx, camX, camY);
+    // Nur noch die Flasche liegt vor den Figuren (Auftrag DRR-F3): die Bank
+    // selbst gehoert in die Welt-Ebene hinter die Sitzenden, sonst schiebt sich
+    // ihre Sitzflaeche vor deren Koerper und beide wirken wie „hinter" der Bank.
+    if (this.setzen && this.bankSitz) this.drawBierVorn(ctx, camX, camY);
     this.drawParticles(ctx, camX, camY);
     this.drawWetterFx(ctx);
     this.drawScreenFx(ctx);
@@ -2428,13 +2428,14 @@ export class Game {
   drawGoal(ctx, camX, camY) {
     const g = this.level.goal;
     const x = Math.round(g.x - camX), y = Math.round(g.y - camY);
-    // Die Bank im Kleingarten ist kein Portal: sie wird als Bank gezeichnet.
-    // Sitzt jemand darauf, uebernimmt drawBankVorn die Bank in der
-    // Vordergrund-Ebene — sonst verdeckt der Sitzende sie (Auftrag
-    // „Epilog-Ramona": das Sitzen muss zu sehen sein).
+    // Die Bank im Kleingarten ist kein Portal: sie wird als Bank gezeichnet —
+    // immer in der Welt-Ebene, also hinter den Figuren. Sie darf nicht in einer
+    // Vordergrund-Ebene liegen: ihre Sitzflaeche (fuenf Pixel hoch, Bild-y
+    // 390..394) deckt sonst genau die Rumpfzeilen der Sitzenden und beide
+    // wirken wie „hinter" der Bank (Rolands Playtest-Befund, Auftrag DRR-F3).
     if (g.bench) {
       const spr = this.spr('bank');
-      if (!this.setzen) blit(ctx, spr, x, Math.round((g.y + g.h) - camY) - spr.h);
+      blit(ctx, spr, x, Math.round((g.y + g.h) - camY) - spr.h);
       const pulse = 0.5 + Math.sin(this.time * 1.6) * 0.5;
       ctx.fillStyle = `rgba(232,196,106,${0.25 + pulse * 0.25})`;
       ctx.fillRect(x + 14, y - 6, TILE - 8, 3);
@@ -2810,7 +2811,8 @@ export class Game {
    * Die sitzende Figur auf der Bank — samt dem Bier, das Ramona ihm gereicht
    * hat. Kopf und Kleidung sind dieselben Zeilen wie im Standbild; die Beine
    * sind angewinkelt, deshalb sitzt er hier wirklich (Auftrag „Epilog-Ramona").
-   * Die Bank selbst zeichnet drawBankVorn danach in der Vordergrund-Ebene.
+   * Die Bank dahinter zeichnet drawGoal in der Welt-Ebene (Auftrag DRR-F3):
+   * sie liegt hinter den Sitzenden, nicht vor ihnen.
    */
   drawSitzend(ctx, camX, camY) {
     const platz = this.bankSitz;
@@ -2821,22 +2823,18 @@ export class Game {
   }
 
   /**
-   * Die Bank in der Vordergrund-Ebene: sitzt jemand darauf, liegt sie vor den
-   * Figuren (Auftrag „Epilog-Ramona"). Die Bank ist nur eine Kachel hoch — so
-   * ist trotzdem zu sehen, dass hier jemand Platz genommen hat; die Flasche
-   * steht dabei auf der Sitzfläche.
+   * Das Bier in der Vordergrund-Ebene (Auftrag DRR-F3): die Flasche steht auf
+   * der Sitzflaeche und bleibt auch dann zu sehen, wenn einer der beiden davor
+   * sitzt. Die Bank selbst liegt jetzt hinter den Figuren — siehe drawGoal.
    */
-  drawBankVorn(ctx, camX, camY) {
+  drawBierVorn(ctx, camX, camY) {
+    if (!this.bierBeiIhm) return;
     const g = this.level.goal;
-    const spr = this.spr('bank');
     const x = Math.round(g.x - camX);
     const boden = Math.round((g.y + g.h) - camY);
-    blit(ctx, spr, x, boden - spr.h);
-    if (this.bierBeiIhm) {
-      // Die Flasche steht auf der Sitzfläche (Unterkante Sitzplanke).
-      const bier = this.spr('bier');
-      blit(ctx, bier, x + 5, boden - 5 - bier.h);
-    }
+    // Die Flasche steht auf der Sitzfläche (Unterkante Sitzplanke).
+    const bier = this.spr('bier');
+    blit(ctx, bier, x + 5, boden - 5 - bier.h);
   }
 
   /**
