@@ -1673,6 +1673,18 @@ async function pruefeProbe() {
   check('PROBE-SCHRITT: die Figuren sind im Canvas sichtbar (Gegenprobe: ohne sie 0 Punkte)',
     bild.unterschied > 60 && bild.x !== null && bild.x >= 0 && bild.x <= bild.breite,
     JSON.stringify(bild));
+  // Bildbeweise: Szene mit Figur und (spaeter) das Verdiktfenster.
+  const probeBild = async (name) => {
+    const daten = Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    const ziel = fileURLToPath(new URL('../.artifacts/', import.meta.url));
+    mkdirSync(ziel, { recursive: true });
+    writeFileSync(join(ziel, name), daten);
+    writeFileSync(join(fileURLToPath(new URL('..', import.meta.url)), `screenshot-${name}`), daten);
+    return daten.length;
+  };
+  const groesse = await probeBild('probe-szene.png');
+  check('PROBE-SCHRITT: Bildbeweis der Szene liegt in .artifacts/probe-szene.png',
+    groesse > 1000, `${groesse} Bytes`);
   results.push(`PROBE-BILD ${bild.unterschied} Figurenpunkte in ${bild.breite}x${bild.hoehe} (${bild.figur} bei x=${bild.x})`);
 
   // -------------------------------------------------- deterministischer guter Lauf
@@ -1718,6 +1730,9 @@ async function pruefeProbe() {
   check('PROBE-SCHRITT: guter Lauf endet mit Verdikt 1 „DIE PROBE STEHT" (Regel nachgerechnet)',
     gut.verdikt === 'steht' && gut.verdikt === gut.erwartet && gut.phase === 'complete'
       && gut.treffer >= 8 && gut.patzer === 0, JSON.stringify(gut));
+  const verdiktBild = await probeBild('probe-verdikt.png');
+  check('PROBE-SCHRITT: Bildbeweis des Verdikts liegt in .artifacts/probe-verdikt.png',
+    verdiktBild > 1000, `${verdiktBild} Bytes`);
   check('PROBE-SCHRITT: das Ergebnisfenster nennt Verdikt, Quote und Belohnung',
     ergebnis.offen === true && /NICKT/.test(ergebnis.text) && /STILLE AUF DEM PULT/.test(ergebnis.titel)
       && /TREFFER/.test(ergebnis.body) && /VERDIKT/.test(ergebnis.body),
