@@ -23,7 +23,7 @@
 // (`PAL`); ein Leerzeichen ist durchsichtig, alles andere eine feste Farbe.
 
 import { PAL, TILE } from './config.js';
-import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
+import { SPRITES, OUTFIT_PALETTES, kluftBild } from './sprites.js';
 import { spriteCanvas, blit } from './render.js';
 
 /** Merker im Spielstand: hält fest, dass die Szene lief (main.js schreibt ihn).
@@ -142,48 +142,51 @@ const SCHRANK_OFFEN = [
   'LMMMMMMMMMMMMMML',
 ];
 
-// Das Hawaii-Hemd der Zivilkluft (Auftrag CUT-1b): türkis mit Orangenstreifen,
-// kurze Ärmel. Es wird als Requisit gezeichnet — in der Hand und auf dem Weg
-// über den Kopf; die Farben kommen aus der Zivilpalette (w = Hemd, r = Streifen).
+// Das Hawaii-Hemd der Zivilkluft (Auftrag CUT-1b, Muster seit DRR-F4): türkis
+// mit Blüte und Blatt, kurze Ärmel, Knopfleiste. Es wird als Requisit
+// gezeichnet — in der Hand und auf dem Weg über den Kopf; die Farben kommen aus
+// der Zivilpalette (w = Hemd, H = Knopfleiste, o/y = Blüte, E = Blatt).
 const ZIVIL_HEMD = [
   '  ww  ww  ',
   ' wwwwwwww ',
-  'wwwrwwrwww',
-  'wwwrwwrwww',
-  ' wwrwwrww ',
-  ' wwwwwwww ',
+  'wwwHoyEww ',
+  'wwwHoyEww ',
+  ' wwwHwww  ',
+  ' wwwHwww  ',
   '  wwwwww  ',
   '  wwwwww  ',
 ];
 
 // Die halb angezogene Figur (Auftrag CUT-1b): dieselbe Größe wie roland_idle
 // (16x24), aber Kopf und Oberkörper stecken im Hemd — Hände am Saum, darunter
-// schon die Shorts in Zivilfarben. Das ist der Moment, den die Szene zeigen
-// soll; er liegt genau ein Bild lang vor.
+// schon die Shorts in Zivilfarben. Das Muster ist dasselbe wie am getragenen
+// Hemd (Blüte und Blatt, DRR-F4): was aus dem Schrank kommt, ist auch das, was
+// gleich angezogen ist. Das ist der Moment, den die Szene zeigen soll; er liegt
+// genau ein Bild lang vor.
 const FIGUR_UMZIEH = [
   '    wwwwwwww    ',
   '   wwwwwwwwww   ',
-  '  wwwrwwwwrwww  ',
-  '  wwwrwwwwrwww  ',
-  '  swwrwwwwrwws  ',
-  '  swwwwwwwwwws  ',
-  '  swwwwwwwwwws  ',
+  '  wwoEwwwwEoww  ',
+  '  wwyYwwwwYyww  ',
+  '  sswEwwwwEwss  ',
+  '  sswwwwwwwwws  ',
+  '  sswwwwwwwwws  ',
   '  wwwwwwwwwwww  ',
-  '  wwwrwwwwrwww  ',
-  '  wwwrwwwwrwww  ',
+  '  wwoEwwwwEoww  ',
+  '  wwyYwwwwYyww  ',
   '   wwwwwwwwww   ',
   '   wwwwwwwwww   ',
   '   aaaaaaaaaa   ',
-  '   aaaaaaaaaa   ',
   '  aaaaaaaaaaaa  ',
   '  aaaaaaaaaaaa  ',
   '  aaaaaaaaaaaa  ',
   '  aaaaaaaaaaaa  ',
+  '  aaaaaaaaaaaa  ',
   '  aaaa    aaaa  ',
   '  aaaa    aaaa  ',
-  '  aaaa    aaaa  ',
-  '  aaaa    aaaa  ',
-  '  aaaa    aaaa  ',
+  '  ssss    ssss  ',
+  '  ssss    ssss  ',
+  '  ssss    ssss  ',
   ' bbbbb    bbbbb ',
 ];
 
@@ -387,8 +390,10 @@ export class FrackGeigeSzene {
       if (geige && geige.imKasten) blit(ctx, this.spr('cut_geige_liegt'), sx + 4, sy + s.h - 4);
     }
 
-    // Die Figur selbst — mit demselben Maß wie drawPlayer.
-    const spr = this.spr(this.figurBild, OUTFIT_PALETTES[this.kluftJetzt]);
+    // Die Figur selbst — mit demselben Maß wie drawPlayer. Seit DRR-F4 hat
+    // Zivil einen eigenen Körper (kurze Ärmel, kurze Hose, Hawaii-Muster);
+    // kluftBild() tauscht ihn erst beim Zeichnen, das logische Bild bleibt.
+    const spr = this.spr(kluftBild(this.figurBild, this.kluftJetzt), OUTFIT_PALETTES[this.kluftJetzt]);
     blit(ctx, spr, figur.x, figur.y, !figur.rechts);
 
     // Was noch getragen wird, hängt an der Figur: erst der Frack, dann die Geige.
@@ -405,7 +410,7 @@ export class FrackGeigeSzene {
     // Die Zivilkluft (CUT-1b): erst aus dem Schrank in die Hand, dann über den
     // Kopf — ab da zeigt sie die Pose der Figur, nicht mehr als Requisit.
     const hemd = this.hemdPlatz(camX, camY, figur);
-    if (hemd) blit(ctx, this.spr('cut_zivil_hemd'), hemd.x, hemd.y);
+    if (hemd) blit(ctx, this.spr('cut_zivil_hemd', OUTFIT_PALETTES.zivil), hemd.x, hemd.y);
 
     // Einen Moment Ruhe nach dem Zumachen: nichts blinkt, nichts ruft.
   }

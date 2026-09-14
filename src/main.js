@@ -1,5 +1,5 @@
 // main.js — Verkabelung: DOM, Canvas-Skalierung, Overlays, Speicherung.
-import { OUTFITS, DIFFICULTY, pickView, TILE } from './config.js';
+import { OUTFITS, DIFFICULTY, pickView, TILE, outfitWahl } from './config.js';
 import { SPRITES } from './sprites.js';
 import { spriteCanvas } from './render.js';
 import { createInput } from './input.js';
@@ -410,7 +410,9 @@ function renderGarde(mode) {
   ui.gardeTitle.textContent = mode === 'start' ? 'WAS ZIEHST DU AN?' : 'UMZIEHEN';
   ui.gardeBack.classList.toggle('hidden', mode === 'start');
   ui.gardeCards.innerHTML = '';
-  for (const o of Object.values(OUTFITS)) {
+  // DRR-F4: nur die Klüfte, die es in diesem Level gibt. Zivil hängt am
+  // Kleiderschrank des Kleingartens und steht vorher nicht zur Wahl.
+  for (const o of outfitWahl(LEVEL)) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'pick' + (game && game.outfit.id === o.id ? ' sel' : '');
@@ -1009,6 +1011,8 @@ window.__roland = {
   get level() { return LEVEL; }, get aktIndex() { return aktIndex; },
   get levelCount() { return LEVELS.length; },
   get levelIds() { return LEVELS.map((l) => l.id); },
+  // DRR-F4: welche Klüfte dieses Level zur Wahl stellt (Zivil nur im Garten).
+  get kluftWahl() { return outfitWahl(LEVEL).map((o) => o.id); },
   get musik() { return musik; }, get musikBereit() { return musikBereit; },
   // Abspann (Auftrag C1): Zustand und Layout für die Prüfungen.
   abspann: {

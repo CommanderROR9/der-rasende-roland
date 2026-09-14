@@ -1,7 +1,7 @@
 // game.js — Simulation. Bewusst DOM-frei: main.js liefert Input und zeichnet,
 // die Tests in Node fahren dieselbe Logik ohne Browser.
-import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, DIFFICULTY, BPM_BASE, BPM_TENOR } from './config.js';
-import { SPRITES, OUTFIT_PALETTES } from './sprites.js';
+import { TILE, VIEW_DESKTOP, OUTFITS, PHYS, TUNE, DIFFICULTY, BPM_BASE, BPM_TENOR, outfitErlaubt } from './config.js';
+import { SPRITES, OUTFIT_PALETTES, kluftBild } from './sprites.js';
 import { spriteCanvas, blit, hash2 } from './render.js';
 // Das Probenmotiv aus Akt 2 wird im Finale gespielt (Zugabe, Auftrag A5).
 import { PROBEN_MOTIV } from './act2.js';
@@ -165,7 +165,7 @@ export class Game {
       x: sp.tx * TILE,
       y: (sp.walkRow + 1) * TILE - PHYS.playerH,
     };
-    this.outfit = OUTFITS[outfitId] || OUTFITS.schwarz;
+    this.outfit = (outfitErlaubt(outfitId, this.level) && OUTFITS[outfitId]) || OUTFITS.schwarz;
     this.player = {
       x: this.checkpoint.x, y: this.checkpoint.y,
       w: PHYS.playerW, h: PHYS.playerH,
@@ -271,11 +271,22 @@ export class Game {
   spr(name, palette) { return spriteCanvas(name, SPRITES[name], palette); }
 
   // ----------------------------------------------------------- Steuerung --
+  /**
+   * Kluft anziehen. „Zivil" gibt es nur im Kleingarten — dort steht der
+   * Kleiderschrank, an dem es angezogen wird (DRR-F4). Vor dem Garten bleibt
+   * die Anfrage ohne Wirkung, egal woher sie kommt (Menü, Testhilfe, Konsole).
+   * @returns true, wenn die Kluft danach getragen wird
+   */
   setOutfit(id) {
-    if (!OUTFITS[id]) return;
+    if (!OUTFITS[id]) return false;
+    if (!outfitErlaubt(id, this.level)) {
+      this.message('DAS GEHT NUR IM KLEINGARTEN: ZIVIL HÄNGT AM KLEIDERSCHRANK.', 5, 1);
+      return false;
+    }
     this.outfit = OUTFITS[id];
     this.standCooldown = 1.0;
     this.message(`UMGEZOGEN: ${this.outfit.label}`, 4.5, 2);
+    return true;
   }
   setDifficulty(key) {
     if (!DIFFICULTY[key]) return;
@@ -2759,7 +2770,7 @@ export class Game {
     if (p.h === PHYS.duckH) frame = 'roland_duck';
     else if (!p.onGround) frame = 'roland_jump';
     else if (Math.abs(p.vx) > 12) frame = Math.floor(p.animT * 7) % 2 === 0 ? 'roland_walk1' : 'roland_walk2';
-    const spr = this.spr(frame, OUTFIT_PALETTES[this.outfit.id]);
+    const spr = this.spr(kluftBild(frame, this.outfit.id), OUTFIT_PALETTES[this.outfit.id]);
     const x = Math.round(p.x - camX - 2);
     const y = Math.round(p.y - camY + p.h - spr.h);
     const hurt = p.invuln > 0;
@@ -2816,7 +2827,7 @@ export class Game {
    */
   drawSitzend(ctx, camX, camY) {
     const platz = this.bankSitz;
-    const spr = this.spr('roland_sitz', OUTFIT_PALETTES[this.outfit.id]);
+    const spr = this.spr(kluftBild('roland_sitz', this.outfit.id), OUTFIT_PALETTES[this.outfit.id]);
     const x = Math.round(platz.pSeatX - camX - 2);
     const y = Math.round(platz.boden - camY + 2 - spr.h);   // sitzt etwas tiefer
     blit(ctx, spr, x, y, false, 0);

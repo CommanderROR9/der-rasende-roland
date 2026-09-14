@@ -88,8 +88,33 @@ export const OUTFITS = {
     blurb: 'Shorts und Hawaii-Hemd. Für den Garten gemacht.',
     pros: ['keine Hitze', 'kein Glanzalarm'],
     cons: [],
+    // DRR-F4: Zivil gehört in den Kleingarten und nirgends sonst. Überall
+    // vorher stand die vierte Karte ohne Wirkung im Menü (Kleiderwahl am
+    // Levelanfang und Umkleide am Kleiderständer).
+    nurGarten: true,
   },
 };
+
+/**
+ * Steht der Kleiderschrank (Kind `garderobe`) in diesem Level? Nur der
+ * Kleingarten baut ihn auf (world.js) — er ist der einzige Ort, an dem Zivil
+ * angezogen wird.
+ */
+export function hatKleiderschrank(level) {
+  return !!level && Array.isArray(level.spawns)
+    && level.spawns.some((sp) => sp.kind === 'garderobe');
+}
+
+/** Darf diese Kluft in diesem Level getragen werden? (DRR-F4) */
+export function outfitErlaubt(id, level) {
+  const o = OUTFITS[id];
+  return !!o && (!o.nurGarten || hatKleiderschrank(level));
+}
+
+/** Die Klüfte, die in diesem Level zur Wahl stehen — vor dem Garten ohne Zivil. */
+export function outfitWahl(level) {
+  return Object.values(OUTFITS).filter((o) => outfitErlaubt(o.id, level));
+}
 
 export const PHYS = {
   gravity: 430,
