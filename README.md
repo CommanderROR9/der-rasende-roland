@@ -152,6 +152,24 @@ tests/smoke.test.mjs 277 headless Checks
 tests/diag.mjs      Einzelabfrage im Browser (Diagnose bei Fehlermeldungen)
 ```
 
+## Android (APK)
+
+Seit v1.0 gibt es das Spiel als installierbare, **offline** laufende APK
+(Sideload für Android 8+). Sie ist eine schlanke WebView-Hülle: `index.html` und
+`src/` werden beim Bauen von einem Gradle-Task in die APK gespiegelt und über den
+`WebViewAssetLoader` (`https://appassets.androidplatform.net/…`) ausgeliefert —
+das Spiel selbst bleibt unangetastet, es liegt keine zweite Kopie im Repo.
+Keine Internet-Berechtigung, Vollbild (Notch inklusive), Bildschirm bleibt an,
+Orientierung frei, Spielstand in `localStorage`, Zurück-Taste = ESC.
+
+```bash
+gradle -p android assembleRelease     # braucht JDK 17 + Android SDK 35
+```
+
+Automatisch baut `.github/workflows/android.yml` (JDK 17, Gradle 8.9) die
+signierte APK und hängt sie an das Release v1.0. Details und Signaturwerte:
+[android/README.md](android/README.md)
+
 ## Tests
 
 ```bash

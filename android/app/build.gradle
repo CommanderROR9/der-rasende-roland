@@ -1,0 +1,98 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Das Spiel liegt im Wurzelverzeichnis des Repos (index.html + src/). Damit die
+// Dateien nicht doppelt im Git liegen, spiegelt der Task `syncGameAssets` sie
+// beim Bauen nach app/src/main/assets/www/ (per .gitignore ausgenommen).
+def repoRoot = rootProject.projectDir.parentFile
+def wwwDir = layout.projectDirectory.dir('src/main/assets/www')
+
+def syncGameAssets = tasks.register('syncGameAssets', Sync) {
+    group = 'build'
+    description = 'Kopiert index.html und src/ des Spiels in die WebView-Assets.'
+    from(new File(repoRoot, 'index.html'))
+    from(new File(repoRoot, 'src')) {
+        into 'src'
+    }
+    into(wwwDir)
+    // Nur echte Spieldateien; ein etwaiger Editor-Backup-Kram bleibt draussen.
+    exclude '**/*.bak', '**/*~', '**/.DS_Store'
+}
+
+tasks.named('preBuild') {
+    dependsOn syncGameAssets
+}
+
+tasks.named('clean') {
+    doLast {
+        delete wwwDir
+    }
+}
+
+// Signatur: Werte kommen aus -P... (CI) oder aus Umgebungsvariablen. Fehlen sie,
+// bleibt der Release-Build unsigniert (nur fuer lokale Probelaeufe brauchbar).
+def signStoreFile = (project.findProperty('drrStoreFile') ?: System.getenv('DRR_STORE_FILE'))?.toString()
+def signStorePass = (project.findProperty('drrStorePassword') ?: System.getenv('DRR_STORE_PASSWORD'))?.toString()
+def signKeyAlias = (project.findProperty('drrKeyAlias') ?: System.getenv('DRR_KEY_ALIAS'))?.toString()
+def signKeyPass = (project.findProperty('drrKeyPassword') ?: System.getenv('DRR_KEY_PASSWORD'))?.toString()
+def canSign = [signStoreFile, signStorePass, signKeyAlias, signKeyPass].every { it != null && !it.isEmpty() }
+
+android {
+    namespace 'io.github.commanderror9.derrasenderoland'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.commanderror9.derrasenderoland'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    if (canSign) {
+        signingConfigs {
+            release {
+                storeFile file(signStoreFile)
+                storePassword signStorePass
+                keyAlias signKeyAlias
+                keyPassword signKeyPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (canSign) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Das Spiel ist offline: keine Netzwerk-, keine Standortberechtigungen.
+    packaging {
+        resources {
+            excludes += ['META-INF/*.version', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+        }
+    }
+}
+
+// Eindeutiger Dateiname fuer das Release-Asset (sonst "app-release.apk").
+androidComponents {
+    onVariants(selector().withBuildType('release'), { variant ->
+        variant.outputs.each { output ->
+            output.outputFileName.set('der-rasende-roland-v1.0.apk')
+        }
+    })
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

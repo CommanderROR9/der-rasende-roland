@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Grundflaeche der App (wie das Spiel: #07050c). -->
+    <color name="drr_window_background">#07050C</color>
+    <!-- Hintergrundlage des Launcher-Icons (roter Vorhang wie im Icon-Generator). -->
+    <color name="ic_launcher_background">#B0392F</color>
+</resources>

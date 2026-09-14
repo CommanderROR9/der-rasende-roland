@@ -1,0 +1,21 @@
+# Android-Huelle: nichts davon gehoert ins Git.
+
+# Die Spiel-Dateien werden beim Bauen hierher gespiegelt (Gradle-Task
+# `syncGameAssets`) — Quelle bleibt index.html + src/ im Repo-Wurzelverzeichnis.
+app/src/main/assets/www/
+app/src/main/assets/
+
+# Gradle/Android-Ausgaben.
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Python-Beiprodukte des Icon-Generators.
+__pycache__/
+*.pyc

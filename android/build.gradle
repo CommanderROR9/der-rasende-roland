@@ -1,0 +1,5 @@
+// Wurzelprojekt der Android-Huelle. Hier steht nur die Plugin-Version,
+// alles Weitere in app/build.gradle.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}
