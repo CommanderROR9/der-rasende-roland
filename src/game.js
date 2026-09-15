@@ -160,7 +160,11 @@ export class Game {
     this.state = 'play';
     this.stats = { time: 0, deckel: 0, taktHits: 0, akt: 1 };
 
-    const sp = this.level.spawns.find((s) => s.isSpawn);
+    // Robust gegen unvollständige Leveldaten: fehlt der Spawn-Marker, greift
+    // der erste Eintrag; der Vertragstest prüft für jedes Level einen Spawn
+    // (Technikreview 15.09.2026, Befund 3).
+    const sp = this.level.spawns.find((s) => s.isSpawn) || this.level.spawns[0]
+      || { tx: 0, walkRow: 0 };
     this.checkpoint = {
       x: sp.tx * TILE,
       y: (sp.walkRow + 1) * TILE - PHYS.playerH,
@@ -189,7 +193,10 @@ export class Game {
   }
 
   makeEntity(s) {
-    const def = ITEM_DEFS[s.item];
+    // Unbekannte Item-Art: lieber als Bierdeckel weiterlaufen als beim Aufbau
+    // zu werfen; der Vertragstest prüft alle Item-Spawns gegen ITEM_DEFS
+    // (Technikreview 15.09.2026, Befund 4).
+    const def = ITEM_DEFS[s.item] || ITEM_DEFS.bierdeckel;
     switch (s.kind) {
       case 'item':
         return {
