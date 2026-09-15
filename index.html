@@ -88,6 +88,10 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07050c;col
 .probePad button.act{border-color:var(--amber);background:rgba(70,45,12,.85);color:var(--amber)}
 .probePad button:active{transform:translateY(1px)}
 
+/* Die Bedienelemente selbst nehmen keine Browser-Gesten an (Zoom/Pan) — sonst
+   kann ein Wisch den Stick mitten in der Bewegung abschalten. */
+.pad,.stick,.nub,.btns button,.probePad button{touch-action:none}
+
 /* Panels */
 .panel{position:absolute;z-index:10;inset:0;display:grid;place-items:center;padding:14px;
   background:rgba(5,3,10,.74);backdrop-filter:blur(3px);overflow:auto}
