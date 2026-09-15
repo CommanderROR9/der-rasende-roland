@@ -53,9 +53,16 @@ const ui = {
 };
 const ctx = ui.canvas.getContext('2d');
 
-// Gerät, Sichtbereich, Bedienart einmal feststellen.
-const COARSE = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
+// Gerät, Sichtbereich, Bedienart einmal feststellen. `any-pointer: coarse`
+// deckt Geräte ab, deren primärer Zeiger sich als fein meldet, die aber
+// trotzdem mit groben Zeigern (Fingern) bedient werden.
+const COARSE = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse), (any-pointer: coarse)').matches);
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || COARSE;
+// Die Erkennung oben läuft nur einmal beim Laden und kann daneben liegen.
+// Deshalb hat eine echte Touch-Eingabe das letzte Wort und bleibt es auch —
+// sonst startet das Spiel auf solchen Geräten ohne bedienbare Steuerung
+// (Befund 15.09.2026: „startet, aber nicht spielbar“).
+let touchErkannt = IS_TOUCH;
 const VIEW = pickView(COARSE);
 // Erst die Canvas-Größe, dann die Pixel-Regel: die Zuweisung an width/height
 // setzt den 2D-Kontext auf die Voreinstellungen zurück (Glättung an) — auch
@@ -649,8 +656,11 @@ function setzeKnopfBeschriftung() {
   // Die letzte Probe (DRR-P1) trägt zwei eigene Tasten: EINSATZ und OHROPAX.
   // Dort ruht das SPRUNG/TRITT-Pad, sonst bleibt alles wie es war.
   const istProbe = modus === 'probe';
-  if (ui.pad) ui.pad.classList.toggle('show', IS_TOUCH && !istProbe);
-  if (ui.probePad) ui.probePad.classList.toggle('show', IS_TOUCH && istProbe);
+  // `touchErkannt` statt `IS_TOUCH`: Diese Funktion läuft im Spielframe immer
+  // wieder — so wird die Steuerung automatisch aktiv, sobald ein echter
+  // Fingerkontakt registriert wurde, auch wenn die Erkennung beim Laden lag.
+  if (ui.pad) ui.pad.classList.toggle('show', touchErkannt && !istProbe);
+  if (ui.probePad) ui.probePad.classList.toggle('show', touchErkannt && istProbe);
 }
 function refreshHud() {
   const a = aktiv();
@@ -985,7 +995,13 @@ function stickMove(ev) {
   ui.nub.style.transform = `translate(${cx}px,${cy}px)`;
 }
 function stickReset() { stickId = null; input.resetStick(); ui.nub.style.transform = 'translate(0,0)'; }
-ui.stick.addEventListener('pointerdown', (e) => { stickId = e.pointerId; ui.stick.setPointerCapture(stickId); stickMove(e); });
+ui.stick.addEventListener('pointerdown', (e) => {
+  stickId = e.pointerId;
+  // Das Einfangen des Zeigers kann auf einzelnen Engines scheitern; der Stick
+  // funktioniert auch ohne weiter, solange der Finger auf ihm bleibt.
+  try { ui.stick.setPointerCapture(stickId); } catch { /* ohne Capture weiter */ }
+  stickMove(e);
+});
 ui.stick.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) stickMove(e); });
 ui.stick.addEventListener('pointerup', stickReset);
 ui.stick.addEventListener('pointercancel', stickReset);
@@ -1016,9 +1032,12 @@ holdButton(ui.btnAction, 'action');
 holdButton(ui.btnEinsatz, 'action');
 holdButton(ui.btnOhropax, 'ohropax');
 
-// Touch-Gerät erkennt sich selbst
-if (IS_TOUCH) ui.pad.classList.add('show');
-window.addEventListener('touchstart', () => { ui.pad.classList.add('show'); audio.resume(); }, { once: true });
+// Touch-Gerät erkennt sich selbst — eine echte Touch-Eingabe sticht die
+// statische Erkennung: ab dem ersten Kontakt bleibt die Bildschirmsteuerung
+// aktiv (eingeblendet wird sie im Spielframe von setzeKnopfBeschriftung).
+if (touchErkannt) ui.pad.classList.add('show');
+window.addEventListener('touchstart', () => { touchErkannt = true; audio.resume(); }, { once: true, passive: true });
+window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') touchErkannt = true; }, { passive: true });
 
 // Beim Start dort weitermachen, wo Roland zuletzt war.
 /** Einen alten Spielstand einmalig in die neue Form schreiben (DRR-03). */
