@@ -509,10 +509,18 @@ function onGameEvent(e) {
   else if (e.type === 'complete') {
     const s = e.stats || {};
     const save = loadSave();
-    const best = save.bestTime ? Math.min(save.bestTime, s.time) : s.time;
+    // Grill und Probe melden keine Zeit und keine Kekse. Ohne diese Wachen
+    // würde Math.min/max daraus NaN machen und der Bestwert im Spielstand
+    // wäre dauerhaft kaputt (Technikreview 15.09.2026, Befund 1).
+    const best = Number.isFinite(s.time)
+      ? (save.bestTime ? Math.min(save.bestTime, s.time) : s.time)
+      : save.bestTime;
+    const bestDeckel = Number.isFinite(s.deckel)
+      ? Math.max(save.bestDeckel || 0, s.deckel)
+      : save.bestDeckel;
     writeSave({
-      bestTime: best,
-      bestDeckel: Math.max(save.bestDeckel || 0, s.deckel),
+      ...(Number.isFinite(best) ? { bestTime: best } : {}),
+      ...(Number.isFinite(bestDeckel) ? { bestDeckel: bestDeckel } : {}),
       // Stabile ID statt Index: die Reihenfolge darf sich ändern, ohne dass
       // ein alter Stand auf der falschen Station landet (DRR-03).
       station: LEVELS[Math.min(LEVELS.length - 1, aktIndex + 1)].id,

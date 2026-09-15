@@ -3,7 +3,8 @@ const unit = r => r.trackLength / r.segments.length;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function journeySection(r) {
   const index = Math.floor((r.position + r.playerZ) / unit(r));
-  return r.level.journey.sections.find(s => index < s.to) || r.level.journey.sections.at(-1);
+  const sections = r.level.journey.sections;
+  return sections.find(s => index < s.to) || sections[sections.length - 1];
 }
 export function safePace(r, curve, rain = r.rain) {
   const strength = Math.abs(curve);
@@ -23,7 +24,8 @@ export function drivingCue(r) {
   const section = journeySection(r);
   const limit = safePace(r, bend?.curve || 0);
   const direction = bend ? (bend.curve > 0 ? 'right' : 'left') : 'straight';
-  const last = r.level.journey.sections.at(-1);
+  const sections = r.level.journey.sections;
+  const last = sections[sections.length - 1];
   const arrivalCue = r.level.journey.arrivalCue || 'RUHIG ANKOMMEN';
   return {
     section: section.title, sectionId: section.id, theme: section.theme,
