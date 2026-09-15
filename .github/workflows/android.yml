@@ -1,7 +1,8 @@
 name: Android-APK
 
 # Baut die installierbare WebView-Huelle des Spiels und haengt die APK an das
-# Release v1.0. Laeuft auf Knopfdruck und bei jedem Push auf den Android-Branch.
+# Test-Release android-v1.0.1. Laeuft auf Knopfdruck und bei jedem Push auf den
+# Android-Branch.
 
 on:
   workflow_dispatch:
@@ -44,9 +45,9 @@ jobs:
           gradle-version: '8.9'
 
       # Kein Secret noetig: der Schluessel wird fuer diesen Lauf erzeugt und mit
-      # dem Runner verworfen. Damit ist die APK sideload-tauglich signiert (und
-      # Updates einer so installierten App bleiben moeglich, solange derselbe
-      # Schluessel benutzt wird — fuer ein Release-Signing spaeter ersetzbar).
+      # dem Runner verworfen. Damit ist die APK sideload-tauglich signiert.
+      # Hinweis: Jeder Lauf erzeugt einen neuen Schluessel - vor der Installation
+      # ueber eine bestehende App muss diese zuvor deinstalliert werden.
       - name: Release-APK signiert bauen
         env:
           DRR_STORE_FILE: ${{ runner.temp }}/drr-sideload.keystore
@@ -72,29 +73,27 @@ jobs:
           unzip -l "$APK" | grep -E 'classes\.dex|assets/www/(index\.html|src/main\.js)' || {
             echo "::error::Spieldateien fehlen in der APK"; exit 1; }
           unzip -l "$APK" | grep -c 'assets/www/src/' | xargs echo "Moduldateien in assets/www/src/:"
-          cp "$APK" "$RUNNER_TEMP/der-rasende-roland-v1.0.apk"
-          ls -l "$RUNNER_TEMP/der-rasende-roland-v1.0.apk"
+          cp "$APK" "$RUNNER_TEMP/der-rasende-roland-v1.0.1.apk"
+          ls -l "$RUNNER_TEMP/der-rasende-roland-v1.0.1.apk"
 
       - name: APK als Artefakt ablegen
         uses: actions/upload-artifact@v4
         with:
-          name: der-rasende-roland-v1.0-apk
-          path: ${{ runner.temp }}/der-rasende-roland-v1.0.apk
+          name: der-rasende-roland-v1.0.1-apk
+          path: ${{ runner.temp }}/der-rasende-roland-v1.0.1.apk
           if-no-files-found: error
 
-      - name: APK ans Release v1.0 haengen
+      - name: APK ans Test-Release haengen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APK: ${{ runner.temp }}/der-rasende-roland-v1.0.apk
+          APK: ${{ runner.temp }}/der-rasende-roland-v1.0.1.apk
         run: |
           set -euo pipefail
-          if gh release view v1.0 >/dev/null 2>&1; then
-            gh release upload v1.0 "$APK" --clobber
-            echo "APK an Release v1.0 angehaengt."
-          else
-            echo "::warning::Release v1.0 nicht gefunden — lege v1.0-android an."
-            gh release create v1.0-android "$APK" \
-              --title "Der Rasende Roland — Android v1.0" \
-              --notes "Sideload-APK der Android-Huelle (WebView, offline). Automatisch gebaut."
+          if ! gh release view android-v1.0.1 >/dev/null 2>&1; then
+            gh release create android-v1.0.1 \
+              --title "Der Rasende Roland - Android v1.0.1 (Test)" \
+              --notes "Testfassung der Android-Huelle: Startrobustheit fuer Geraete mit WebView-Startproblem, plus Fehlerbericht statt wortlosem Schliessen. Bitte vor der Installation die alte App deinstallieren." \
+              --prerelease
           fi
-          gh release view v1.0 --json assets --jq '.assets[].name' || true
+          gh release upload android-v1.0.1 "$APK" --clobber
+          gh release view android-v1.0.1 --json assets --jq '.assets[].name'

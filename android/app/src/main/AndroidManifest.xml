@@ -6,6 +6,7 @@
          Deshalb gibt es hier bewusst KEINE INTERNET-Berechtigung. -->
 
     <application
+        android:name=".DRRApp"
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:hardwareAccelerated="true"
