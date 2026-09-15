@@ -1,0 +1,17 @@
+DER RASENDE ROLAND — Endfassung v1.0
+
+Das komplette Spiel als Dateipaket — keine Installation, keine Abhängigkeiten, kein Internet nötig.
+
+SO STARTEN:
+  Windows: „STARTE-SPIEL.bat" doppelklicken.
+  Mac/Linux: in diesem Ordner einen Mini-Server starten und dann im Browser öffnen:
+      python3 -m http.server 8123        →  http://127.0.0.1:8123
+
+  Bitte index.html nicht einfach per Doppelklick öffnen: Browser blockieren dabei
+  aus Sicherheitsgründen die Spielmodule (file://) — die Seite bliebe leer.
+
+ONLINE: https://commanderror9.github.io/der-rasende-roland/
+
+TON: Die Musik startet nach der ersten Eingabe (Browser-Regel für Audio).
+
+Viel Spaß!

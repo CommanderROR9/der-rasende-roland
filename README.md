@@ -5,6 +5,11 @@ bis in den Kleingarten. Browser-Spiel, keine Installation, keine Abhängigkeiten
 
 **Spielen:** https://commanderror9.github.io/der-rasende-roland/
 
+**Offline:** ZIP aus den Releases entpacken. Unter Windows `STARTE-SPIEL.bat` doppelklicken;
+auf Mac/Linux im Ordner `python3 -m http.server 8123` starten und `http://127.0.0.1:8123`
+aufrufen. Bitte `index.html` nicht direkt per Doppelklick öffnen — Browser blockieren dabei
+die Spielmodule (`file://`), die Seite bliebe leer.
+
 ## Die Akte
 
 **Akt 1 — Die Katakomben.** Aus der Garderobe über Notenblatt-Stufen nach oben, durch
