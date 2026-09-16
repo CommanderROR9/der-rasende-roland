@@ -126,7 +126,7 @@ das Taktfenster ist deutlich größer und der Sopran kostet nur einen Nerv statt
 Umschaltbar im Titelbild und in der Pause (`SCHWIERIGKEIT`), die Wahl bleibt gemerkt.
 Wichtig: Gegner schießen nur innerhalb des sichtbaren Bildes — nie von außerhalb.
 
-**Belohnung:** Am Ende von Akt 1 wartet das **Feierabendbier**. Bierdeckel sind die
+**Belohnung:** Am Ende von Akt 1 wartet das **Feierabendbier**. Stimmzimmer-Kekse sind die
 Sammelobjekte, für einen davon muss man auf die morsche Kante steigen.
 
 ## Technik
@@ -153,16 +153,16 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
-tests/smoke.test.mjs 277 headless Checks
+tests/smoke.test.mjs  headless Checks (Teil der npm-test-Kette)
 tests/diag.mjs      Einzelabfrage im Browser (Diagnose bei Fehlermeldungen)
 ```
 
 ## Tests
 
 ```bash
-npm test                        # 277 headless Checks: node tests/smoke.test.mjs
+npm test                        # die komplette headless Kette (derzeit 1044 Checks)
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
-npm run browser                 # 108 Checks in echtem Chromium
+npm run browser                 # 388 Checks in echtem Chromium
 node tests/diag.mjs <url> <akt>  # Einzelabfrage: Zustand, Bewegung, Helligkeit
 npm run browser -- <url>        # dieselbe Prüfung gegen eine deployte URL
 ```

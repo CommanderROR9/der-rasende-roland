@@ -108,7 +108,7 @@ check('der Taktstock ist ein Andenken, kein Pflichtstück',
 check('bestehende Akt-4-Substanz bleibt erhalten (zwei Versenkungen, Souffleurkasten, Lichtkegel)',
   level.elevators.length === 2 && level.spooks.length === 1 && level.gleams.length >= 10,
   `${level.elevators.length}/${level.spooks.length}/${level.gleams.length}`);
-check('fünf Bierdeckel reisen weiter mit', level.deckelTotal === 5, `n=${level.deckelTotal}`);
+check('fünf Stimmzimmer-Kekse reisen weiter mit', level.deckelTotal === 5, `n=${level.deckelTotal}`);
 check('zwei Taktwechsel tragen das Tempo', (level.takts || []).length === 2);
 check('dirigent, piccolo, sopran, tenor und koffer spielen mit',
   ['dirigent', 'piccolo', 'sopran', 'tenor', 'koffer'].every((k) => level.spawns.some((s) => s.kind === k)));

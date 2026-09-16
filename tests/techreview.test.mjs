@@ -35,7 +35,7 @@ function check(name, condition, extra = '') {
     fehler.length === 0, fehler.join('; '));
 }
 
-// --- 2. Unbekannte Item-Art wird zum Bierdeckel statt zum Absturz -----------
+// --- 2. Unbekannte Item-Art wirft nicht (Fallback auf das Basis-Item) ---------
 {
   const game = new Game({
     level: buildAkt1(), input: createInput(null),
