@@ -1,6 +1,8 @@
 # Der Rasende Roland — Spielkonzept
 
-**Stand:** v0.2 (Entscheidungen von Roland eingearbeitet)
+**Stand:** Konzept v0.2 (Entscheidungen von Roland eingearbeitet) — das **Spiel selbst
+ist als v1.0 fertig und veröffentlicht**; den ehrlichen Abgleich mit diesem Konzept
+gibt es unten unter „Umsetzungsstand“.
 **Ziel:** Browser-Spiel in Pixel-Art für einen Kollegen zum Ruhestand — Geiger,
 ~41 Dienstjahre, Cabrio (Mazda MX-5) und Motorrad, Kleingarten-Pächter.
 **Spielzeit-Ziel:** 45–60 Minuten für einen Durchlauf. Kein Frust-Design:
@@ -39,7 +41,7 @@ in den Schrank wandert.
 | draußen | Open-Air-Bühne, Parkplatz | Frack unter freiem Himmel | Wetter |
 | flach | Kleingarten (Epilog) | Freizeitkluft | Freiheit, kein Takt |
 
-Umgezogen wird am Kleiderständer (einfach berühren). **Jede Kluft ist Werkzeug:**
+Umgezogen wird am Kleiderständer (davorstellen und Aktionstaste drücken). **Jede Kluft ist Werkzeug:**
 Schwarz ist schnell und leise, der Anzug öffnet Diensttüren, der Frack öffnet
 Absperrbänder — und heizt ein.
 
@@ -71,7 +73,7 @@ Pseudo-3D-Segmentstraße (OutRun-Prinzip, kein echtes 3D):
   Taktstock), Schlaglöcher, Regenguss mit Gripverlust — und der Notenständer, der
   auf dem Beifahrersitz bei jeder Kurve umkippt.
 - **Motorrad**: Nachtfahrt, Tunnel, Gischt, kleinere Toleranz. Kühlt den Hitzebalken.
-- Kein klassisches Verlieren: Zeitwertung, Rammschaden, Bierdeckel, sofortiger Retry.
+- Kein klassisches Verlieren: Zeitwertung, Rammschaden, Stimmzimmer-Kekse, sofortiger Retry.
 
 ### 6. Gefahren mit Humor statt Gewalt
 
@@ -106,7 +108,7 @@ Bosse sind Prüfungen, keine Monster: Hauptprobe, Open Air, Finale.
 
 **Feierabendbier** als Level-Abschluss: Regeneration + kurz „Dienstschluss".
 Dazu Brezel, Ohropax, Kantinenkaffee, Sitzkissen, Wasserflasche, Windschutzklammern,
-Mazda-Schlüssel, Motorradhelm, Gartenschlüssel. Sammelobjekte: **Bierdeckel**;
+Mazda-Schlüssel, Motorradhelm, Gartenschlüssel. Sammelobjekte: **Stimmzimmer-Kekse**;
 die **Strichliste** zählt jeden Akt, am Ende 41 Striche.
 
 ## Technik
@@ -119,44 +121,13 @@ Browser-Durchlauf.
 
 ## Status
 
-**Fertig:**
-
-- **Akt 1 (Katakomben):** Garderobe, Kletterroute, Diensttür, Archiv, Absperrband,
-  Materialaufzug; Kleiderwechsel, Taktmechanik mit Beton-Tritt, Hitze und Frack-Off,
-  Piccolo, Sopran, Tenor, Instrumentenkoffer, morsche Notenblätter, Ohropax,
-  Bierdeckel, Speicherpunkte, Pause, Touch-Steuerung, Feierabendbier.
-- **Akt 2 (Die Probe):** Probenraum mit zwei Wegen (unten zwischen den Stühlen, oben
-  über Notenpulte und Beleuchtungsbrücke), **Dirigent** mit Bogenwurf-Taktstöcken,
-  **Taktwechsel** (Allegro/Andante) unterwegs, Frack-Gate an der Bühnentür,
-  Belohnung Pausenbrot und ein Nerv mehr für den Folgeakt.
-- Beide Akte hängen aneinander: Aktabschluss führt über die Garderobe in den nächsten
-  Akt, der Fortschritt bleibt gespeichert.
-
-- **Interludium Cabrio:** Pseudo-3D-Landstraße (Segmentstraße), Gas automatisch, nur
-  lenken; Gegenverkehr, LKW, Regenguss mit Gripverlust, Radarfallen, kippender
-  Notenständer; Abschlusstafel mit Fahrzeit, Höchsttempo und Kontakten.
-
-- **Akt 3 (Open Air):** Freilichtbühne mit **Wetterzyklus** (Sonne/Wind/Regen/Kälte),
-  Windböen mit Vorwarnung und fliegenden Notenblättern, Nässe mit Rutschgefahr und
-  Vordach zum Trocknen, Kälte mit steiferen Fingern; Gerüstaufstieg zur Lichtbrücke,
-  Dirigent auf der Bühne, Frack-Gate am Podium.
-
-- **Akt 4 (Orchestergraben):** Dunkelheit mit Notenpultlampen als Lichtinseln,
-  Versenkungen (Bühnenaufzüge) als einziger Weg nach oben, Souffleurkasten als
-  Schreck, morscher Notenpult, Dirigent auf dem Podium; Belohnung: der Taktstock.
-
-**Geplant:** Akte 5–8 (Bühne, Finale), Motorrad-Interludium
-(Nacht, Tunnel, kühlt den Hitzebalken), Epilog Kleingarten.
-
-**Idee für später — Bratwurst-Grill (Bonusspiel):** ein kleines Minigame im Kleingarten-
-Epilog: Würste im Takt wenden (die Taktmechanik aus dem Spiel, nur entspannt), Kohle
-nachlegen, Gäste bedienen, nichts anbrennen lassen. Kein Scheitern möglich — höchstens
-eine verkohlte Wurst und Gelächter. Passt als Belohnungs-Episode nach dem Finale und
-braucht nur die vorhandene Takt-Engine plus ein paar Sprites.
-
-Die Verdrahtung ist angelegt: Level sind reine Datenmodule, neue Akte werden im
-Register `LEVELS` ergänzt; Fahr-Abschnitte setzen `mode: 'racer'`.
-
+**v1.0 — fertig und veröffentlicht.** Alle fünf Akte (Katakomben, Probe, Open Air,
+Orchestergraben, Bühne mit Finale), die Fahr-Interludien Cabrio und Motorrad, die
+letzte Probe am Bühnenrand und der Kleingarten-Epilog mit dem Bratwurst-Grill sind
+gebaut und spielbar; die Live-Fassung läuft über die Projektseite. Was vom Konzept
+abweicht oder offen blieb, steht im Abschnitt „Umsetzungsstand" — Level sind reine
+Datenmodule, neue Akte werden im Register `LEVELS` ergänzt, Fahr-Abschnitte setzen
+`mode: 'racer'`.
 
 ## Umsetzungsstand (ehrlich, Stand jetzt)
 
@@ -167,11 +138,11 @@ Versenkungen und Souffleurkasten), Interludium Motorrad (Nachtfahrt), Akt 5
 mit Ramona und dem Bratwurst-Grill-Minispiel.
 
 **Gebaut, aber schlanker als hier ursprünglich beschrieben:**
-- Sammelobjekte sind Bierdeckel, Ohropax, Wasserflasche, Notenmappe und **Brezel**
-  (Nervennahrung). Brezel, Kantinenkaffee, Windschutzklammern, Schlüssel und
+- Sammelobjekte sind **Stimmzimmer-Kekse**, Ohropax, Wasserflasche, Notenmappe,
+  Stimmblatt und **Brezel** (Nervennahrung). Windschutzklammern, Schlüssel und
   Rasenmäher aus der Ideenliste gibt es **nicht**.
 - Die „Strichliste" (41 Striche) ist nicht implementiert; die Akt-Bilanz läuft über
-  Zeit, Bierdeckel, Takt-Treffer und Nerven.
+  Zeit, Stimmzimmer-Kekse, Takt-Treffer und Nerven.
 - Einen **Sicherheitsdienst** als Gegner gibt es nicht.
 - Der **Gartenzwerg mit Geige** im Epilog fehlt noch.
 

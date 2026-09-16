@@ -6,7 +6,7 @@ Akt 1 soll zeigen, wie die übrigen Stationen ausgebaut werden: ein eigener klei
 
 **Anna ist die Konzertmeisterin.** Der Text beschränkt sich auf ihre Rolle im Spiel und erfindet keine privaten Details.
 
-**Rolf ist der Orchesterwart.** Er hat in Akt 1 keinen Auftritt und keine Mechanik; sein Auftritt im Orchestergraben folgt in einem späteren Auftrag.
+**Rolf ist der Orchesterwart.** Er hat in Akt 1 keinen Auftritt und keine Mechanik; seine Auftritte kommen in späteren Akten (Open Air: Auftrag für die Pulte, Orchestergraben: die Lampenkiste).
 
 ## Handlungsbogen
 
