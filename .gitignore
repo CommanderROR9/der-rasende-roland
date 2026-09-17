@@ -4,3 +4,10 @@
 
 # Bildbeweise des Epilog-Auftrags (E1) am Repo-Rand: sollen den Checkout nicht schmutzig machen.
 screenshot-*.png
+
+# Release-Artefakt (Ergebnis von `npm run build:release`): wird gebaut, nicht
+# versioniert — die ausgelieferte Fassung liegt im Release/auf GitHub Pages.
+dist/
+
+# Nur für den Bau nötig (esbuild); wird per `npm install` wiederhergestellt.
+node_modules/
