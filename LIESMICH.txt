@@ -1,15 +1,10 @@
-DER RASENDE ROLAND — Endfassung v1.0
+DER RASENDE ROLAND — Fassung 1.1
 
-Das komplette Spiel als Dateipaket — keine Installation, keine Abhängigkeiten, kein Internet nötig.
+Doppelklick auf „der-rasende-roland.html" — läuft direkt in Chrome, Edge und
+Firefox. Keine Installation, kein Internet, kein Server.
 
-SO STARTEN:
-  Windows: „STARTE-SPIEL.bat" doppelklicken (nutzt Chrome, Edge oder Firefox —
-  was auf dem Computer installiert ist).
-  Mac/Linux: in diesem Ordner einen Mini-Server starten und dann im Browser öffnen:
-      python3 -m http.server 8123        →  http://127.0.0.1:8123
-
-  Bitte index.html nicht einfach per Doppelklick öffnen: Browser blockieren dabei
-  aus Sicherheitsgründen die Spielmodule (file://) — die Seite bliebe leer.
+Diese eine Datei ist das ganze Spiel (Bild, Ton, Fortschritt). Am besten so
+weitergeben, wie sie ist — sie läuft aus jedem Ordner, auch vom Stick.
 
 ONLINE: https://commanderror9.github.io/der-rasende-roland/
 

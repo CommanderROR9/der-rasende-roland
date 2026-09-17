@@ -7,6 +7,9 @@ import { createAudio } from './audio.js';
 import { createMusik } from './music.js';
 import { LEVELS } from './world.js';
 import { BELOHNUNGEN, SAVE_VERSION, migriereSave, stationIndex } from './story.js';
+// Jeder Speicherzugriff läuft über diese Kapsel (Release 1.1): gesperrtes
+// localStorage darf nichts werfen, das Spiel läuft dann ohne Persistenz weiter.
+import { speicherLesen, speicherSchreiben, speicherLoeschen } from './speicher.js';
 import { Game } from './game.js';
 import { Grill } from './grill.js';
 import { Racer } from './racer.js';
@@ -265,12 +268,12 @@ const SAVE_KEY = 'rasender-roland/v1';
 function loadSave() {
   // Jeder Stand wird beim Lesen in die aktuelle Form gebracht: alte Stände
   // kannten nur `act` (Index in der alten Reihenfolge), heute gilt `station`.
-  try { return migriereSave(JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
+  try { return migriereSave(JSON.parse(speicherLesen(SAVE_KEY)) || {}); }
   catch { return migriereSave({}); }
 }
 function writeSave(patch) {
   const next = { ...loadSave(), ...patch };
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(next)); } catch { /* privat modus: egal */ }
+  try { speicherSchreiben(SAVE_KEY, JSON.stringify(next)); } catch { /* privat modus: egal */ }
 }
 
 // ---------------------------------------------------------------- Overlays --
@@ -840,7 +843,7 @@ function updateWorldLabel() {
 ui.startBtn.onclick = () => startLevel();
 ui.gardeBack.onclick = () => { if (game) { game.resume(); hideAll(); } };
 ui.resetBtn.onclick = () => {
-  try { localStorage.removeItem(SAVE_KEY); } catch {}
+  try { speicherLoeschen(SAVE_KEY); } catch {}
   loadAct(0);
   ui.resetBtn.textContent = 'Zurückgesetzt ✓';
 };
@@ -1043,8 +1046,8 @@ window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') t
 /** Einen alten Spielstand einmalig in die neue Form schreiben (DRR-03). */
 function standAuffrischen() {
   try {
-    const roh = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (roh && roh.v !== SAVE_VERSION) localStorage.setItem(SAVE_KEY, JSON.stringify(migriereSave(roh)));
+    const roh = JSON.parse(speicherLesen(SAVE_KEY) || 'null');
+    if (roh && roh.v !== SAVE_VERSION) speicherSchreiben(SAVE_KEY, JSON.stringify(migriereSave(roh)));
   } catch { /* privater Modus: dann eben nicht */ }
 }
 standAuffrischen();
