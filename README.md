@@ -5,11 +5,15 @@ bis in den Kleingarten. Browser-Spiel, keine Installation, keine Abhängigkeiten
 
 **Spielen:** https://commanderror9.github.io/der-rasende-roland/
 
-**Offline:** ZIP aus den Releases entpacken. Unter Windows `STARTE-SPIEL.bat` doppelklicken
-(nutzt Chrome, Edge oder Firefox — was installiert ist); auf Mac/Linux im Ordner
-`python3 -m http.server 8123` starten und `http://127.0.0.1:8123` aufrufen. Bitte `index.html`
-nicht direkt per Doppelklick öffnen — Browser blockieren dabei die Spielmodule (`file://`),
-die Seite bliebe leer.
+**Offline (Ein-Datei-Artefakt):** `dist/der-rasende-roland.html` doppelklicken — läuft direkt in
+Chrome, Edge und Firefox. Keine Installation, kein Server, kein Internet. Die Datei entsteht mit
+`npm run build:release` (bündelt `src/` zu einem klassischen Skript und setzt es inline in
+`index.html` ein); sie ist nicht versioniert und wird beim Weitergeben mitgenommen.
+
+**Selbst hosten:** im Repo `python3 -m http.server 8123` starten und `http://127.0.0.1:8123`
+aufrufen. `index.html` bleibt der Entwicklungsstand und lädt die Module aus `src/` — über
+`file://` blockieren Browser ES-Module, deshalb dort bitte den Server oder das Ein-Datei-Artefakt
+nehmen.
 
 ## Die Akte
 
@@ -132,7 +136,9 @@ Sammelobjekte, für einen davon muss man auf die morsche Kante steigen.
 
 ## Technik
 
-- Vanilla ES-Module + Canvas 2D, **kein Bundler, kein Framework, keine externen Requests**
+- Vanilla ES-Module + Canvas 2D, **kein Framework, keine externen Requests** — zur Laufzeit
+  braucht das Spiel nichts von außen; nur für das Ein-Datei-Artefakt bündelt
+  `npm run build:release` die Module (esbuild, reines Bau-Werkzeug, keine Laufzeit-Abhängigkeit)
 - Sichtbereich 384×216 am Rechner (ganzzahlige Skalierung), 256×144 auf Touchgeräten —
   dort also deutlich näher dran, damit die Figur nicht zur Briefmarke wird
 - Spielfigur 16×24 px (Trefferfläche 12×22), Kleidung über Palettenvarianten desselben Körpers
@@ -154,6 +160,8 @@ src/audio.js        WebAudio-Synth
 src/world.js        Leveldaten Akt 1 (Fels wird zu Hohlräumen geschnitten)
 src/game.js         Simulation (bewusst DOM-frei)
 src/main.js         Verkabelung, Overlays, Speicherung
+src/speicher.js     gekapselter localStorage-Zugriff (Rückfall: Arbeitsspeicher)
+tools/build-release.mjs  baut das Ein-Datei-Artefakt dist/der-rasende-roland.html
 tests/smoke.test.mjs  headless Checks (Teil der npm-test-Kette)
 tests/diag.mjs      Einzelabfrage im Browser (Diagnose bei Fehlermeldungen)
 ```
@@ -161,7 +169,8 @@ tests/diag.mjs      Einzelabfrage im Browser (Diagnose bei Fehlermeldungen)
 ## Tests
 
 ```bash
-npm test                        # die komplette headless Kette (derzeit 1044 Checks)
+npm test                        # die komplette headless Kette (derzeit 1059 Checks)
+npm run build:release           # baut dist/der-rasende-roland.html (eine Datei, Doppelklick)
 npm run serve                   # lokaler Server auf http://127.0.0.1:8123
 npm run browser                 # 388 Checks in echtem Chromium
 node tests/diag.mjs <url> <akt>  # Einzelabfrage: Zustand, Bewegung, Helligkeit
